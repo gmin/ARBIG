@@ -1,4 +1,4 @@
-vnpy>=3.6.0
+vnpy==3.6.0
 pandas>=1.3.0
 numpy>=1.21.0
 pymongo>=4.0.0

@@ -92,6 +92,38 @@
 5.  **小规模实盘验证**:
     *   在严格风控的前提下，进行小资金规模的实盘测试，检验系统的稳定性和策略的实际表现。
 
+## 依赖安装
+
+### TA-Lib安装
+
+1. 安装C库：
+```bash
+# 下载TA-Lib源码
+wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.6.4-src.tar.gz
+
+# 解压
+tar -xzf ta-lib-0.6.4-src.tar.gz
+
+# 编译安装
+cd ta-lib-0.6.4/
+./configure --prefix=/usr
+make
+make install
+
+# 更新动态链接库配置
+ldconfig
+```
+
+2. 安装Python包：
+```bash
+pip install TA-Lib
+```
+
+注意：如果安装过程中遇到问题，请确保：
+- 系统已安装gcc和make工具
+- 有足够的系统权限（可能需要sudo）
+- Python环境正确配置
+
 ---
 
 本文档将随着项目的进展持续更新。 
