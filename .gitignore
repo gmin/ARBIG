@@ -1,2 +1,8 @@
+# Python virtual environment
+venv/
+__pycache__/
+*.pyc
+
 # TA-Lib source code
-ta-lib-0.6.4/ 
+ta-lib-0.6.4/
+ta-lib-0.6.4-src.tar.gz 
