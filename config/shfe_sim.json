@@ -1,0 +1,13 @@
+{
+    "用户名": "your_username",
+    "密码": "your_password",
+    "经纪商代码": "your_broker_id",
+    "交易服务器": "your_trade_server",
+    "行情服务器": "your_market_server",
+    "产品名称": "simnow_client_test",
+    "授权编码": "your_auth_code",
+    "产品信息": "your_product_info",
+    "price_threshold": 0.1,
+    "volume_threshold": 1000,
+    "max_delay": 5
+} 

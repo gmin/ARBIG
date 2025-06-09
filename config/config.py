@@ -9,13 +9,14 @@ CONFIG = {
         'gateway_name': 'CTP',
         'host': '',           # CTP服务器地址
         'port': 0,            # CTP服务器端口
-        'user': '',           # 用户名
-        'password': '',       # 密码
-        'broker_id': '',      # 经纪商代码
+        'user': '242407',           # 用户名
+        'password': '1234%^&*QWE',       # 密码
+        'broker_id': '9999',      # 经纪商代码
         'app_id': '',         # 应用ID
         'auth_code': '',      # 认证码
-        'symbol': 'AU2406',   # 合约代码
+        'symbol': 'AU2508',   # 合约代码
     },
+    
     
     'mt5': {
         'server': '',         # MT5服务器地址

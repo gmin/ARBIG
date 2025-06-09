@@ -126,4 +126,132 @@ pip install TA-Lib
 
 ---
 
-本文档将随着项目的进展持续更新。 
+本文档将随着项目的进展持续更新。
+
+# ARBIG - 量化交易系统
+
+## 项目结构
+```
+ARBIG/
+├── config/                 # 配置文件目录
+│   ├── shfe_sim.json      # 上海黄金期货配置
+│   ├── mt5_sim.json       # MT5 配置
+│   └── fix.cfg            # FIX 协议配置
+├── core/                  # 核心代码
+│   ├── mt5/              # MT5 相关代码
+│   │   ├── api.py        # MT5 API 实现
+│   │   ├── gateway.py    # MT5 Gateway 实现
+│   │   └── utils.py      # MT5 工具函数
+│   └── utils/            # 通用工具
+├── tests/                # 测试代码
+└── requirements.txt      # 项目依赖
+```
+
+## 环境要求
+- Python 3.8+
+- MetaTrader 5
+- QuickFIX 1.15.1
+
+## 安装
+1. 克隆项目
+```bash
+git clone https://github.com/yourusername/ARBIG.git
+cd ARBIG
+```
+
+2. 创建虚拟环境
+```bash
+python -m venv venv
+source venv/bin/activate  # Linux/Mac
+# 或
+venv\Scripts\activate  # Windows
+```
+
+3. 安装依赖
+```bash
+pip install -r requirements.txt
+```
+
+## 配置
+### MT5 配置
+编辑 `config/mt5_sim.json`：
+```json
+{
+    "fix": {
+        "host": "your_mt5_fix_host",
+        "port": 1234,
+        "sender_comp_id": "your_sender_id",
+        "target_comp_id": "your_target_id",
+        "heartbeat_interval": 30
+    },
+    "price_threshold": 0.1,
+    "volume_threshold": 1000,
+    "max_delay": 5
+}
+```
+
+### FIX 配置
+编辑 `config/fix.cfg`：
+```ini
+[DEFAULT]
+ConnectionType=initiator
+ReconnectInterval=60
+FileStorePath=store
+FileLogPath=log
+StartTime=00:00:00
+EndTime=23:59:59
+UseDataDictionary=N
+DataDictionary=FIX42.xml
+HeartBtInt=30
+
+[SESSION]
+BeginString=FIX.4.2
+SenderCompID=your_sender_id
+TargetCompID=your_target_id
+SocketConnectHost=your_fix_host
+SocketConnectPort=1234
+```
+
+## 使用
+1. 启动 MT5
+2. 运行测试用例
+```bash
+python -m pytest tests/test_mt5_gateway.py -v
+```
+
+## 开发
+### 代码风格
+- 遵循 PEP 8 规范
+- 使用类型注解
+- 编写单元测试
+- 保持代码简洁和可读性
+
+### 提交规范
+- feat: 新功能
+- fix: 修复问题
+- docs: 文档修改
+- style: 代码格式修改
+- refactor: 代码重构
+- test: 测试用例修改
+- chore: 其他修改
+
+## 测试
+运行所有测试：
+```bash
+python -m pytest
+```
+
+运行特定测试：
+```bash
+python -m pytest tests/test_mt5_gateway.py -v
+```
+
+## 贡献
+1. Fork 项目
+2. 创建特性分支
+3. 提交更改
+4. 推送到分支
+5. 创建 Pull Request
+
+## 许可证
+MIT License 
