@@ -1,0 +1,57 @@
+# 交易系统配置文件
+
+# 事件引擎配置
+event_persist_path: "events.jsonl"
+
+# 数据源配置
+data:
+  # 上期所配置
+  shfe:
+    gateway: "CTP"
+    host: "180.168.146.187"
+    port: 10101
+    user: "your_username"
+    password: "your_password"
+    broker_id: "9999"
+    
+  # MT5配置
+  mt5:
+    server: "MetaQuotes-Demo"
+    login: 12345
+    password: "your_password"
+    symbol: "XAUUSD"
+
+# 策略配置
+strategies:
+  # 基差套利策略
+  - name: "spread_arbitrage"
+    type: "spread_arbitrage"
+    config:
+      spread_threshold: 0.5      # 基差阈值
+      max_position: 1000         # 最大持仓
+      shfe_symbol: "AU9999"      # 上期所合约
+      mt5_symbol: "XAUUSD"       # MT5合约
+      
+  # 上海市场量化策略
+  - name: "shfe_quant"
+    type: "shfe_quant"
+    config:
+      strategy_type: "trend"     # 策略类型: trend, mean_reversion, breakout
+      symbol: "AU9999"           # 交易合约
+      max_position: 1000         # 最大持仓
+      ma_short: 5                # 短期均线
+      ma_long: 20                # 长期均线
+      rsi_period: 14             # RSI周期
+      rsi_overbought: 70         # RSI超买阈值
+      rsi_oversold: 30           # RSI超卖阈值
+
+# 风控配置
+risk:
+  max_daily_loss: 10000          # 最大日亏损
+  max_position_risk: 0.1         # 最大仓位风险
+  stop_loss_pct: 0.02            # 止损百分比
+
+# 日志配置
+logging:
+  level: "INFO"
+  file: "trading.log" 
