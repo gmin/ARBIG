@@ -36,6 +36,11 @@ class SHFEQuantStrategy(StrategyBase):
         self.position = 0
         self.last_signal = None
         
+        # 方向判断相关
+        self.current_direction = 'NEUTRAL'  # LONG, SHORT, NEUTRAL
+        self.direction_confidence = 0.0
+        self.last_direction_signal = None
+        
     def on_start(self):
         """策略启动"""
         print(f"[{self.name}] 上海市场量化策略启动 - {self.strategy_type}")
@@ -63,6 +68,10 @@ class SHFEQuantStrategy(StrategyBase):
             max_length = max(self.ma_long * 2, 100)
             if len(self.price_history) > max_length:
                 self.price_history = self.price_history[-max_length:]
+                
+            # 处理方向判断信号
+            if tick_data.get('signal_type') == 'DIRECTION_SIGNAL':
+                self._handle_direction_signal(tick_data.get('direction_data', {}))
                 
             # 生成交易信号
             self._generate_signal()
@@ -93,6 +102,13 @@ class SHFEQuantStrategy(StrategyBase):
         account_data = event.data
         print(f"[{self.name}] 账户更新: {account_data}")
         
+    def _handle_direction_signal(self, direction_data: Dict[str, Any]):
+        """处理方向判断信号"""
+        self.current_direction = direction_data.get('direction', 'NEUTRAL')
+        self.direction_confidence = direction_data.get('confidence', 0.0)
+        
+        print(f"[{self.name}] 收到方向信号: {self.current_direction}, 置信度: {self.direction_confidence:.2f}")
+        
     def _generate_signal(self):
         """生成交易信号"""
         if len(self.price_history) < self.ma_long:
@@ -108,24 +124,57 @@ class SHFEQuantStrategy(StrategyBase):
             signal = self._breakout_strategy()
             
         if signal and signal != self.last_signal:
-            # 计算仓位
-            position = self._calculate_position(signal)
+            # 根据方向判断调整信号
+            adjusted_signal = self._adjust_signal_by_direction(signal)
             
-            if position != 0:
-                # 发送交易信号
-                signal_data = {
-                    'signal': signal,
-                    'price': self.price_history[-1],
-                    'position': position,
-                    'strategy_type': self.strategy_type,
-                    'timestamp': time.time()
-                }
+            if adjusted_signal:
+                # 计算仓位
+                position = self._calculate_position(adjusted_signal)
                 
-                self.send_signal(signal_data)
-                self.last_signal = signal
+                if position != 0:
+                    # 发送交易信号
+                    signal_data = {
+                        'signal': adjusted_signal,
+                        'price': self.price_history[-1],
+                        'position': position,
+                        'strategy_type': self.strategy_type,
+                        'direction': self.current_direction,
+                        'direction_confidence': self.direction_confidence,
+                        'timestamp': time.time()
+                    }
+                    
+                    self.send_signal(signal_data)
+                    self.last_signal = adjusted_signal
+                    
+                    print(f"[{self.name}] 生成信号: {adjusted_signal}, 价格: {self.price_history[-1]:.2f}, 仓位: {position}, 方向: {self.current_direction}")
+                    
+    def _adjust_signal_by_direction(self, original_signal: str) -> str:
+        """根据方向判断调整交易信号"""
+        # 如果方向判断置信度不够，使用原始信号
+        if self.direction_confidence < 0.3:
+            return original_signal
+            
+        # 根据方向判断调整信号
+        if self.current_direction == 'LONG':
+            # 做多方向，只做多不做空
+            if original_signal == 'BUY':
+                return 'BUY'
+            elif original_signal == 'SELL':
+                return 'CLOSE_LONG'  # 平多而不是做空
                 
-                print(f"[{self.name}] 生成信号: {signal}, 价格: {self.price_history[-1]:.2f}, 仓位: {position}")
+        elif self.current_direction == 'SHORT':
+            # 做空方向，只做空不做多
+            if original_signal == 'BUY':
+                return 'CLOSE_SHORT'  # 平空而不是做多
+            elif original_signal == 'SELL':
+                return 'SELL'
                 
+        else:  # NEUTRAL
+            # 中性方向，使用原始信号但减少仓位
+            return original_signal
+            
+        return None
+        
     def _trend_strategy(self) -> str:
         """趋势跟踪策略"""
         if len(self.price_history) < self.ma_long:
@@ -159,7 +208,7 @@ class SHFEQuantStrategy(StrategyBase):
         return None
         
     def _breakout_strategy(self) -> str:
-        """突破策略"""
+        """突破策略 - 专门用于判断市场方向（做多/做空）"""
         if len(self.price_history) < 20:
             return None
             
@@ -167,12 +216,144 @@ class SHFEQuantStrategy(StrategyBase):
         upper, lower = self._calculate_bollinger_bands()
         current_price = self.price_history[-1]
         
-        if current_price > upper and self.position <= 0:
-            return 'BUY'
-        elif current_price < lower and self.position >= 0:
-            return 'SELL'
+        # 计算突破强度
+        breakout_strength = self._calculate_breakout_strength(current_price, upper, lower)
+        
+        # 方向判断逻辑
+        if current_price > upper and breakout_strength > 0.5:  # 向上突破且强度足够
+            # 向上突破，判断为做多方向
+            self._record_direction_signal('LONG', current_price, upper, lower, breakout_strength)
+            return 'LONG'  # 返回做多方向信号
             
-        return None
+        elif current_price < lower and breakout_strength > 0.5:  # 向下突破且强度足够
+            # 向下突破，判断为做空方向
+            self._record_direction_signal('SHORT', current_price, upper, lower, breakout_strength)
+            return 'SHORT'  # 返回做空方向信号
+            
+        return None  # 无明显方向
+        
+    def _record_direction_signal(self, direction: str, price: float, upper: float, lower: float, strength: float):
+        """记录方向判断信号"""
+        direction_info = {
+            'direction': direction,
+            'price': price,
+            'upper': upper,
+            'lower': lower,
+            'strength': strength,
+            'timestamp': time.time(),
+            'confidence': self._calculate_direction_confidence(direction, strength)
+        }
+        
+        # 发送方向判断信号
+        self.send_signal({
+            'signal_type': 'DIRECTION_SIGNAL',
+            'direction_data': direction_info
+        })
+        
+        print(f"[{self.name}] 方向判断: {direction}, 价格: {price:.2f}, 强度: {strength:.2f}, 置信度: {direction_info['confidence']:.2f}")
+        
+    def _calculate_direction_confidence(self, direction: str, strength: float) -> float:
+        """计算方向判断的置信度"""
+        # 基础置信度基于突破强度
+        base_confidence = min(strength / 2.0, 1.0)  # 最大1.0
+        
+        # 根据历史数据调整置信度
+        if len(self.price_history) >= 50:
+            # 计算最近的价格趋势
+            recent_trend = self._calculate_recent_trend()
+            
+            # 如果方向与趋势一致，提高置信度
+            if (direction == 'LONG' and recent_trend > 0) or (direction == 'SHORT' and recent_trend < 0):
+                base_confidence *= 1.2
+            else:
+                base_confidence *= 0.8
+                
+        return min(base_confidence, 1.0)
+        
+    def _calculate_recent_trend(self) -> float:
+        """计算最近的价格趋势"""
+        if len(self.price_history) < 20:
+            return 0.0
+            
+        # 计算最近20个价格点的线性回归斜率
+        x = np.arange(20)
+        y = np.array(self.price_history[-20:])
+        
+        # 简单的线性回归
+        slope = np.polyfit(x, y, 1)[0]
+        return slope
+        
+    def get_market_direction(self) -> dict:
+        """获取当前市场方向判断"""
+        if len(self.price_history) < 20:
+            return {'direction': 'UNKNOWN', 'confidence': 0.0}
+            
+        # 计算布林带
+        upper, lower = self._calculate_bollinger_bands()
+        current_price = self.price_history[-1]
+        
+        # 判断方向
+        if current_price > upper:
+            direction = 'LONG'
+            strength = self._calculate_breakout_strength(current_price, upper, lower)
+        elif current_price < lower:
+            direction = 'SHORT'
+            strength = self._calculate_breakout_strength(current_price, upper, lower)
+        else:
+            direction = 'NEUTRAL'
+            strength = 0.0
+            
+        return {
+            'direction': direction,
+            'strength': strength,
+            'confidence': self._calculate_direction_confidence(direction, strength),
+            'price': current_price,
+            'upper': upper,
+            'lower': lower
+        }
+        
+    def _calculate_breakout_strength(self, price: float, upper: float, lower: float) -> float:
+        """计算突破强度"""
+        if price > upper:
+            return (price - upper) / upper * 100
+        elif price < lower:
+            return (lower - price) / lower * 100
+        return 0.0
+        
+    def get_market_condition(self) -> dict:
+        """获取市场状态信息，供主策略参考"""
+        if len(self.price_history) < 20:
+            return {'condition': 'INSUFFICIENT_DATA'}
+            
+        # 计算布林带
+        upper, lower = self._calculate_bollinger_bands()
+        current_price = self.price_history[-1]
+        
+        # 判断市场状态
+        if current_price > upper:
+            condition = 'UPPER_BREAKOUT'
+        elif current_price < lower:
+            condition = 'LOWER_BREAKOUT'
+        elif current_price > (upper + lower) / 2:
+            condition = 'UPPER_RANGE'
+        else:
+            condition = 'LOWER_RANGE'
+            
+        return {
+            'condition': condition,
+            'price': current_price,
+            'upper': upper,
+            'lower': lower,
+            'volatility': self._calculate_volatility()
+        }
+        
+    def _calculate_volatility(self) -> float:
+        """计算波动率"""
+        if len(self.price_history) < 20:
+            return 0.0
+        returns = [self.price_history[i] / self.price_history[i-1] - 1 
+                  for i in range(1, len(self.price_history))]
+        return np.std(returns) * np.sqrt(252)  # 年化波动率
         
     def _calculate_rsi(self) -> float:
         """计算RSI指标"""
@@ -213,11 +394,27 @@ class SHFEQuantStrategy(StrategyBase):
         
     def _calculate_position(self, signal: str) -> int:
         """计算交易仓位"""
+        base_position = 100  # 基础仓位
+        
+        # 根据方向置信度调整仓位
+        if self.direction_confidence > 0.7:
+            position_multiplier = 1.0  # 高置信度，正常仓位
+        elif self.direction_confidence > 0.5:
+            position_multiplier = 0.8  # 中等置信度，减少仓位
+        else:
+            position_multiplier = 0.5  # 低置信度，大幅减少仓位
+            
         if signal == 'BUY':
             available = self.max_position - self.position
-            return min(available, 100)  # 每次最多100克
+            return min(int(available * position_multiplier), base_position)
         elif signal == 'SELL':
             available = self.max_position + self.position
-            return -min(available, 100)
-            
+            return -min(int(available * position_multiplier), base_position)
+        elif signal in ['CLOSE_LONG', 'CLOSE_SHORT']:
+            # 平仓信号
+            if signal == 'CLOSE_LONG' and self.position > 0:
+                return -self.position
+            elif signal == 'CLOSE_SHORT' and self.position < 0:
+                return -self.position
+                
         return 0 

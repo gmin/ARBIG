@@ -158,6 +158,34 @@ python main.py --config my_config.yaml --strategy spread_arbitrage
 #### 策略原理
 基差套利策略利用同一标的（黄金）在不同市场（如香港离岸人民币黄金与上海黄金交易所黄金）之间的价格差异。当基差（两地价格之差）达到一定阈值时，系统自动进行买入低价市场、卖出高价市场的操作，期望基差回归时获利。
 
+#### 核心交易逻辑
+**基差套利的核心原则：在低价市场买入，高价市场卖出**
+
+```python
+# 基差计算：spread = SHFE价格 - MT5价格
+spread = shfe_price - mt5_price
+
+# 开仓条件：基差超过开仓阈值
+if abs(spread) > entry_threshold:
+    if spread > 0:
+        # 买入MT5(低价)，卖出SHFE(高价)
+        signal = 'BUY_MT5_SELL_SHFE'
+    else:
+        # 买入SHFE(低价)，卖出MT5(高价)
+        signal = 'BUY_SHFE_SELL_MT5'
+
+# 平仓条件：基差回归到平仓阈值
+if abs(spread) <= exit_threshold:
+    signal = 'CLOSE_POSITION'
+```
+
+#### 阈值设置策略
+**采用简单有效的固定阈值策略，避免过度复杂化**
+
+- **开仓阈值**：0.8元/克 - 确保覆盖交易成本并获得合理利润
+- **平仓阈值**：0.2元/克 - 及时锁定利润，避免基差反转
+- **策略优势**：逻辑清晰，易于理解和维护，减少过拟合风险
+
 #### 适用场景
 - 两地黄金市场流动性较好，价差波动明显
 - 具备同时接入两地行情与交易通道的条件
@@ -192,10 +220,14 @@ while True:
     shfe_price = get_shfe_price()
     mt5_price = get_mt5_price()
     spread = shfe_price - mt5_price
+    
     if spread > spread_threshold:
-        send_signal('ARBITRAGE', direction='shfe_sell_mt5_buy')
+        # 买入MT5(低价)，卖出SHFE(高价)
+        send_signal('BUY_MT5_SELL_SHFE')
     elif spread < -spread_threshold:
-        send_signal('ARBITRAGE', direction='shfe_buy_mt5_sell')
+        # 买入SHFE(低价)，卖出MT5(高价)
+        send_signal('BUY_SHFE_SELL_MT5')
+    
     sleep(1)
 ```
 
@@ -203,30 +235,95 @@ while True:
 
 ### 2. 上海量化策略（shfe_quant）
 
+#### 策略架构
+上海量化策略采用**分层设计**，包含三个子策略：
+- **突破策略（breakout）**：**方向判断器**，识别市场方向（做多/做空）
+- **趋势跟踪（trend）**：基于均线交叉的趋势策略
+- **均值回归（mean_reversion）**：基于RSI的震荡策略
+
 #### 策略原理
-shfe_quant策略针对上海黄金市场，支持多种量化子策略：
-- **趋势跟踪（trend）**：利用均线交叉判断趋势，顺势操作
-- **均值回归（mean_reversion）**：利用RSI等指标判断超买超卖，反向操作
-- **突破（breakout）**：利用布林带等指标判断价格突破，追随突破方向
+
+##### 突破策略（方向判断器）
+- **核心功能**：判断市场方向，指导其他策略的做多做空决策
+- **判断逻辑**：价格突破布林带上轨→做多方向，跌破下轨→做空方向
+- **置信度计算**：基于突破强度和趋势一致性
+- **信号输出**：方向信号（LONG/SHORT/NEUTRAL）+ 置信度
+
+##### 趋势跟踪策略
+- **核心功能**：基于均线交叉的趋势跟踪
+- **信号逻辑**：短期均线上穿长期均线→买入，下穿→卖出
+- **方向约束**：根据突破策略的方向判断调整操作
+- **仓位管理**：根据方向置信度调整仓位大小
+
+##### 均值回归策略
+- **核心功能**：基于RSI的震荡交易
+- **信号逻辑**：RSI超卖→买入，超买→卖出
+- **方向约束**：根据突破策略的方向判断调整操作
+- **仓位管理**：根据方向置信度调整仓位大小
 
 #### 适用场景
-- **趋势跟踪**：市场有明显单边趋势时
-- **均值回归**：市场震荡、价格围绕均值波动时
-- **突破策略**：市场即将发生大幅波动、关键价位被突破时
+- **趋势市场**：突破策略识别趋势方向，趋势策略顺势操作
+- **震荡市场**：突破策略识别区间突破，均值回归策略在区间内操作
+- **转折市场**：突破策略提前识别方向变化，其他策略及时调整
 
 #### 信号生成机制
-- **趋势跟踪**：
-  - 计算短期均线（如MA5）和长期均线（如MA20）
-  - MA短上穿MA长且当前无多头持仓，发出买入信号
-  - MA短下穿MA长且当前无空头持仓，发出卖出信号
-- **均值回归**：
-  - 计算RSI指标
-  - RSI < oversold 且当前无多头持仓，发出买入信号
-  - RSI > overbought 且当前无空头持仓，发出卖出信号
-- **突破策略**：
-  - 计算布林带上下轨
-  - 价格突破上轨且当前无多头持仓，发出买入信号
-  - 价格跌破下轨且当前无空头持仓，发出卖出信号
+
+##### 突破策略（方向判断）
+```python
+# 计算布林带
+upper, lower = calculate_bollinger_bands(price_history)
+current_price = price_history[-1]
+strength = calculate_breakout_strength(current_price, upper, lower)
+
+# 方向判断
+if current_price > upper and strength > 0.5:
+    direction = 'LONG'
+    confidence = calculate_confidence(direction, strength)
+    send_direction_signal(direction, confidence)
+elif current_price < lower and strength > 0.5:
+    direction = 'SHORT'
+    confidence = calculate_confidence(direction, strength)
+    send_direction_signal(direction, confidence)
+```
+
+##### 趋势策略（结合方向判断）
+```python
+# 计算均线
+ma_short = mean(price_history[-ma_short_period:])
+ma_long = mean(price_history[-ma_long_period:])
+
+# 原始信号
+if ma_short > ma_long and position <= 0:
+    original_signal = 'BUY'
+elif ma_short < ma_long and position >= 0:
+    original_signal = 'SELL'
+
+# 根据方向调整信号
+if direction == 'LONG' and confidence > 0.5:
+    if original_signal == 'BUY':
+        final_signal = 'BUY'
+    elif original_signal == 'SELL':
+        final_signal = 'CLOSE_LONG'  # 平多而不是做空
+elif direction == 'SHORT' and confidence > 0.5:
+    if original_signal == 'BUY':
+        final_signal = 'CLOSE_SHORT'  # 平空而不是做多
+    elif original_signal == 'SELL':
+        final_signal = 'SELL'
+```
+
+##### 均值回归策略（结合方向判断）
+```python
+# 计算RSI
+rsi = calculate_rsi(price_history, rsi_period)
+
+# 原始信号
+if rsi < rsi_oversold and position <= 0:
+    original_signal = 'BUY'
+elif rsi > rsi_overbought and position >= 0:
+    original_signal = 'SELL'
+
+# 根据方向调整信号（类似趋势策略）
+```
 
 #### 参数说明
 | 参数名           | 说明                 | 典型取值 | 调优建议           |
@@ -241,44 +338,107 @@ shfe_quant策略针对上海黄金市场，支持多种量化子策略：
 | rsi_oversold     | RSI超卖阈值          | 30       | 均值回归用         |
 
 #### 风险提示
+- **突破策略**：假突破可能导致方向判断错误，影响其他策略
 - **趋势策略**：震荡市易频繁止损，趋势反转时可能滞后
 - **均值回归**：强趋势市易逆势亏损，阈值设置不当易频繁交易
-- **突破策略**：假突破易导致亏损，需结合成交量等确认
+- **方向依赖**：其他策略过度依赖突破策略的方向判断
 - **参数过拟合**：历史最优参数未必适合未来行情
 - **技术风险**：行情延迟、数据异常、系统故障等
 
-#### 示例流程（伪代码）
-- **趋势跟踪**：
+#### 策略协同示例
+
+##### 完整流程示例
 ```python
-if len(price_history) >= ma_long:
-    ma_s = mean(price_history[-ma_short:])
-    ma_l = mean(price_history[-ma_long:])
-    if ma_s > ma_l and position <= 0:
-        send_signal('BUY')
-    elif ma_s < ma_l and position >= 0:
-        send_signal('SELL')
-```
-- **均值回归**：
-```python
-if len(price_history) >= rsi_period:
-    rsi = calc_rsi(price_history, rsi_period)
-    if rsi < rsi_oversold and position <= 0:
-        send_signal('BUY')
-    elif rsi > rsi_overbought and position >= 0:
-        send_signal('SELL')
-```
-- **突破策略**：
-```python
-if len(price_history) >= 20:
-    upper, lower = calc_bollinger(price_history)
+# 1. 突破策略判断方向
+def breakout_direction():
+    upper, lower = calc_bollinger_bands(price_history)
     price = price_history[-1]
-    if price > upper and position <= 0:
-        send_signal('BUY')
-    elif price < lower and position >= 0:
-        send_signal('SELL')
+    strength = calc_breakout_strength(price, upper, lower)
+    
+    if price > upper and strength > 0.5:
+        return 'LONG', calculate_confidence('LONG', strength)
+    elif price < lower and strength > 0.5:
+        return 'SHORT', calculate_confidence('SHORT', strength)
+    return 'NEUTRAL', 0.0
+
+# 2. 趋势策略根据方向调整
+def trend_strategy_with_direction():
+    direction, confidence = breakout_direction()
+    
+    # 计算均线信号
+    ma_signal = calculate_ma_signal()
+    
+    # 根据方向调整
+    if direction == 'LONG' and confidence > 0.5:
+        if ma_signal == 'BUY':
+            return 'BUY', calculate_position(confidence)
+        elif ma_signal == 'SELL':
+            return 'CLOSE_LONG', -current_position
+    elif direction == 'SHORT' and confidence > 0.5:
+        if ma_signal == 'BUY':
+            return 'CLOSE_SHORT', -current_position
+        elif ma_signal == 'SELL':
+            return 'SELL', calculate_position(confidence)
+    
+    return None, 0
+
+# 3. 均值回归策略类似处理
+```
+
+##### 仓位管理示例
+```python
+def calculate_position(confidence):
+    base_position = 100
+    
+    if confidence > 0.7:
+        return base_position  # 高置信度，正常仓位
+    elif confidence > 0.5:
+        return int(base_position * 0.8)  # 中等置信度，减少仓位
+    else:
+        return int(base_position * 0.5)  # 低置信度，大幅减少仓位
 ```
 
 ---
+
+### 3. 策略组合与方向判断
+
+#### 突破策略方向化
+突破策略已重新设计为**方向判断器**，主要作用：
+
+1. **市场方向识别**：
+   - 检测价格突破布林带上下轨
+   - 判断市场方向（做多/做空/中性）
+   - 提供方向置信度
+
+2. **主策略指导**：
+   - 为趋势策略提供方向指导
+   - 为均值回归策略提供方向指导
+   - 避免逆势操作
+
+3. **仓位管理**：
+   - 根据方向置信度调整仓位
+   - 高置信度时正常仓位
+   - 低置信度时减少仓位
+
+#### 策略协同示例
+```python
+# 突破策略判断方向
+if breakout_direction == 'LONG' and confidence > 0.7:
+    # 高置信度做多方向
+    if trend_signal == 'BUY':
+        execute_buy(full_position)
+    elif trend_signal == 'SELL':
+        execute_close_long()  # 平多而不是做空
+elif breakout_direction == 'SHORT' and confidence > 0.7:
+    # 高置信度做空方向
+    if trend_signal == 'BUY':
+        execute_close_short()  # 平空而不是做多
+    elif trend_signal == 'SELL':
+        execute_sell(full_position)
+else:
+    # 中性方向，减少仓位
+    execute_with_reduced_position()
+```
 
 ## 系统架构
 
