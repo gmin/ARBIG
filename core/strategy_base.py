@@ -28,16 +28,8 @@ class StrategyBase(ABC):
         self.config = config
         self.active = False
         
-        # 注册事件处理函数
-        self._register_handlers()
-        
-    def _register_handlers(self):
-        """注册事件处理函数"""
-        self.event_engine.register(TICK_EVENT, self.on_tick)
-        self.event_engine.register(BAR_EVENT, self.on_bar)
-        self.event_engine.register(ORDER_EVENT, self.on_order)
-        self.event_engine.register(TRADE_EVENT, self.on_trade)
-        self.event_engine.register(ACCOUNT_EVENT, self.on_account)
+        # 注意：不再自动注册事件处理函数
+        # 事件分发由主控制器统一管理，避免多个策略同时处理相同事件
         
     def start(self):
         """启动策略"""

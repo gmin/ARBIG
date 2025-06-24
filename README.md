@@ -1,315 +1,51 @@
-# 黄金跨市场基差套利项目 (Hong Kong CNH Gold vs Shanghai CNY Gold Arbitrage)
+# ARBIG - 香港离岸人民币黄金与上海黄金交易所黄金跨市场基差套利系统
 
-## 1. 项目目标
+## 项目简介
 
-本项目旨在探索和实现香港离岸人民币黄金（例如，通过香港交易所交易的黄金合约，以CNH计价）与上海黄金交易所的黄金主力合约（例如，AU(T+D) 或相关期货合约，以CNY计价）之间的基差套利机会。
+ARBIG是一个基于vnpy框架的量化交易系统，专门用于香港离岸人民币黄金与上海黄金交易所黄金合约的跨市场基差套利。系统支持多种量化策略，包括基差套利、趋势跟踪、均值回归等。
 
-核心策略是利用同一标的（黄金）在不同市场、不同币种计价下产生的临时价格差异，通过同时进行买入低价市场黄金、卖出高价市场黄金的操作来获取无风险或低风险利润。
+## 系统特点
 
-## 2. 选定技术框架
+- **单策略运行模式**：一次只运行一个策略，避免策略间干扰
+- **多策略支持**：支持基差套利、趋势跟踪、均值回归等多种策略
+- **实时数据处理**：支持实时Tick数据和K线数据处理
+- **事件驱动架构**：基于事件引擎的松耦合架构设计
+- **配置化管理**：通过YAML配置文件灵活配置策略参数
 
-经过初步调研和比较，本项目选定 **`vnpy`** 作为核心的量化交易开发和执行框架。
+## 安装依赖
 
-选择 `vnpy` 的主要原因包括：
-*   **强大的多市场/多接口接入能力 (`Gateway` 机制)**：原生支持同时连接和管理来自不同交易所或经纪商的行情和交易通道，这对于跨市场套利至关重要。
-*   **成熟的策略开发环境 (`CtaStrategy` 引擎)**：提供了标准化的事件驱动策略模板，便于开发、测试和管理套利逻辑。
-*   **相对完善的生态系统**：拥有活跃的社区、丰富的文档资源以及多种可用的功能模块。
-*   **Python 主力语言**：便于快速开发和集成。
+### 系统依赖
 
-## 3. 系统架构设计
+```bash
+# 安装Python虚拟环境支持
+sudo apt-get install python3.10-venv
 
-### 3.1 事件驱动架构
-
-系统采用**事件驱动架构**，实现组件间的解耦和高效通信：
-
-```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   数据源适配器   │───▶│   事件引擎      │───▶│   策略模块      │
-│  (MT5/CTP)      │    │  (EventEngine)  │    │  (Strategies)   │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-                                │
-                                ▼
-                       ┌─────────────────┐
-                       │   主控制器      │
-                       │ (MainController)│
-                       └─────────────────┘
+# 安装TA-Lib依赖库
+wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz
+tar -xzf ta-lib-0.4.0-src.tar.gz
+cd ta-lib/
+./configure --prefix=/usr/local
+make
+sudo make install
+sudo ldconfig
 ```
 
-**核心特点：**
-- **单线程事件循环**：简化并发处理，便于调试和维护
-- **事件持久化**：支持事件回放和回测
-- **策略可插拔**：基于抽象基类，便于扩展新策略
-- **数据源统一**：支持多种数据源的无缝切换
+### Python依赖
 
-### 3.2 事件类型定义
+```bash
+# 创建虚拟环境
+python3.10 -m venv venv
+source venv/bin/activate
 
-系统定义了完整的事件类型体系：
-
-```python
-# 行情事件
-TICK_EVENT = "TICK_EVENT"           # Tick行情事件
-BAR_EVENT = "BAR_EVENT"             # K线事件
-
-# 交易事件
-ORDER_EVENT = "ORDER_EVENT"         # 订单事件
-TRADE_EVENT = "TRADE_EVENT"         # 成交事件
-ACCOUNT_EVENT = "ACCOUNT_EVENT"     # 账户事件
-
-# 策略事件
-SIGNAL_EVENT = "SIGNAL_EVENT"       # 策略信号事件
-SPREAD_EVENT = "SPREAD_EVENT"       # 基差事件
-
-# 系统事件
-LOG_EVENT = "LOG_EVENT"             # 日志事件
-ERROR_EVENT = "ERROR_EVENT"         # 错误事件
+# 安装依赖包
+pip install -r requirements.txt
 ```
 
-## 4. 代码结构
+## 配置说明
 
-```
-ARBIG/
-├── core/                          # 核心框架
-│   ├── event_engine.py           # 事件驱动引擎
-│   ├── constants.py              # 事件类型常量
-│   ├── strategy_base.py          # 策略基类
-│   ├── data.py                   # 数据管理器
-│   ├── strategy.py               # 套利策略逻辑
-│   ├── trader.py                 # 交易执行
-│   ├── risk.py                   # 风控模块
-│   └── storage.py                # 数据存储
-├── strategies/                    # 策略实现
-│   ├── spread_arbitrage.py       # 基差套利策略
-│   └── shfe_quant.py             # 上海市场量化策略
-├── data/                         # 数据适配器
-│   ├── mt5/                      # MT5数据源
-│   └── shfe/                     # 上期所数据源
-├── config.yaml                   # 系统配置文件
-├── main.py                       # 主控制器
-└── requirements.txt              # 项目依赖
-```
+### 配置文件结构
 
-## 5. 策略实现
-
-### 5.1 基差套利策略 (SpreadArbitrageStrategy)
-
-**策略逻辑：**
-- 实时监控香港和上海黄金价格
-- 计算基差：`基差 = 上海价格 - 香港价格`
-- 当基差超过阈值时生成套利信号
-- 支持双向套利：买上海卖香港 / 买香港卖上海
-
-**核心参数：**
-```yaml
-spread_threshold: 0.5      # 基差阈值
-max_position: 1000         # 最大持仓
-shfe_symbol: "AU9999"      # 上期所合约
-mt5_symbol: "XAUUSD"       # MT5合约
-```
-
-### 5.2 上海市场量化策略 (SHFEQuantStrategy)
-
-**策略类型：**
-1. **趋势跟踪策略**：基于移动平均线交叉
-2. **均值回归策略**：基于RSI指标
-3. **突破策略**：基于布林带
-
-**技术指标：**
-- 移动平均线（MA5/MA20）
-- RSI指标（14周期）
-- 布林带（20周期，2倍标准差）
-
-#### 5.2.1 趋势跟踪策略 (Trend Following)
-
-**策略原理：**
-趋势跟踪策略基于"趋势延续"的市场假设，当短期均线上穿长期均线时，认为上升趋势确立，反之则认为下降趋势确立。
-
-**信号生成逻辑：**
-```python
-# 计算移动平均线
-ma_short = np.mean(prices[-ma_short_period:])  # 短期均线
-ma_long = np.mean(prices[-ma_long_period:])    # 长期均线
-
-# 趋势信号
-if ma_short > ma_long and position <= 0:
-    return 'BUY'    # 金叉，买入信号
-elif ma_short < ma_long and position >= 0:
-    return 'SELL'   # 死叉，卖出信号
-```
-
-**参数配置：**
-```yaml
-strategy_type: "trend"
-ma_short: 5         # 短期均线周期
-ma_long: 20         # 长期均线周期
-max_position: 1000  # 最大持仓
-```
-
-**适用场景：**
-- 市场处于明显趋势阶段
-- 波动率相对较低
-- 适合中长期持仓
-
-**风险提示：**
-- 震荡市场中可能产生频繁假信号
-- 趋势转折时可能滞后
-- 需要合理的止损设置
-
-#### 5.2.2 均值回归策略 (Mean Reversion)
-
-**策略原理：**
-均值回归策略基于"价格偏离均值后会回归"的假设，当RSI指标显示超买或超卖时，预期价格会向均值回归。
-
-**信号生成逻辑：**
-```python
-# 计算RSI指标
-rsi = calculate_rsi(prices, rsi_period)
-
-# 均值回归信号
-if rsi < rsi_oversold and position <= 0:
-    return 'BUY'     # 超卖，买入信号
-elif rsi > rsi_overbought and position >= 0:
-    return 'SELL'    # 超买，卖出信号
-```
-
-**RSI计算公式：**
-```python
-def calculate_rsi(prices, period):
-    deltas = np.diff(prices)
-    gains = np.where(deltas > 0, deltas, 0)
-    losses = np.where(deltas < 0, -deltas, 0)
-    
-    avg_gain = np.mean(gains[-period:])
-    avg_loss = np.mean(losses[-period:])
-    
-    if avg_loss == 0:
-        return 100
-    
-    rs = avg_gain / avg_loss
-    rsi = 100 - (100 / (1 + rs))
-    return rsi
-```
-
-**参数配置：**
-```yaml
-strategy_type: "mean_reversion"
-rsi_period: 14           # RSI计算周期
-rsi_overbought: 70       # 超买阈值
-rsi_oversold: 30         # 超卖阈值
-max_position: 1000       # 最大持仓
-```
-
-**适用场景：**
-- 震荡市场环境
-- 价格在一定区间内波动
-- 适合短线交易
-
-**风险提示：**
-- 强趋势市场中可能过早平仓
-- 需要准确判断超买超卖阈值
-- 极端行情下可能失效
-
-#### 5.2.3 突破策略 (Breakout)
-
-**策略原理：**
-突破策略基于"价格突破关键阻力/支撑位后会延续方向"的假设，当价格突破布林带上轨或下轨时，预期会继续向突破方向运动。
-
-**信号生成逻辑：**
-```python
-# 计算布林带
-upper, lower = calculate_bollinger_bands(prices, period, std_multiplier)
-current_price = prices[-1]
-
-# 突破信号
-if current_price > upper and position <= 0:
-    return 'BUY'     # 突破上轨，买入信号
-elif current_price < lower and position >= 0:
-    return 'SELL'    # 突破下轨，卖出信号
-```
-
-**布林带计算公式：**
-```python
-def calculate_bollinger_bands(prices, period, std_multiplier):
-    sma = np.mean(prices[-period:])           # 简单移动平均
-    std = np.std(prices[-period:])            # 标准差
-    
-    upper = sma + (std_multiplier * std)      # 上轨
-    lower = sma - (std_multiplier * std)      # 下轨
-    
-    return upper, lower
-```
-
-**参数配置：**
-```yaml
-strategy_type: "breakout"
-bollinger_period: 20      # 布林带周期
-bollinger_std: 2          # 标准差倍数
-max_position: 1000        # 最大持仓
-```
-
-**适用场景：**
-- 市场即将突破关键价位
-- 波动率相对较高
-- 适合捕捉大行情
-
-**风险提示：**
-- 假突破可能导致亏损
-- 需要配合成交量确认
-- 突破后可能快速回撤
-
-#### 5.2.4 策略选择建议
-
-**根据市场环境选择：**
-
-1. **趋势市场** → 选择趋势跟踪策略
-   - 特征：价格持续向一个方向运动
-   - 优势：能捕捉大趋势
-   - 注意：设置合理的止损
-
-2. **震荡市场** → 选择均值回归策略
-   - 特征：价格在一定区间内波动
-   - 优势：能捕捉短期机会
-   - 注意：避免在趋势中过早平仓
-
-3. **突破市场** → 选择突破策略
-   - 特征：价格突破关键阻力/支撑
-   - 优势：能捕捉大行情
-   - 注意：确认突破的有效性
-
-**参数调优建议：**
-- 根据历史数据回测确定最优参数
-- 考虑交易成本和滑点
-- 定期评估策略表现并调整
-- 结合多个时间周期分析
-
-## 6. 数据持久化
-
-### 6.1 事件持久化
-
-系统实现了完整的事件持久化机制：
-
-```python
-# 自动持久化所有事件到JSONL文件
-event_engine = EventEngine(persist_path="events.jsonl")
-
-# 支持事件回放
-event_engine.replay("events.jsonl")
-```
-
-**持久化内容：**
-- 所有行情数据（Tick、K线）
-- 交易事件（订单、成交）
-- 策略信号
-- 系统日志
-
-**文件格式：**
-```json
-{"type": "TICK_EVENT", "data": {"symbol": "AU9999", "last_price": 456.7}}
-{"type": "SIGNAL_EVENT", "data": {"strategy_name": "spread_arbitrage", "data": {...}}}
-```
-
-### 6.2 配置管理
-
-统一的YAML配置文件管理：
+系统使用 `config.yaml` 作为主配置文件：
 
 ```yaml
 # 事件引擎配置
@@ -317,180 +53,307 @@ event_persist_path: "events.jsonl"
 
 # 数据源配置
 data:
-  shfe: {...}    # 上期所配置
-  mt5: {...}     # MT5配置
-
-# 策略配置
-strategies:
-  - name: "spread_arbitrage"
-    type: "spread_arbitrage"
-    config: {...}
-```
-
-## 7. 项目核心关注点
-
-### 7.1. 数据源 (Data Sources)
-
-*   **上海黄金市场**:
-    *   **行情数据**: 需要接入上海黄金交易所或上海期货交易所的实时黄金合约行情 (Tick级优先)。
-    *   **交易接口**: 需要通过支持程序化交易的期货公司账户接入交易，例如通过 `vnpy` 的 `CTP Gateway`。
-*   **香港黄金市场**:
-    *   **行情数据**: 需要接入香港相关交易所（如HKEX）的离岸人民币黄金合约（或其他适合的黄金标的）的实时行情。
-    *   **交易接口**: 需要通过支持程序化交易的香港经纪商账户接入交易。调研重点包括 `vnpy` 是否有现成的 `Gateway` (如 Interactive Brokers - `IB Gateway`) 或是否需要定制开发。
-*   **数据质量与同步**:
-    *   确保两地行情数据的低延迟和时间戳的准确性。
-    *   处理潜在的数据清洗和异常值问题。
-
-### 7.2. 套利策略 (Arbitrage Strategy Logic)
-
-*   **基差计算**:
-    *   `基差 = 香港黄金价格(本地货币) * 汇率(如果需要转换为同一货币比较) - 上海黄金价格(本地货币)`
-    *   简化版（若两地黄金价格已能直接比较或暂时忽略汇率波动）：`基差 = 香港黄金价格 - 上海黄金价格`
-    *   注意合约单位、报价单位的统一。
-*   **交易信号生成**:
-    *   设定合理的开仓基差阈值（考虑交易成本、滑点、最小期望利润）。
-    *   设定合理的平仓基差阈值（基差回归或反向扩大到一定程度）。
-*   **仓位管理**:
-    *   确定单次套利操作的合约手数。
-    *   设置总套利组合的持仓上限。
-*   **订单管理**:
-    *   确保套利两腿订单的**近乎同时**发出。
-    *   处理部分成交和未成交订单的逻辑。
-    *   选择合适的订单类型（限价单、市价单、FOK、FAK等）以平衡成交率和滑点。
-
-### 7.3. 执行速度 (Execution Speed)
-
-*   **低延迟行情**: 选用速度快的行情接口，优化网络连接。
-*   **快速计算**: 策略逻辑计算要高效，避免成为瓶颈。
-*   **快速下单**: 交易指令的生成和发送要迅速，`Gateway` 的执行效率是关键。
-*   **系统优化**: 减少 `vnpy` 内部以及自定义代码的潜在延迟。
-
-### 7.4. 风险控制 (Risk Control)
-
-*   **市场风险/价差风险**:
-    *   基差可能不会按预期收敛，甚至反向扩大。
-    *   设定止损条件（例如，最大基差亏损容忍度、持仓时间限制）。
-*   **单边腿风险 (Legging Risk)**:
-    *   套利一腿成交，另一腿未成交或以不利价格成交。
-    *   需要有机制快速处理未平衡的敞口（如立即尝试补单或对已成交腿进行平仓）。
-*   **滑点风险**:
-    *   实际成交价格与下单时的价格存在不利偏差。
-    *   通过合理的下单方式和流动性判断来控制。
-*   **流动性风险**:
-    *   某一市场或合约流动性不足，导致无法顺利建仓或平仓。
-*   **交易成本**:
-    *   精确计算双边手续费、印花税（如有）、资金成本等，确保套利空间能覆盖这些成本。
-*   **资金管理**:
-    *   设定整体策略的最大资金占用。
-    *   最大可承受亏损。
-*   **操作和系统风险**:
-    *   程序BUG、网络中断、`Gateway` 故障等。
-    *   需要有监控和应急预案。
-
-## 8. 快速开始
-
-### 8.1 环境安装
-
-1. **创建虚拟环境**
-```bash
-python3 -m venv venv
-source venv/bin/activate
-```
-
-2. **安装依赖**
-```bash
-pip install -r requirements.txt
-```
-
-3. **TA-Lib安装**（如需要）
-```bash
-# 安装C库
-wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.6.4-src.tar.gz
-tar -xzf ta-lib-0.6.4-src.tar.gz
-cd ta-lib-0.6.4/
-./configure --prefix=/usr
-make
-make install
-ldconfig
-
-# 安装Python包
-pip install TA-Lib
-```
-
-### 8.2 配置系统
-
-1. **编辑配置文件**
-```bash
-vim config.yaml
-```
-
-2. **配置数据源**
-```yaml
-data:
   shfe:
     gateway: "CTP"
-    host: "your_host"
+    host: "180.168.146.187"
     port: 10101
     user: "your_username"
     password: "your_password"
+    broker_id: "9999"
     
   mt5:
     server: "MetaQuotes-Demo"
     login: 12345
     password: "your_password"
-```
+    symbol: "XAUUSD"
 
-3. **配置策略**
-```yaml
+# 策略配置
 strategies:
   - name: "spread_arbitrage"
     type: "spread_arbitrage"
     config:
       spread_threshold: 0.5
       max_position: 1000
+      shfe_symbol: "AU9999"
+      mt5_symbol: "XAUUSD"
+      
+  - name: "shfe_quant"
+    type: "shfe_quant"
+    config:
+      strategy_type: "trend"
+      symbol: "AU9999"
+      max_position: 1000
+      ma_short: 5
+      ma_long: 20
+      rsi_period: 14
+      rsi_overbought: 70
+      rsi_oversold: 30
 ```
 
-### 8.3 运行系统
+## 使用方法
+
+### 1. 列出可用策略
+
+```bash
+python main.py --list
+```
+
+### 2. 指定策略运行
+
+```bash
+# 运行基差套利策略
+python main.py --strategy spread_arbitrage
+
+# 运行上海市场量化策略
+python main.py --strategy shfe_quant
+```
+
+### 3. 交互式选择策略
 
 ```bash
 python main.py
 ```
 
-## 9. 开发计划
+系统会显示策略选择菜单，您可以选择要运行的策略。
 
-### 第一阶段：框架搭建 ✅
-- [x] 事件驱动引擎实现
-- [x] 策略基类设计
-- [x] 数据管理器集成
-- [x] 主控制器实现
+### 4. 使用自定义配置文件
 
-### 第二阶段：策略实现 ✅
-- [x] 基差套利策略
-- [x] 上海市场量化策略
-- [x] 事件持久化机制
+```bash
+python main.py --config my_config.yaml --strategy spread_arbitrage
+```
 
-### 第三阶段：数据源对接
-- [ ] MT5数据源实现
-- [ ] CTP数据源实现
-- [ ] 数据质量验证
+## 策略说明
 
-### 第四阶段：交易执行
-- [ ] 订单管理系统
-- [ ] 风控模块集成
-- [ ] 实盘交易接口
+### 基差套利策略 (spread_arbitrage)
 
-### 第五阶段：系统优化
-- [ ] 性能优化
-- [ ] 监控告警
-- [ ] 回测系统
+监控香港和上海黄金价格，在基差达到阈值时进行套利交易。
 
-## 10. 注意事项
+**参数说明：**
+- `spread_threshold`: 基差阈值，触发套利的价差
+- `max_position`: 最大持仓量
+- `shfe_symbol`: 上期所合约代码
+- `mt5_symbol`: MT5合约代码
 
-1. **风险提示**：量化交易存在风险，请谨慎使用
-2. **实盘测试**：建议先进行充分的模拟测试
-3. **参数调优**：策略参数需要根据市场情况调整
-4. **监控维护**：系统运行需要持续监控和维护
+### 上海市场量化策略 (shfe_quant)
+
+实现上期所黄金期货的量化交易策略，支持多种策略类型。
+
+**策略类型：**
+- `trend`: 趋势跟踪策略
+- `mean_reversion`: 均值回归策略
+- `breakout`: 突破策略
+
+**参数说明：**
+- `strategy_type`: 策略类型
+- `symbol`: 交易合约
+- `max_position`: 最大持仓
+- `ma_short/ma_long`: 短期/长期均线周期
+- `rsi_period`: RSI周期
+- `rsi_overbought/rsi_oversold`: RSI超买/超卖阈值
+
+## 策略详细说明
+
+### 1. 基差套利策略（spread_arbitrage）
+
+#### 策略原理
+基差套利策略利用同一标的（黄金）在不同市场（如香港离岸人民币黄金与上海黄金交易所黄金）之间的价格差异。当基差（两地价格之差）达到一定阈值时，系统自动进行买入低价市场、卖出高价市场的操作，期望基差回归时获利。
+
+#### 适用场景
+- 两地黄金市场流动性较好，价差波动明显
+- 具备同时接入两地行情与交易通道的条件
+- 适合套利型、低风险偏好的量化交易者
+
+#### 信号生成机制
+- 实时监控两地黄金价格（如shfe_price、mt5_price）
+- 计算基差：`spread = shfe_price - mt5_price`
+- 当|spread|大于`spread_threshold`时，产生套利信号：
+  - spread > threshold：买入MT5黄金，卖出SHFE黄金
+  - spread < -threshold：买入SHFE黄金，卖出MT5黄金
+- 信号只在基差首次突破阈值时触发，避免频繁交易
+
+#### 参数说明
+| 参数名           | 说明                 | 典型取值 | 调优建议           |
+|------------------|----------------------|----------|--------------------|
+| spread_threshold | 触发套利的基差阈值   | 0.5      | 结合手续费、滑点设定|
+| max_position     | 最大持仓量           | 1000     | 视资金规模调整     |
+| shfe_symbol      | 上期所合约代码       | AU9999   | 需与行情一致       |
+| mt5_symbol       | MT5合约代码          | XAUUSD   | 需与行情一致       |
+
+#### 风险提示
+- **基差风险**：基差可能不会回归，甚至进一步扩大
+- **腿差风险**：一腿成交，另一腿未成交或滑点大
+- **流动性风险**：某一市场流动性不足，导致无法及时平仓
+- **汇率风险**：如涉及不同币种，需关注汇率波动
+- **技术风险**：行情延迟、下单失败、系统故障等
+
+#### 示例流程（伪代码）
+```python
+while True:
+    shfe_price = get_shfe_price()
+    mt5_price = get_mt5_price()
+    spread = shfe_price - mt5_price
+    if spread > spread_threshold:
+        send_signal('ARBITRAGE', direction='shfe_sell_mt5_buy')
+    elif spread < -spread_threshold:
+        send_signal('ARBITRAGE', direction='shfe_buy_mt5_sell')
+    sleep(1)
+```
 
 ---
 
-本文档将随着项目的进展持续更新。 
+### 2. 上海量化策略（shfe_quant）
+
+#### 策略原理
+shfe_quant策略针对上海黄金市场，支持多种量化子策略：
+- **趋势跟踪（trend）**：利用均线交叉判断趋势，顺势操作
+- **均值回归（mean_reversion）**：利用RSI等指标判断超买超卖，反向操作
+- **突破（breakout）**：利用布林带等指标判断价格突破，追随突破方向
+
+#### 适用场景
+- **趋势跟踪**：市场有明显单边趋势时
+- **均值回归**：市场震荡、价格围绕均值波动时
+- **突破策略**：市场即将发生大幅波动、关键价位被突破时
+
+#### 信号生成机制
+- **趋势跟踪**：
+  - 计算短期均线（如MA5）和长期均线（如MA20）
+  - MA短上穿MA长且当前无多头持仓，发出买入信号
+  - MA短下穿MA长且当前无空头持仓，发出卖出信号
+- **均值回归**：
+  - 计算RSI指标
+  - RSI < oversold 且当前无多头持仓，发出买入信号
+  - RSI > overbought 且当前无空头持仓，发出卖出信号
+- **突破策略**：
+  - 计算布林带上下轨
+  - 价格突破上轨且当前无多头持仓，发出买入信号
+  - 价格跌破下轨且当前无空头持仓，发出卖出信号
+
+#### 参数说明
+| 参数名           | 说明                 | 典型取值 | 调优建议           |
+|------------------|----------------------|----------|--------------------|
+| strategy_type    | 策略类型             | trend/mean_reversion/breakout | 根据市场选择 |
+| symbol           | 交易合约代码         | AU9999   | 与行情一致         |
+| max_position     | 最大持仓量           | 1000     | 视资金规模调整     |
+| ma_short         | 短期均线周期         | 5        | 趋势策略用         |
+| ma_long          | 长期均线周期         | 20       | 趋势策略用         |
+| rsi_period       | RSI周期              | 14       | 均值回归用         |
+| rsi_overbought   | RSI超买阈值          | 70       | 均值回归用         |
+| rsi_oversold     | RSI超卖阈值          | 30       | 均值回归用         |
+
+#### 风险提示
+- **趋势策略**：震荡市易频繁止损，趋势反转时可能滞后
+- **均值回归**：强趋势市易逆势亏损，阈值设置不当易频繁交易
+- **突破策略**：假突破易导致亏损，需结合成交量等确认
+- **参数过拟合**：历史最优参数未必适合未来行情
+- **技术风险**：行情延迟、数据异常、系统故障等
+
+#### 示例流程（伪代码）
+- **趋势跟踪**：
+```python
+if len(price_history) >= ma_long:
+    ma_s = mean(price_history[-ma_short:])
+    ma_l = mean(price_history[-ma_long:])
+    if ma_s > ma_l and position <= 0:
+        send_signal('BUY')
+    elif ma_s < ma_l and position >= 0:
+        send_signal('SELL')
+```
+- **均值回归**：
+```python
+if len(price_history) >= rsi_period:
+    rsi = calc_rsi(price_history, rsi_period)
+    if rsi < rsi_oversold and position <= 0:
+        send_signal('BUY')
+    elif rsi > rsi_overbought and position >= 0:
+        send_signal('SELL')
+```
+- **突破策略**：
+```python
+if len(price_history) >= 20:
+    upper, lower = calc_bollinger(price_history)
+    price = price_history[-1]
+    if price > upper and position <= 0:
+        send_signal('BUY')
+    elif price < lower and position >= 0:
+        send_signal('SELL')
+```
+
+---
+
+## 系统架构
+
+```
+ARBIG/
+├── main.py              # 主控制器
+├── config.yaml          # 配置文件
+├── core/                # 核心模块
+│   ├── event_engine.py  # 事件引擎
+│   ├── data.py          # 数据管理
+│   ├── strategy_base.py # 策略基类
+│   └── constants.py     # 常量定义
+├── strategies/          # 策略模块
+│   ├── spread_arbitrage.py  # 基差套利策略
+│   └── shfe_quant.py        # 上海市场量化策略
+├── config/              # 配置模块
+├── utils/               # 工具模块
+└── tests/               # 测试模块
+```
+
+## 事件系统
+
+系统采用事件驱动架构，主要事件类型包括：
+
+- `TICK_EVENT`: Tick数据事件
+- `BAR_EVENT`: K线数据事件
+- `SIGNAL_EVENT`: 策略信号事件
+- `ORDER_EVENT`: 订单事件
+- `TRADE_EVENT`: 成交事件
+- `ACCOUNT_EVENT`: 账户事件
+
+## 单策略运行模式
+
+为了避免多个策略同时运行造成的干扰，系统采用单策略运行模式：
+
+1. **策略隔离**：一次只运行一个策略
+2. **事件分发**：主控制器统一管理事件分发
+3. **资源独占**：当前策略独占数据源和计算资源
+4. **状态管理**：清晰的策略启动/停止状态管理
+
+## 开发指南
+
+### 添加新策略
+
+1. 继承 `StrategyBase` 类
+2. 实现所有抽象方法
+3. 在 `main.py` 中添加策略创建逻辑
+4. 在配置文件中添加策略配置
+
+### 示例
+
+```python
+from core.strategy_base import StrategyBase
+
+class MyStrategy(StrategyBase):
+    def on_start(self):
+        print("策略启动")
+        
+    def on_stop(self):
+        print("策略停止")
+        
+    def on_tick(self, event):
+        # 处理Tick数据
+        pass
+        
+    # 实现其他抽象方法...
+```
+
+## 注意事项
+
+1. **数据源配置**：请根据实际情况配置数据源连接参数
+2. **风控设置**：建议在生产环境中启用风控模块
+3. **日志监控**：定期检查系统日志，确保策略正常运行
+4. **策略测试**：新策略建议先在模拟环境中充分测试
+
+## 许可证
+
+本项目采用 MIT 许可证。 

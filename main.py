@@ -5,7 +5,8 @@
 
 import time
 import yaml
-from typing import Dict, Any
+import sys
+from typing import Dict, Any, Optional
 from core.event_engine import EventEngine
 from core.data import DataManager
 from core.constants import *
@@ -18,14 +19,16 @@ class MainController:
     负责启动和管理整个交易系统
     """
     
-    def __init__(self, config_path: str = "config.yaml"):
+    def __init__(self, config_path: str = "config.yaml", strategy_name: str = None):
         """
         初始化主控制器
         
         Args:
             config_path: 配置文件路径
+            strategy_name: 指定要运行的策略名称，如果为None则提供选择菜单
         """
         self.config = self._load_config(config_path)
+        self.strategy_name = strategy_name
         
         # 初始化事件引擎
         persist_path = self.config.get('event_persist_path', 'events.jsonl')
@@ -34,8 +37,8 @@ class MainController:
         # 初始化数据管理器
         self.data_manager = DataManager(self.config.get('data', {}))
         
-        # 策略列表
-        self.strategies = []
+        # 当前运行的策略
+        self.current_strategy: Optional[StrategyBase] = None
         
         # 注册事件处理函数
         self._register_handlers()
@@ -87,12 +90,15 @@ class MainController:
         
     def _on_tick(self, event):
         """处理Tick事件"""
-        # 这里可以添加数据验证、风控等逻辑
-        pass
+        # 只转发给当前运行的策略
+        if self.current_strategy and self.current_strategy.active:
+            self.current_strategy.on_tick(event)
         
     def _on_bar(self, event):
         """处理K线事件"""
-        pass
+        # 只转发给当前运行的策略
+        if self.current_strategy and self.current_strategy.active:
+            self.current_strategy.on_bar(event)
         
     def _on_signal(self, event):
         """处理策略信号"""
@@ -115,34 +121,96 @@ class MainController:
         error_data = event.data
         print(f"[ERROR] {error_data}")
         
-    def load_strategies(self):
-        """加载策略"""
+    def _show_strategy_menu(self) -> str:
+        """显示策略选择菜单"""
         strategies_config = self.config.get('strategies', [])
         
-        for strategy_config in strategies_config:
+        if not strategies_config:
+            print("配置文件中没有找到可用的策略")
+            return None
+            
+        print("\n=== 可用策略列表 ===")
+        for i, strategy_config in enumerate(strategies_config, 1):
             strategy_name = strategy_config.get('name')
             strategy_type = strategy_config.get('type')
-            config = strategy_config.get('config', {})
+            print(f"{i}. {strategy_name} ({strategy_type})")
             
+        print("0. 退出")
+        
+        while True:
+            try:
+                choice = input("\n请选择要运行的策略 (输入数字): ").strip()
+                if choice == '0':
+                    return None
+                    
+                choice_num = int(choice)
+                if 1 <= choice_num <= len(strategies_config):
+                    selected_strategy = strategies_config[choice_num - 1]
+                    return selected_strategy.get('name')
+                else:
+                    print("无效的选择，请重新输入")
+            except ValueError:
+                print("请输入有效的数字")
+            except KeyboardInterrupt:
+                print("\n用户取消选择")
+                return None
+                
+    def _create_strategy(self, strategy_config: Dict[str, Any]) -> Optional[StrategyBase]:
+        """创建策略实例"""
+        strategy_name = strategy_config.get('name')
+        strategy_type = strategy_config.get('type')
+        config = strategy_config.get('config', {})
+        
+        try:
             if strategy_type == 'spread_arbitrage':
-                strategy = SpreadArbitrageStrategy(
+                return SpreadArbitrageStrategy(
                     name=strategy_name,
                     event_engine=self.event_engine,
                     config=config
                 )
             elif strategy_type == 'shfe_quant':
-                strategy = SHFEQuantStrategy(
+                return SHFEQuantStrategy(
                     name=strategy_name,
                     event_engine=self.event_engine,
                     config=config
                 )
             else:
                 print(f"未知的策略类型: {strategy_type}")
-                continue
-                
-            self.strategies.append(strategy)
-            print(f"加载策略: {strategy_name} ({strategy_type})")
+                return None
+        except Exception as e:
+            print(f"创建策略 {strategy_name} 失败: {e}")
+            return None
             
+    def load_strategy(self, strategy_name: str = None) -> bool:
+        """加载指定策略"""
+        strategies_config = self.config.get('strategies', [])
+        
+        # 如果没有指定策略名称，显示选择菜单
+        if not strategy_name:
+            strategy_name = self._show_strategy_menu()
+            if not strategy_name:
+                return False
+                
+        # 查找指定的策略配置
+        target_strategy_config = None
+        for strategy_config in strategies_config:
+            if strategy_config.get('name') == strategy_name:
+                target_strategy_config = strategy_config
+                break
+                
+        if not target_strategy_config:
+            print(f"未找到策略: {strategy_name}")
+            return False
+            
+        # 创建策略实例
+        strategy = self._create_strategy(target_strategy_config)
+        if not strategy:
+            return False
+            
+        self.current_strategy = strategy
+        print(f"成功加载策略: {strategy_name}")
+        return True
+        
     def start(self):
         """启动系统"""
         print("启动交易系统...")
@@ -159,11 +227,14 @@ class MainController:
             return False
             
         # 加载策略
-        self.load_strategies()
-        
+        if not self.load_strategy(self.strategy_name):
+            print("策略加载失败")
+            return False
+            
         # 启动策略
-        for strategy in self.strategies:
-            strategy.start()
+        if self.current_strategy:
+            self.current_strategy.start()
+            print(f"策略 {self.current_strategy.name} 已启动")
             
         print("交易系统启动完成")
         return True
@@ -172,9 +243,10 @@ class MainController:
         """停止系统"""
         print("停止交易系统...")
         
-        # 停止策略
-        for strategy in self.strategies:
-            strategy.stop()
+        # 停止当前策略
+        if self.current_strategy:
+            self.current_strategy.stop()
+            print(f"策略 {self.current_strategy.name} 已停止")
             
         # 断开数据源
         self.data_manager.disconnect()
@@ -188,7 +260,8 @@ class MainController:
         """运行系统"""
         try:
             if self.start():
-                print("系统运行中，按 Ctrl+C 停止...")
+                print(f"系统运行中，当前策略: {self.current_strategy.name if self.current_strategy else '无'}")
+                print("按 Ctrl+C 停止...")
                 while True:
                     time.sleep(1)
         except KeyboardInterrupt:
@@ -196,7 +269,37 @@ class MainController:
         finally:
             self.stop()
 
-if __name__ == "__main__":
+def main():
+    """主函数"""
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='ARBIG 交易系统')
+    parser.add_argument('--config', '-c', default='config.yaml', help='配置文件路径')
+    parser.add_argument('--strategy', '-s', help='指定要运行的策略名称')
+    parser.add_argument('--list', '-l', action='store_true', help='列出所有可用策略')
+    
+    args = parser.parse_args()
+    
+    # 如果只是列出策略
+    if args.list:
+        try:
+            with open(args.config, 'r', encoding='utf-8') as f:
+                config = yaml.safe_load(f)
+            
+            strategies = config.get('strategies', [])
+            if strategies:
+                print("可用策略列表:")
+                for strategy in strategies:
+                    print(f"  - {strategy.get('name')} ({strategy.get('type')})")
+            else:
+                print("配置文件中没有找到策略")
+        except Exception as e:
+            print(f"读取配置文件失败: {e}")
+        return
+    
     # 创建并运行主控制器
-    controller = MainController()
+    controller = MainController(config_path=args.config, strategy_name=args.strategy)
     controller.run()
+
+if __name__ == "__main__":
+    main()
