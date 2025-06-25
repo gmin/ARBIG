@@ -5,4 +5,24 @@ __pycache__/
  
 # TA-Lib source code
 ta-lib-0.6.4/
-ta-lib-0.6.4-src.tar.gz 
+ta-lib-0.6.4-src.tar.gz
+
+# Large files and installers
+Anaconda3-*.sh
+*.whl
+*.tar.gz
+*.zip
+
+# Logs
+logs/
+*.log
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db 
