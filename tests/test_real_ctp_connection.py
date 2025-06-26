@@ -30,8 +30,8 @@ def test_real_ctp_connection():
         print("CTP仿真配置信息:")
         print(f"  用户名: {config.config.get('用户名')}")
         print(f"  经纪商代码: {config.config.get('BROKEID')}")
-        print(f"  交易服务器: {config.config.get('交易服务器')}")
-        print(f"  行情服务器: {config.config.get('行情服务器')}")
+        print(f"  交易服务器: {config.config.get('td_server')}")
+        print(f"  行情服务器: {config.config.get('md_server')}")
         print(f"  APPID: {config.config.get('APPID')}")
         print()
         

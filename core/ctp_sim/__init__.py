@@ -4,7 +4,6 @@ CTP仿真环境模块
 """
 
 from .gateway import CtpSimGateway
-from .direct_gateway import DirectCtpSimGateway
 from .config import CtpSimConfig
 
-__all__ = ['CtpSimGateway', 'DirectCtpSimGateway', 'CtpSimConfig'] 
+__all__ = ['CtpSimGateway', 'CtpSimConfig'] 

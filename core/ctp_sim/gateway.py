@@ -21,11 +21,13 @@ if lib_path not in sys.path:
 
 try:
     from vnpy_ctp import CtpGateway
+    from vnpy.event import EventEngine
 except ImportError:
     print("警告: 无法导入vnpy_ctp，请确保已正确安装CTP仿真库")
     CtpGateway = None
+    EventEngine = None
 
-from vnpy.trader.object import TickData, OrderData, TradeData, PositionData
+from vnpy.trader.object import TickData, OrderData, TradeData, PositionData, SubscribeRequest
 from vnpy.trader.constant import Exchange, Direction, Offset, OrderType
 
 from utils.logger import get_logger
@@ -48,6 +50,7 @@ class CtpSimGateway:
         """
         self.config = config or CtpSimConfig()
         self.gateway: Optional[CtpGateway] = None
+        self.event_engine: Optional[EventEngine] = None
         self.connected = False
         self.trading_connected = False
         self.market_connected = False
@@ -79,16 +82,32 @@ class CtpSimGateway:
             bool: 连接是否成功
         """
         try:
-            if not CtpGateway:
-                logger.error("CTP Gateway未正确加载")
+            if not CtpGateway or not EventEngine:
+                logger.error("CTP Gateway或EventEngine未正确加载")
                 return False
+                
+            # 创建事件引擎
+            self.event_engine = EventEngine()
+            self.event_engine.start()
                 
             # 获取配置
             trading_config = self.config.get_trading_config()
             market_config = self.config.get_market_config()
             
+            # 创建完整的配置（包含交易和行情信息）
+            full_config = {
+                "用户名": trading_config.get("用户名"),
+                "密码": trading_config.get("密码"),
+                "经纪商代码": trading_config.get("经纪商代码"),
+                "交易服务器": trading_config.get("交易服务器"),
+                "行情服务器": market_config.get("行情服务器"),
+                "产品名称": trading_config.get("产品名称"),
+                "授权编码": trading_config.get("授权编码")
+            }
+            print("[DEBUG] full_config:", full_config)
+            
             # 创建CTP Gateway
-            self.gateway = CtpGateway(trading_config)
+            self.gateway = CtpGateway(self.event_engine, "CTP_SIM")
             
             # 设置回调函数
             self.gateway.on_tick = self._on_tick
@@ -96,9 +115,9 @@ class CtpSimGateway:
             self.gateway.on_trade = self._on_trade
             self.gateway.on_position = self._on_position
             
-            # 连接交易服务器
+            # 连接CTP服务器（同时连接交易和行情）
             logger.info("正在连接CTP仿真交易服务器...")
-            self.gateway.connect(trading_config)
+            self.gateway.connect(full_config)
             
             # 等待连接完成
             for _ in range(15):  # 最多等待15秒
@@ -112,10 +131,6 @@ class CtpSimGateway:
                 logger.error("CTP仿真交易服务器连接超时")
                 return False
                 
-            # 连接行情服务器
-            logger.info("正在连接CTP仿真行情服务器...")
-            self.gateway.md_api.connect(market_config)
-            
             # 等待行情连接完成
             for _ in range(10):  # 最多等待10秒
                 if self.gateway.md_api.connect_status:
@@ -155,7 +170,12 @@ class CtpSimGateway:
                 
             # 订阅合约
             for symbol in symbols:
-                self.gateway.subscribe([symbol])
+                # 创建 SubscribeRequest 对象
+                req = SubscribeRequest(
+                    symbol=symbol,
+                    exchange=Exchange.SHFE
+                )
+                self.gateway.subscribe(req)
                 logger.info(f"订阅合约 {symbol} 成功")
                 
             return True
@@ -264,10 +284,14 @@ class CtpSimGateway:
         try:
             if self.gateway:
                 self.gateway.close()
-                self.connected = False
-                self.trading_connected = False
-                self.market_connected = False
-                logger.info("CTP仿真环境已断开")
+                
+            if self.event_engine:
+                self.event_engine.stop()
+                
+            self.connected = False
+            self.trading_connected = False
+            self.market_connected = False
+            logger.info("CTP仿真环境已断开")
                 
         except Exception as e:
             logger.error(f"断开CTP仿真环境失败: {str(e)}")
@@ -277,6 +301,7 @@ class CtpSimGateway:
         Tick数据回调
         """
         try:
+            logger.info(f"收到Tick数据: {tick.symbol} 最新价: {tick.last_price}")
             self.ticks[tick.symbol] = tick
             if self.on_tick:
                 self.on_tick(tick)

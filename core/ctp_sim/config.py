@@ -54,10 +54,9 @@ class CtpSimConfig:
             "用户名": self.config.get("用户名"),
             "密码": self.config.get("密码"),
             "经纪商代码": self.config.get("BROKEID"),
-            "交易服务器": self.config.get("交易服务器"),
+            "交易服务器": self.config.get("td_server"),
             "产品名称": self.config.get("APPID"),
-            "授权编码": self.config.get("AuthCode"),
-            "产品信息": self.config.get("APPID")
+            "授权编码": self.config.get("AuthCode")
         }
         
     def get_market_config(self) -> Dict[str, Any]:
@@ -71,10 +70,9 @@ class CtpSimConfig:
             "用户名": self.config.get("用户名"),
             "密码": self.config.get("密码"),
             "经纪商代码": self.config.get("BROKEID"),
-            "行情服务器": self.config.get("行情服务器"),
+            "行情服务器": self.config.get("md_server"),
             "产品名称": self.config.get("APPID"),
-            "授权编码": self.config.get("AuthCode"),
-            "产品信息": self.config.get("APPID")
+            "授权编码": self.config.get("AuthCode")
         }
         
     def get_server_info(self) -> Dict[str, str]:
@@ -84,8 +82,8 @@ class CtpSimConfig:
         Returns:
             Dict: 服务器信息字典
         """
-        trading_server = self.config.get("交易服务器", "")
-        market_server = self.config.get("行情服务器", "")
+        trading_server = self.config.get("td_server", "")
+        market_server = self.config.get("md_server", "")
         
         trading_host, trading_port = trading_server.split(":") if ":" in trading_server else ("", "")
         market_host, market_port = market_server.split(":") if ":" in market_server else ("", "")
