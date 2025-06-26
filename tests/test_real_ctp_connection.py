@@ -12,7 +12,7 @@ from datetime import datetime
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
 
-from core.ctp_sim import CtpSimGateway, CtpSimConfig
+from core.ctp import CtpWrapper, CtpConfig
 from vnpy.trader.constant import Direction, Offset, OrderType
 
 def test_real_ctp_connection():
@@ -24,7 +24,7 @@ def test_real_ctp_connection():
     
     try:
         # 创建配置对象
-        config = CtpSimConfig("config/ctp_sim.json")
+        config = CtpConfig("config/ctp.json")
         
         # 显示配置信息
         print("CTP仿真配置信息:")
@@ -36,7 +36,7 @@ def test_real_ctp_connection():
         print()
         
         # 创建网关
-        gateway = CtpSimGateway(config)
+        gateway = CtpWrapper(config)
         
         # 连接CTP仿真环境
         print("正在连接CTP仿真环境...")
@@ -92,7 +92,7 @@ def test_config_loading():
     print("=" * 30)
     
     try:
-        config = CtpSimConfig("config/ctp_sim.json")
+        config = CtpConfig("config/ctp.json")
         
         print("✓ 配置文件加载成功")
         print(f"  配置内容: {config.config}")

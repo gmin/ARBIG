@@ -1,45 +1,45 @@
-# CTP仿真环境配置指南
+# CTP环境配置指南
 
 ## 概述
 
-本文档说明如何在ARBIG项目中配置和使用CTP仿真交易环境。
+本文档说明如何在ARBIG项目中配置和使用CTP环境。
 
 ## 文件结构
 
 ```
 ARBIG/
 ├── libs/
-│   └── ctp_sim/
-│       ├── thosttraderapi_se.so    # CTP仿真交易API库
-│       └── thostmduserapi_se.so    # CTP仿真行情API库
+│   └── ctp/
+│       ├── thosttraderapi_se.so    # CTP交易API库
+│       └── thostmduserapi_se.so    # CTP行情API库
 ├── config/
-│   └── ctp_sim.json               # CTP仿真环境配置文件
+│   └── ctp.json                   # CTP环境配置文件
 ├── core/
-│   └── ctp_sim/
+│   └── ctp/
 │       ├── __init__.py
 │       ├── config.py              # 配置管理类
-│       └── gateway.py             # CTP仿真网关
-└── test_ctp_sim.py               # 测试脚本
+│       └── gateway.py             # CTP网关
+└── test_ctp.py                   # 测试脚本
 ```
 
 ## 配置步骤
 
 ### 1. 放置API库文件
 
-将CTP仿真API库文件放到正确位置：
+将CTP API库文件放到正确位置：
 
 ```bash
 # 创建目录
-mkdir -p libs/ctp_sim
+mkdir -p libs/ctp
 
 # 将API库文件复制到目录中
-cp thosttraderapi_se.so libs/ctp_sim/
-cp thostmduserapi_se.so libs/ctp_sim/
+cp thosttraderapi_se.so libs/ctp/
+cp thostmduserapi_se.so libs/ctp/
 ```
 
 ### 2. 配置连接参数
 
-编辑 `config/ctp_sim.json` 文件，设置正确的连接参数：
+编辑 `config/ctp.json` 文件，设置正确的连接参数：
 
 ```json
 {
@@ -59,7 +59,7 @@ cp thostmduserapi_se.so libs/ctp_sim/
 运行测试脚本验证配置是否正确：
 
 ```bash
-python test_ctp_sim.py
+python test_ctp.py
 ```
 
 ## 使用方法
@@ -67,15 +67,15 @@ python test_ctp_sim.py
 ### 基本使用
 
 ```python
-from core.ctp_sim import CtpSimGateway, CtpSimConfig
+from core.ctp import CtpGateway, CtpConfig
 
 # 创建配置对象
-config = CtpSimConfig()
+config = CtpConfig()
 
 # 创建网关
-gateway = CtpSimGateway(config)
+gateway = CtpGateway(config)
 
-# 连接仿真环境
+# 连接CTP环境
 if gateway.connect():
     print("连接成功")
     
@@ -103,17 +103,17 @@ if gateway.connect():
 ### 在策略中使用
 
 ```python
-from core.ctp_sim import CtpSimGateway
+from core.ctp import CtpGateway
 from core.strategy_base import StrategyBase
 
 class MyStrategy(StrategyBase):
     def __init__(self):
         super().__init__()
-        self.ctp_gateway = CtpSimGateway()
+        self.ctp_gateway = CtpGateway()
         
     def on_init(self):
         """策略初始化"""
-        # 连接CTP仿真环境
+        # 连接CTP环境
         if self.ctp_gateway.connect():
             # 订阅合约
             self.ctp_gateway.subscribe(["AU2406"])
@@ -140,25 +140,25 @@ class MyStrategy(StrategyBase):
 确保API库文件有执行权限：
 
 ```bash
-chmod +x libs/ctp_sim/*.so
+chmod +x libs/ctp/*.so
 ```
 
 ### 2. 网络连接
 
-确保服务器能够访问CTP仿真服务器：
+确保服务器能够访问CTP服务器：
 - 交易服务器：180.168.146.187:10101
 - 行情服务器：180.168.146.187:10102
 
 ### 3. 账户信息
 
-使用正确的仿真账户信息：
+使用正确的账户信息：
 - 用户名：242407
 - 密码：1234%^&*QWE
 - 经纪商代码：9999
 
 ### 4. 交易时间
 
-CTP仿真环境的交易时间：
+CTP环境的交易时间：
 - 上午：09:00-11:30
 - 下午：13:30-15:00
 - 夜盘：21:00-02:30（次日）
@@ -185,10 +185,10 @@ CTP仿真环境的交易时间：
 
 ## 开发建议
 
-1. **测试优先**：在实盘交易前，充分测试仿真环境
+1. **测试优先**：在实盘交易前，充分测试CTP环境
 2. **错误处理**：添加完善的错误处理机制
 3. **日志记录**：记录关键操作和异常情况
-4. **风控措施**：在仿真环境中测试风控逻辑
+4. **风控措施**：在CTP环境中测试风控逻辑
 
 ## 相关文档
 

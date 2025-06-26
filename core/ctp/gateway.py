@@ -14,8 +14,8 @@ project_root = os.path.join(os.path.dirname(__file__), '..', '..')
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-# 添加CTP仿真库路径
-lib_path = os.path.join(project_root, 'libs', 'ctp_sim')
+# 添加CTP库路径
+lib_path = os.path.join(project_root, 'libs', 'ctp')
 if lib_path not in sys.path:
     sys.path.insert(0, lib_path)
 
@@ -31,26 +31,25 @@ from vnpy.trader.object import TickData, OrderData, TradeData, PositionData, Sub
 from vnpy.trader.constant import Exchange, Direction, Offset, OrderType
 
 from utils.logger import get_logger
-from .config import CtpSimConfig
+from .config import CtpConfig
 
 logger = get_logger(__name__)
 
-class CtpSimGateway:
+class CtpWrapper:
     """
-    CTP仿真网关
-    提供CTP仿真环境的交易和行情功能
+    CTP网关包装类，用于连接CTP交易环境
     """
     
-    def __init__(self, config: CtpSimConfig = None):
+    def __init__(self, config: CtpConfig = None):
         """
-        初始化CTP仿真网关
+        初始化CTP网关包装
         
         Args:
-            config: CTP仿真配置对象
+            config: CTP配置对象，如果为None则使用默认配置
         """
-        self.config = config or CtpSimConfig()
+        self.event_engine = EventEngine()
+        self.config = config or CtpConfig()
         self.gateway: Optional[CtpGateway] = None
-        self.event_engine: Optional[EventEngine] = None
         self.connected = False
         self.trading_connected = False
         self.market_connected = False
@@ -87,7 +86,6 @@ class CtpSimGateway:
                 return False
                 
             # 创建事件引擎
-            self.event_engine = EventEngine()
             self.event_engine.start()
                 
             # 获取配置

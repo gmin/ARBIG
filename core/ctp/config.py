@@ -7,7 +7,7 @@ import os
 from typing import Dict, Any
 from pathlib import Path
 
-class CtpSimConfig:
+class CtpConfig:
     """
     CTP仿真环境配置类
     管理CTP仿真环境的连接参数和配置
@@ -20,7 +20,7 @@ class CtpSimConfig:
         Args:
             config_file: 配置文件路径，如果为None则使用默认路径
         """
-        self.config_file = config_file or "config/ctp_sim.json"
+        self.config_file = config_file or "config/ctp.json"
         self.config = self._load_config()
         
     def _load_config(self) -> Dict[str, Any]:
