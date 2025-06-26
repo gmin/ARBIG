@@ -194,4 +194,93 @@ CTP仿真环境的交易时间：
 
 - [CTP API文档](http://www.sfit.com.cn/)
 - [SimNow仿真环境](http://www.simnow.com.cn/)
-- [vnpy-ctp文档](https://www.vnpy.com/docs/cn/gateway/ctp.html) 
+- [vnpy-ctp文档](https://www.vnpy.com/docs/cn/gateway/ctp.html)
+
+## vnpy-ctp 安装问题解决方案
+
+### 问题描述
+
+在安装 `vnpy-ctp` 时，可能会遇到以下错误：
+```
+ImportError: /tmp/pip-install-xxxx/vnpy_ctp/api/libthostmduserapi_se.so: cannot open shared object file: No such file or directory
+```
+
+### 根本原因
+
+`vnpy-ctp` 的 wheel 包在编译时，将临时目录的路径硬编码到了 Python 扩展模块中，导致运行时找不到依赖的 CTP 动态库文件。
+
+### 解决方案
+
+#### 方法1：软链接法（推荐）
+
+1. **查找依赖路径**：
+   ```bash
+   ldd /path/to/venv/lib/python3.x/site-packages/vnpy_ctp/api/vnctpmd.cpython-xxx.so
+   ```
+
+2. **创建软链接**：
+   ```bash
+   # 创建临时目录
+   mkdir -p /tmp/pip-install-xxxx/vnpy_ctp/api/
+   
+   # 创建软链接
+   ln -sf /path/to/venv/lib/python3.x/site-packages/vnpy_ctp/api/libthostmduserapi_se.so /tmp/pip-install-xxxx/vnpy_ctp/api/libthostmduserapi_se.so
+   ln -sf /path/to/venv/lib/python3.x/site-packages/vnpy_ctp/api/libthosttraderapi_se.so /tmp/pip-install-xxxx/vnpy_ctp/api/libthosttraderapi_se.so
+   ```
+
+#### 方法2：重新编译安装
+
+1. **清理缓存**：
+   ```bash
+   pip uninstall vnpy-ctp -y
+   pip cache purge
+   ```
+
+2. **重新安装**：
+   ```bash
+   pip install vnpy-ctp --no-cache-dir
+   ```
+
+#### 方法3：设置环境变量
+
+```bash
+export LD_LIBRARY_PATH=/path/to/venv/lib/python3.x/site-packages/vnpy_ctp/api:$LD_LIBRARY_PATH
+```
+
+### 验证安装
+
+```python
+from vnpy_ctp import CtpGateway
+from vnpy.event import EventEngine
+
+# 创建测试实例
+event_engine = EventEngine()
+gateway = CtpGateway(event_engine, "test")
+print("vnpy-ctp 安装成功！")
+```
+
+### 注意事项
+
+1. **路径问题**：每次重新安装时，临时目录路径可能不同，需要重新创建软链接
+2. **权限问题**：确保 CTP 动态库文件有执行权限
+3. **版本兼容**：确保 `vnpy-ctp` 版本与 Python 版本兼容
+
+### 环境要求
+
+- **Python**: 3.8+
+- **操作系统**: Linux (推荐 Ubuntu/CentOS)
+- **依赖包**: vnpy, numpy, pandas
+
+### 推荐环境
+
+建议使用标准的 Python 虚拟环境，而不是 Anaconda 环境：
+```bash
+# 创建虚拟环境
+python -m venv venv
+source venv/bin/activate
+
+# 安装依赖
+pip install vnpy vnpy-ctp ta-lib
+```
+
+这样可以避免 Anaconda 环境的复杂性，提高系统的稳定性和性能。 
