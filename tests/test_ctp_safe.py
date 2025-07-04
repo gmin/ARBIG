@@ -48,7 +48,7 @@ def test_ctp_safe():
         
         # 4. 详细订阅检查
         print("4. 详细订阅检查...")
-        test_symbols = ["AU2509.SHFE", "AU2512.SHFE"]
+        test_symbols = ["AU2509", "AU2512"]
         subscribed_symbols = []
         subscription_results = {}
         

@@ -10,6 +10,8 @@ from pathlib import Path
 from vnpy.event import EventEngine
 from vnpy.trader.engine import MainEngine
 from vnpy_ctp import CtpGateway
+from vnpy.trader.object import SubscribeRequest
+from vnpy.trader.constant import Exchange
 from vnpy.trader.event import EVENT_LOG
 
 def setup_logging():
@@ -102,16 +104,21 @@ def test_with_config():
         if md_error:
             logger.error(f"   行情错误: {md_error}")
         
-        # 如果登录成功，尝试查询合约和订阅行情
-        if td_login:
-            logger.info("7. 尝试查询合约...")
-            main_engine.query_contract()
-            time.sleep(3)
-        
+        # 如果行情服务器登录成功，直接订阅行情
         if md_login:
             logger.info("8. 尝试订阅行情...")
-            # 这里可以添加订阅特定合约的代码
-            logger.info("   登录成功，可以订阅行情")
+            try:
+                # 订阅黄金合约
+                gold_symbols = ["au2508", "au2512", "au2612"]
+                for symbol in gold_symbols:
+                    req = SubscribeRequest(
+                        symbol=symbol,
+                        exchange=Exchange.SHFE
+                    )
+                    ctp_gateway.subscribe(req)
+                    logger.info(f"   已订阅: {symbol}")
+            except Exception as e:
+                logger.warning(f"   订阅行情失败: {e}")
         
         # 输出总结
         logger.info("\n" + "="*60)

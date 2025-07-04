@@ -174,23 +174,20 @@ def test_ctp_connection(logger):
                 logger.error(f"行情API错误信息: {ctp_gateway.md_api.error_message}")
     
     # ========== 合约查询与订阅 ==========
-    # 查询合约列表
-    if td_connected and td_login_status:
-        logger.info("查询合约列表...")
-        main_engine.query_contract()
-        time.sleep(5)  # 延长等待时间
-    
     # 订阅黄金合约
     if md_connected and md_login_status:
         logger.info("尝试订阅黄金合约...")
-        
-        # 使用有效的黄金合约
         gold_symbols = [
-            "au2508", "au2512",  # 2025年8月和12月合约
-            "au2612"             # 2026年12月合约
+            "au2508", "au2510",  # 2025年8月和10月合约
+            "au2512"             # 2025年12月合约
         ]
-        
         for symbol in gold_symbols:
+            vt_symbol = f"{symbol}.SHFE"
+            contract = main_engine.get_contract(vt_symbol)
+            if contract:
+                logger.info(f"合约已缓存: {vt_symbol}")
+            else:
+                logger.warning(f"未找到合约: {vt_symbol}")
             try:
                 req = SubscribeRequest(
                     symbol=symbol,
@@ -200,14 +197,7 @@ def test_ctp_connection(logger):
                 logger.info(f"已订阅: {symbol}")
             except Exception as e:
                 logger.error(f"订阅{symbol}失败: {e}")
-    
-    # 备用订阅方案：使用主引擎订阅
-    logger.info("使用主引擎订阅合约...")
-    for symbol in gold_symbols:
-        vt_symbol = f"{symbol}.SHFE"
-        main_engine.subscribe(vt_symbol, "CTP")
-        logger.info(f"主引擎订阅: {vt_symbol}")
-    
+
     # ========== 等待行情数据 ==========
     logger.info("等待行情数据(120秒)...")
     received_ticks = False
@@ -218,10 +208,10 @@ def test_ctp_connection(logger):
         if ticks:
             received_ticks = True
             logger.info(f"收到 {len(ticks)} 个合约行情")
-            for symbol, tick in list(ticks.items())[:3]:  # 只显示前3个
-                logger.info(f"  {symbol}: 最新价={tick.last_price}")
+            for tick in ticks[:3]:  # 只显示前3个
+                logger.info(f"  {tick.symbol}: 最新价={tick.last_price}")
             break
-            
+        
         # 每10秒输出一次进度
         if i % 10 == 0:
             logger.info(f"等待行情数据... {i+1}/120")
