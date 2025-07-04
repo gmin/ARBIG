@@ -53,10 +53,10 @@ class CtpConfig:
         return {
             "用户名": self.config.get("用户名"),
             "密码": self.config.get("密码"),
-            "经纪商代码": self.config.get("BROKEID"),
-            "交易服务器": self.config.get("td_server"),
-            "产品名称": self.config.get("APPID"),
-            "授权编码": self.config.get("AuthCode")
+            "经纪商代码": self.config.get("经纪商代码"),
+            "交易服务器": self.config.get("交易服务器"),
+            "产品名称": self.config.get("产品名称"),
+            "授权编码": self.config.get("授权编码")
         }
         
     def get_market_config(self) -> Dict[str, Any]:
@@ -69,10 +69,10 @@ class CtpConfig:
         return {
             "用户名": self.config.get("用户名"),
             "密码": self.config.get("密码"),
-            "经纪商代码": self.config.get("BROKEID"),
-            "行情服务器": self.config.get("md_server"),
-            "产品名称": self.config.get("APPID"),
-            "授权编码": self.config.get("AuthCode")
+            "经纪商代码": self.config.get("经纪商代码"),
+            "行情服务器": self.config.get("行情服务器"),
+            "产品名称": self.config.get("产品名称"),
+            "授权编码": self.config.get("授权编码")
         }
         
     def get_server_info(self) -> Dict[str, str]:
@@ -82,8 +82,8 @@ class CtpConfig:
         Returns:
             Dict: 服务器信息字典
         """
-        trading_server = self.config.get("td_server", "")
-        market_server = self.config.get("md_server", "")
+        trading_server = self.config.get("交易服务器", "")
+        market_server = self.config.get("行情服务器", "")
         
         trading_host, trading_port = trading_server.split(":") if ":" in trading_server else ("", "")
         market_host, market_port = market_server.split(":") if ":" in market_server else ("", "")
@@ -102,22 +102,12 @@ class CtpConfig:
         Returns:
             bool: 配置是否有效
         """
-        # 支持多种字段名格式
-        required_fields_mapping = {
-            "用户名": ["用户名", "user", "username"],
-            "密码": ["密码", "password", "passwd"],
-            "经纪商代码": ["经纪商代码", "BROKEID", "broker_id", "brokerid"],
-            "交易服务器": ["交易服务器", "trading_server", "td_server"],
-            "行情服务器": ["行情服务器", "market_server", "md_server"]
-        }
+        required_fields = [
+            "用户名", "密码", "经纪商代码", "交易服务器", "行情服务器", "产品名称", "授权编码"
+        ]
         
-        for field_name, possible_names in required_fields_mapping.items():
-            found = False
-            for name in possible_names:
-                if self.config.get(name):
-                    found = True
-                    break
-            if not found:
-                raise ValueError(f"缺少必需的配置字段: {field_name} (可能的名称: {possible_names})")
+        for field in required_fields:
+            if not self.config.get(field):
+                raise ValueError(f"缺少必需的配置字段: {field}")
                 
         return True 

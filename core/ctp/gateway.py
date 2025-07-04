@@ -15,16 +15,20 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 # 添加CTP库路径
-lib_path = os.path.join(project_root, 'libs', 'ctp')
+lib_path = os.path.join(project_root, 'libs', 'ctp_sim')
 if lib_path not in sys.path:
     sys.path.insert(0, lib_path)
 
 try:
     from vnpy_ctp import CtpGateway
-    from vnpy.event import EventEngine
 except ImportError:
     print("警告: 无法导入vnpy_ctp，请确保已正确安装CTP仿真库")
     CtpGateway = None
+
+try:
+    from vnpy.event import EventEngine
+except ImportError:
+    print("警告: 无法导入vnpy.event，请确保已正确安装vnpy")
     EventEngine = None
 
 from vnpy.trader.object import TickData, OrderData, TradeData, PositionData, SubscribeRequest
@@ -47,6 +51,14 @@ class CtpWrapper:
         Args:
             config: CTP配置对象，如果为None则使用默认配置
         """
+        # 检查EventEngine是否可用
+        if EventEngine is None:
+            raise ImportError("EventEngine未正确导入，请确保vnpy.event模块已安装")
+        
+        # 检查CtpGateway是否可用
+        if CtpGateway is None:
+            raise ImportError("CtpGateway未正确导入，请确保vnpy_ctp模块已安装")
+        
         self.event_engine = EventEngine()
         self.config = config or CtpConfig()
         self.gateway: Optional[CtpGateway] = None
