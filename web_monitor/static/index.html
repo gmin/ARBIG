@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ARBIG监控与风控系统</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 1rem 2rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 1.8rem;
+            font-weight: 600;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        
+        .dashboard {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        
+        .card {
+            background: white;
+            border-radius: 8px;
+            padding: 1.5rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            border-left: 4px solid #667eea;
+        }
+        
+        .card h3 {
+            color: #333;
+            margin-bottom: 1rem;
+            font-size: 1.2rem;
+        }
+        
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1rem;
+        }
+        
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.5rem;
+            background: #f8f9fa;
+            border-radius: 4px;
+        }
+        
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-left: 0.5rem;
+        }
+        
+        .status-running { background-color: #28a745; }
+        .status-stopped { background-color: #dc3545; }
+        .status-error { background-color: #ffc107; }
+        
+        .risk-level {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.875rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        
+        .risk-low { background-color: #d4edda; color: #155724; }
+        .risk-medium { background-color: #fff3cd; color: #856404; }
+        .risk-high { background-color: #f8d7da; color: #721c24; }
+        .risk-critical { background-color: #721c24; color: white; }
+        
+        .emergency-controls {
+            background: #fff;
+            border-radius: 8px;
+            padding: 1.5rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            border-left: 4px solid #dc3545;
+            margin-bottom: 2rem;
+        }
+        
+        .emergency-controls h3 {
+            color: #dc3545;
+            margin-bottom: 1rem;
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+        
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-danger {
+            background-color: #dc3545;
+            color: white;
+        }
+        
+        .btn-danger:hover {
+            background-color: #c82333;
+        }
+        
+        .btn-warning {
+            background-color: #ffc107;
+            color: #212529;
+        }
+        
+        .btn-warning:hover {
+            background-color: #e0a800;
+        }
+        
+        .btn-success {
+            background-color: #28a745;
+            color: white;
+        }
+        
+        .btn-success:hover {
+            background-color: #218838;
+        }
+        
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+        }
+        
+        .data-table th,
+        .data-table td {
+            padding: 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid #dee2e6;
+        }
+        
+        .data-table th {
+            background-color: #f8f9fa;
+            font-weight: 600;
+        }
+        
+        .data-table tr:hover {
+            background-color: #f8f9fa;
+        }
+        
+        .connection-status {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 2rem;
+            color: #666;
+        }
+        
+        .error {
+            background-color: #f8d7da;
+            color: #721c24;
+            padding: 1rem;
+            border-radius: 4px;
+            margin: 1rem 0;
+        }
+        
+        .success {
+            background-color: #d4edda;
+            color: #155724;
+            padding: 1rem;
+            border-radius: 4px;
+            margin: 1rem 0;
+        }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+        }
+        
+        .modal-content {
+            background-color: white;
+            margin: 15% auto;
+            padding: 2rem;
+            border-radius: 8px;
+            width: 400px;
+            max-width: 90%;
+        }
+        
+        .close {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        
+        .close:hover {
+            color: black;
+        }
+        
+        .form-group {
+            margin-bottom: 1rem;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+        }
+        
+        .form-group input,
+        .form-group textarea {
+            width: 100%;
+            padding: 0.5rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        
+        @media (max-width: 768px) {
+            .container {
+                padding: 1rem;
+            }
+            
+            .dashboard {
+                grid-template-columns: 1fr;
+            }
+            
+            .button-group {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🛡️ ARBIG监控与风控系统</h1>
+        <div id="connectionStatus" class="connection-status">
+            <span>连接状态:</span>
+            <div class="status-indicator status-stopped" id="wsIndicator"></div>
+            <span id="wsStatus">未连接</span>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- 系统状态仪表板 -->
+        <div class="dashboard">
+            <div class="card">
+                <h3>📊 系统状态</h3>
+                <div id="systemStatus" class="loading">加载中...</div>
+            </div>
+            
+            <div class="card">
+                <h3>💰 账户信息</h3>
+                <div id="accountInfo" class="loading">加载中...</div>
+            </div>
+            
+            <div class="card">
+                <h3>🛡️ 风险指标</h3>
+                <div id="riskMetrics" class="loading">加载中...</div>
+            </div>
+            
+            <div class="card">
+                <h3>📈 交易统计</h3>
+                <div id="tradingStats" class="loading">加载中...</div>
+            </div>
+        </div>
+
+        <!-- 紧急控制面板 -->
+        <div class="emergency-controls">
+            <h3>🚨 紧急控制面板</h3>
+            <div class="button-group">
+                <button class="btn btn-danger" onclick="emergencyHalt()">
+                    ⏸️ 紧急暂停交易
+                </button>
+                <button class="btn btn-danger" onclick="emergencyClose()">
+                    🔴 紧急平仓
+                </button>
+                <button class="btn btn-warning" onclick="showHaltStrategyModal()">
+                    ⚠️ 暂停策略
+                </button>
+                <button class="btn btn-success" onclick="resumeTrading()">
+                    ▶️ 恢复交易
+                </button>
+            </div>
+        </div>
+
+        <!-- 数据表格 -->
+        <div class="card">
+            <h3>📋 活跃订单</h3>
+            <div id="activeOrders" class="loading">加载中...</div>
+        </div>
+
+        <div class="card">
+            <h3>📊 当前持仓</h3>
+            <div id="positions" class="loading">加载中...</div>
+        </div>
+
+        <div class="card">
+            <h3>📝 操作日志</h3>
+            <div id="operationLog" class="loading">加载中...</div>
+        </div>
+    </div>
+
+    <!-- 模态框 -->
+    <div id="haltStrategyModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal('haltStrategyModal')">&times;</span>
+            <h3>暂停策略</h3>
+            <div class="form-group">
+                <label for="strategyName">策略名称:</label>
+                <input type="text" id="strategyName" placeholder="输入策略名称">
+            </div>
+            <div class="form-group">
+                <label for="haltReason">暂停原因:</label>
+                <textarea id="haltReason" placeholder="请输入暂停原因"></textarea>
+            </div>
+            <button class="btn btn-warning" onclick="confirmHaltStrategy()">确认暂停</button>
+        </div>
+    </div>
+
+    <script>
+        // WebSocket连接
+        let ws = null;
+        let reconnectInterval = null;
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            connectWebSocket();
+            loadInitialData();
+            
+            // 每30秒刷新一次数据
+            setInterval(loadInitialData, 30000);
+        });
+
+        // WebSocket连接
+        function connectWebSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}/ws`;
+            
+            ws = new WebSocket(wsUrl);
+            
+            ws.onopen = function() {
+                document.getElementById('wsIndicator').className = 'status-indicator status-running';
+                document.getElementById('wsStatus').textContent = '已连接';
+                
+                if (reconnectInterval) {
+                    clearInterval(reconnectInterval);
+                    reconnectInterval = null;
+                }
+            };
+            
+            ws.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                handleRealtimeData(data);
+            };
+            
+            ws.onclose = function() {
+                document.getElementById('wsIndicator').className = 'status-indicator status-stopped';
+                document.getElementById('wsStatus').textContent = '连接断开';
+                
+                // 自动重连
+                if (!reconnectInterval) {
+                    reconnectInterval = setInterval(connectWebSocket, 5000);
+                }
+            };
+            
+            ws.onerror = function() {
+                document.getElementById('wsIndicator').className = 'status-indicator status-error';
+                document.getElementById('wsStatus').textContent = '连接错误';
+            };
+        }
+
+        // 处理实时数据
+        function handleRealtimeData(data) {
+            if (data.type === 'realtime_update' && data.data) {
+                updateSystemStatus(data.data.system_status);
+                updateRiskMetrics(data.data.risk_metrics);
+                updateTradingStats(data.data.statistics);
+            } else if (data.type === 'risk_alert') {
+                showAlert(data.data.message, 'error');
+            }
+        }
+
+        // 加载初始数据
+        async function loadInitialData() {
+            try {
+                await Promise.all([
+                    loadSystemStatus(),
+                    loadAccountInfo(),
+                    loadRiskMetrics(),
+                    loadTradingStats(),
+                    loadActiveOrders(),
+                    loadPositions(),
+                    loadOperationLog()
+                ]);
+            } catch (error) {
+                console.error('加载数据失败:', error);
+            }
+        }
+
+        // API调用函数
+        async function apiCall(endpoint, options = {}) {
+            const response = await fetch(`/api${endpoint}`, {
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...options.headers
+                },
+                ...options
+            });
+            
+            if (!response.ok) {
+                throw new Error(`API调用失败: ${response.statusText}`);
+            }
+            
+            return response.json();
+        }
+
+        // 加载系统状态
+        async function loadSystemStatus() {
+            try {
+                const status = await apiCall('/status');
+                updateSystemStatus(status);
+            } catch (error) {
+                document.getElementById('systemStatus').innerHTML = '<div class="error">加载失败</div>';
+            }
+        }
+
+        // 更新系统状态显示
+        function updateSystemStatus(status) {
+            const html = `
+                <div class="status-grid">
+                    <div class="status-item">
+                        <span>行情服务</span>
+                        <div class="status-indicator status-${status.services.market_data.toLowerCase()}"></div>
+                    </div>
+                    <div class="status-item">
+                        <span>账户服务</span>
+                        <div class="status-indicator status-${status.services.account.toLowerCase()}"></div>
+                    </div>
+                    <div class="status-item">
+                        <span>交易服务</span>
+                        <div class="status-indicator status-${status.services.trading.toLowerCase()}"></div>
+                    </div>
+                    <div class="status-item">
+                        <span>风控服务</span>
+                        <div class="status-indicator status-${status.services.risk.toLowerCase()}"></div>
+                    </div>
+                    <div class="status-item">
+                        <span>CTP行情</span>
+                        <div class="status-indicator ${status.connections.ctp_md ? 'status-running' : 'status-stopped'}"></div>
+                    </div>
+                    <div class="status-item">
+                        <span>CTP交易</span>
+                        <div class="status-indicator ${status.connections.ctp_td ? 'status-running' : 'status-stopped'}"></div>
+                    </div>
+                </div>
+                <div style="margin-top: 1rem;">
+                    <span>风险级别: </span>
+                    <span class="risk-level risk-${status.risk_level.toLowerCase()}">${status.risk_level}</span>
+                </div>
+                ${status.trading_halted ? '<div style="color: #dc3545; margin-top: 0.5rem;">⚠️ 交易已暂停</div>' : ''}
+            `;
+            document.getElementById('systemStatus').innerHTML = html;
+        }
+
+        // 紧急操作函数
+        async function emergencyHalt() {
+            if (!confirm('确认紧急暂停所有交易？')) return;
+            
+            const reason = prompt('请输入暂停原因:');
+            if (!reason) return;
+            
+            try {
+                const result = await apiCall('/risk/emergency_halt', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        action: 'emergency_halt',
+                        reason: reason,
+                        operator: 'web_user'
+                    })
+                });
+                
+                showAlert(result.message, result.success ? 'success' : 'error');
+                if (result.success) {
+                    loadInitialData();
+                }
+            } catch (error) {
+                showAlert('操作失败: ' + error.message, 'error');
+            }
+        }
+
+        async function emergencyClose() {
+            const confirmCode = prompt('紧急平仓需要确认码，请输入 EMERGENCY_CLOSE_123:');
+            if (confirmCode !== 'EMERGENCY_CLOSE_123') {
+                showAlert('确认码错误', 'error');
+                return;
+            }
+            
+            const reason = prompt('请输入平仓原因:');
+            if (!reason) return;
+            
+            try {
+                const result = await apiCall('/risk/emergency_close', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        action: 'emergency_close',
+                        reason: reason,
+                        operator: 'web_user',
+                        confirmation_code: confirmCode
+                    })
+                });
+                
+                showAlert(result.message, result.success ? 'success' : 'error');
+                if (result.success) {
+                    loadInitialData();
+                }
+            } catch (error) {
+                showAlert('操作失败: ' + error.message, 'error');
+            }
+        }
+
+        // 显示提示信息
+        function showAlert(message, type) {
+            const alertDiv = document.createElement('div');
+            alertDiv.className = type;
+            alertDiv.textContent = message;
+            
+            document.body.insertBefore(alertDiv, document.body.firstChild);
+            
+            setTimeout(() => {
+                alertDiv.remove();
+            }, 5000);
+        }
+
+        // 模态框控制
+        function showHaltStrategyModal() {
+            document.getElementById('haltStrategyModal').style.display = 'block';
+        }
+
+        function closeModal(modalId) {
+            document.getElementById(modalId).style.display = 'none';
+        }
+
+        // 其他加载函数的简化实现
+        async function loadAccountInfo() {
+            document.getElementById('accountInfo').innerHTML = '<div>账户信息加载中...</div>';
+        }
+
+        async function loadRiskMetrics() {
+            try {
+                const metrics = await apiCall('/risk_metrics');
+                updateRiskMetrics(metrics);
+            } catch (error) {
+                document.getElementById('riskMetrics').innerHTML = '<div class="error">加载失败</div>';
+            }
+        }
+
+        function updateRiskMetrics(metrics) {
+            const html = `
+                <div>日内盈亏: ${metrics.daily_pnl.toFixed(2)}</div>
+                <div>总盈亏: ${metrics.total_pnl.toFixed(2)}</div>
+                <div>最大回撤: ${metrics.max_drawdown.toFixed(2)}</div>
+                <div>仓位比例: ${(metrics.position_ratio * 100).toFixed(1)}%</div>
+            `;
+            document.getElementById('riskMetrics').innerHTML = html;
+        }
+
+        async function loadTradingStats() {
+            document.getElementById('tradingStats').innerHTML = '<div>交易统计加载中...</div>';
+        }
+
+        function updateTradingStats(stats) {
+            if (stats && stats.trading) {
+                const html = `
+                    <div>总订单数: ${stats.trading.total_orders}</div>
+                    <div>活跃订单: ${stats.trading.active_orders}</div>
+                    <div>总成交数: ${stats.trading.total_trades}</div>
+                    <div>成交金额: ${stats.trading.total_turnover.toFixed(2)}</div>
+                `;
+                document.getElementById('tradingStats').innerHTML = html;
+            }
+        }
+
+        async function loadActiveOrders() {
+            document.getElementById('activeOrders').innerHTML = '<div>活跃订单加载中...</div>';
+        }
+
+        async function loadPositions() {
+            document.getElementById('positions').innerHTML = '<div>持仓信息加载中...</div>';
+        }
+
+        async function loadOperationLog() {
+            document.getElementById('operationLog').innerHTML = '<div>操作日志加载中...</div>';
+        }
+    </script>
+</body>
+</html>

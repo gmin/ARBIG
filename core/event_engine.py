@@ -2,14 +2,17 @@ import queue
 import threading
 import json
 import time
+from datetime import datetime
+from typing import Any
 
 class Event:
     """
     事件对象，包含事件类型和数据内容。
     """
-    def __init__(self, type: str, data: dict):
+    def __init__(self, type: str, data: Any, timestamp: datetime = None):
         self.type = type      # 事件类型，如 'TICK_EVENT'
-        self.data = data      # 事件数据，字典结构
+        self.data = data      # 事件数据，可以是任意类型
+        self.timestamp = timestamp or datetime.now()  # 事件时间戳
 
 class EventEngine:
     """
@@ -95,7 +98,18 @@ class EventEngine:
         """
         try:
             with open(self._persist_path, 'a', encoding='utf-8') as f:
-                json.dump({'type': event.type, 'data': event.data}, f, ensure_ascii=False)
+                # 尝试序列化数据，如果失败则转换为字符串
+                try:
+                    data = event.data if isinstance(event.data, (dict, list, str, int, float, bool)) else str(event.data)
+                except:
+                    data = str(event.data)
+
+                event_dict = {
+                    'type': event.type,
+                    'data': data,
+                    'timestamp': event.timestamp.isoformat()
+                }
+                json.dump(event_dict, f, ensure_ascii=False)
                 f.write('\n')
         except Exception as e:
             print(f"[EventEngine] 持久化事件出错: {e}")

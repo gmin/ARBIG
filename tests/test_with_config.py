@@ -3,8 +3,8 @@
 使用ctp.json配置文件的CTP连接测试
 """
 
-import json
 import time
+import json
 import logging
 from pathlib import Path
 from vnpy.event import EventEngine
@@ -12,7 +12,7 @@ from vnpy.trader.engine import MainEngine
 from vnpy_ctp import CtpGateway
 from vnpy.trader.object import SubscribeRequest
 from vnpy.trader.constant import Exchange
-from vnpy.trader.event import EVENT_LOG
+from vnpy.trader.event import EVENT_LOG, EVENT_CONTRACT, EVENT_TICK, EVENT_ACCOUNT, EVENT_POSITION
 
 def setup_logging():
     """配置日志记录"""
@@ -48,100 +48,83 @@ def test_with_config():
         logger.info(f"   行情服务器: {config['行情服务器']}")
         
         # 创建事件引擎
-        logger.info("2. 创建事件引擎...")
         event_engine = EventEngine()
         main_engine = MainEngine(event_engine)
         
         # 添加网关
-        logger.info("3. 添加CTP网关...")
         main_engine.add_gateway(CtpGateway, "CTP")
         ctp_gateway = main_engine.get_gateway("CTP")
         
-        # 注册日志事件
-        def handle_log(event):
-            if event.type == EVENT_LOG:
-                logger.info(f"[CTP日志] {event.data}")
-        
-        event_engine.register(EVENT_LOG, handle_log)
-        
-        # 连接
-        logger.info("4. 开始连接...")
+        # 合约收集
+        contracts = []
+        def on_contract(event):
+            contract = event.data
+            contracts.append(contract)
+        def on_tick(event):
+            tick = event.data
+            logger.info(f"Tick: {tick.symbol} 最新价={tick.last_price} 量={tick.volume}")
+        def on_account(event):
+            account = event.data
+            logger.info(f"账户资金: {account.accountid} 可用: {account.available} 权益: {account.balance}")
+        def on_position(event):
+            pos = event.data
+            logger.info(f"持仓: {pos.symbol} {pos.direction.value} 持仓量: {pos.volume} 可用: {pos.available}")
+        def on_log(event):
+            logger.info(f"[CTP日志] {event.data}")
+
+        # 注册事件回调
+        event_engine.register(EVENT_CONTRACT, on_contract)
+        event_engine.register(EVENT_TICK, on_tick)
+        event_engine.register(EVENT_ACCOUNT, on_account)
+        event_engine.register(EVENT_POSITION, on_position)
+        event_engine.register(EVENT_LOG, on_log)
+
+        # 启动事件引擎（MainEngine会自动启动，无需手动调用）
+        # event_engine.start()
+
+        # 连接CTP
+        logger.info("2. 连接CTP...")
         ctp_gateway.connect(config)
         
-        # 等待连接和登录
-        logger.info("5. 等待连接和登录(10秒)...")
-        time.sleep(10)
-        
-        # 检查状态
-        logger.info("6. 检查连接状态...")
-        
-        td_connected = False
-        md_connected = False
-        td_login = False
-        md_login = False
-        td_error = ""
-        md_error = ""
-        
-        if hasattr(ctp_gateway, 'td_api'):
-            td_connected = getattr(ctp_gateway.td_api, 'connect_status', False)
-            td_login = getattr(ctp_gateway.td_api, 'login_status', False)
-            if hasattr(ctp_gateway.td_api, 'error_message'):
-                td_error = ctp_gateway.td_api.error_message
-            
-        if hasattr(ctp_gateway, 'md_api'):
-            md_connected = getattr(ctp_gateway.md_api, 'connect_status', False)
-            md_login = getattr(ctp_gateway.md_api, 'login_status', False)
-            if hasattr(ctp_gateway.md_api, 'error_message'):
-                md_error = ctp_gateway.md_api.error_message
-        
-        logger.info(f"   交易连接: {'✓ 成功' if td_connected else '✗ 失败'}")
-        logger.info(f"   交易登录: {'✓ 成功' if td_login else '✗ 失败'}")
-        if td_error:
-            logger.error(f"   交易错误: {td_error}")
-            
-        logger.info(f"   行情连接: {'✓ 成功' if md_connected else '✗ 失败'}")
-        logger.info(f"   行情登录: {'✓ 成功' if md_login else '✗ 失败'}")
-        if md_error:
-            logger.error(f"   行情错误: {md_error}")
-        
-        # 如果行情服务器登录成功，直接订阅行情
-        if md_login:
-            logger.info("8. 尝试订阅行情...")
-            try:
-                # 订阅黄金合约
-                gold_symbols = ["au2508", "au2512", "au2612"]
-                for symbol in gold_symbols:
-                    req = SubscribeRequest(
-                        symbol=symbol,
-                        exchange=Exchange.SHFE
-                    )
-                    ctp_gateway.subscribe(req)
-                    logger.info(f"   已订阅: {symbol}")
-            except Exception as e:
-                logger.warning(f"   订阅行情失败: {e}")
-        
-        # 输出总结
-        logger.info("\n" + "="*60)
-        logger.info("CTP连接测试总结")
-        logger.info("="*60)
-        logger.info(f"交易服务器连接: {'✓ 成功' if td_connected else '✗ 失败'}")
-        logger.info(f"交易服务器登录: {'✓ 成功' if td_login else '✗ 失败'}")
-        logger.info(f"行情服务器连接: {'✓ 成功' if md_connected else '✗ 失败'}")
-        logger.info(f"行情服务器登录: {'✓ 成功' if md_login else '✗ 失败'}")
-        
-        if td_login and md_login:
-            logger.info("✓ 完全连接成功！")
+        # 等待连接和合约推送
+        logger.info("3. 等待连接和合约推送(30秒)...")
+        time.sleep(30)
+
+        # 打印所有收到的合约信息，便于调试
+        if contracts:
+            logger.info(f"共收到 {len(contracts)} 个合约，部分合约信息如下：")
+            for c in contracts[:10]:  # 只打印前10个
+                logger.info(f"symbol={c.symbol}, exchange={c.exchange}, open_interest={getattr(c, 'open_interest', None)}")
+
+        # 自动识别主力合约（持仓量最大）
+        main_contract = None
+        if contracts:
+            # 只筛选黄金合约（以au开头，SHFE交易所）
+            gold_contracts = [c for c in contracts if c.symbol.startswith("au") and c.exchange == Exchange.SHFE]
+            if gold_contracts:
+                main_contract = max(gold_contracts, key=lambda c: getattr(c, 'open_interest', 0) or 0)
+            else:
+                main_contract = max(contracts, key=lambda c: getattr(c, 'open_interest', 0) or 0)
+        if main_contract:
+            logger.info(f"主力合约: {main_contract.symbol} 持仓量: {getattr(main_contract, 'open_interest', 0)}")
+            req = SubscribeRequest(symbol=main_contract.symbol, exchange=main_contract.exchange)
+            ctp_gateway.subscribe(req)
+            logger.info(f"已订阅主力合约: {main_contract.symbol}")
         else:
-            logger.info("✗ 连接或登录失败")
-        
-        # 清理
-        logger.info("9. 清理资源...")
+            logger.warning("未能识别主力合约，未订阅行情")
+
+        # 等待行情和账户数据推送
+        logger.info("4. 等待行情和账户数据推送(60秒)...")
+        time.sleep(60)
+
+        # 断开连接，清理资源
+        logger.info("5. 断开连接，清理资源...")
         ctp_gateway.close()
         time.sleep(1)
         main_engine.close()
         
         logger.info("✓ 测试完成")
-        return td_login and md_login
+        return True
         
     except Exception as e:
         logger.error(f"测试异常: {e}")

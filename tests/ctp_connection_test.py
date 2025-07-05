@@ -13,27 +13,11 @@ from vnpy.trader.event import EVENT_CONTRACT, EVENT_TICK, EVENT_LOG
 
 def setup_logging():
     """配置日志记录"""
-    logger = logging.getLogger("ctp_test")
-    logger.setLevel(logging.DEBUG)
-    
-    # 创建控制台处理器
-    ch = logging.StreamHandler()
-    ch.setLevel(logging.INFO)
-    
-    # 创建文件处理器
-    fh = logging.FileHandler("ctp_test.log")
-    fh.setLevel(logging.DEBUG)
-    
-    # 设置格式
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    ch.setFormatter(formatter)
-    fh.setFormatter(formatter)
-    
-    # 添加处理器
-    logger.addHandler(ch)
-    logger.addHandler(fh)
-    
-    return logger
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s'
+    )
+    return logging.getLogger("ctp_test")
 
 def check_network_connection(host, port, timeout=5):
     """检查网络连接"""
@@ -45,8 +29,97 @@ def check_network_connection(host, port, timeout=5):
     except Exception as e:
         return False, f"连接失败: {str(e)}"
 
+def load_config():
+    """加载配置文件"""
+    import json
+    from pathlib import Path
+    
+    config_file = Path("config/ctp_sim.json")
+ 
+    if not config_file.exists():
+        raise FileNotFoundError(f"配置文件不存在: {config_file}")
+    
+    with open(config_file, 'r', encoding='utf-8') as f:
+        config = json.load(f)
+    
+    logger.info(f"加载配置文件: config/ctp_sim.json")
+
+    return config
+
+def convert_to_vnpy_format(config):
+    """转换为vnpy需要的格式"""
+    return {
+        "用户名": config["用户名"],
+        "密码": config["密码"],
+        "经纪商代码": config["经纪商代码"],
+        "交易服务器": f"tcp://{config['交易服务器']}",
+        "行情服务器": f"tcp://{config['行情服务器']}",
+        "产品名称": config.get("产品名称", "simnow_client_test"),
+        "授权编码": config.get("授权编码", "0000000000000000")
+    }
+
 def test_ctp_connection(logger):
     """测试CTP连接"""
+    # 首先读取配置文件（在可能修改工作目录的代码之前）
+    try:
+        config = load_config()
+        vnpy_config = convert_to_vnpy_format(config)
+        logger.info(f"用户名: {config['用户名']}")
+        logger.info(f"经纪商代码: {config['经纪商代码']}")
+        logger.info(f"交易服务器: {config['交易服务器']}")
+        logger.info(f"行情服务器: {config['行情服务器']}")
+        logger.info("")
+    except Exception as e:
+        logger.error(f"加载配置文件失败: {e}")
+        return
+    # ========== 网络连接测试 ==========
+    logger.info("="*50)
+    logger.info("网络连接测试")
+    logger.info("="*50)
+    
+    # 从配置中解析服务器信息
+    def parse_servers_from_config(config):
+        servers = []
+        
+        # 解析交易服务器
+        if "交易服务器" in config:
+            td_server = config["交易服务器"]
+            host, port = td_server.split(":")
+            servers.append(("交易服务器", host, int(port)))
+        
+        # 解析行情服务器
+        if "行情服务器" in config:
+            md_server = config["行情服务器"]
+            host, port = md_server.split(":")
+            servers.append(("行情服务器", host, int(port)))
+        
+        return servers
+    
+    servers = parse_servers_from_config(config)
+    
+    # 检查网络连接
+    network_ok = True
+    for name, host, port in servers:
+        success, msg = check_network_connection(host, port)
+        status = "✓" if success else "✗"
+        logger.info(f"{status} {name} {host}:{port} - {msg}")
+        if not success:
+            network_ok = False
+    
+    # 如果网络连接失败，提前退出
+    if not network_ok:
+        logger.error("网络连接失败，无法继续测试。请检查：")
+        logger.error("1. 网络连接是否正常")
+        logger.error("2. 防火墙是否阻止了连接")
+        logger.error("3. 服务器地址和端口是否正确")
+        logger.error("4. 是否在正确的网络环境中")
+        return
+    
+    # ========== 创建CTP网关 ==========
+    logger.info("\n" + "="*50)
+    logger.info("创建CTP网关")
+    logger.info("="*50)
+    
     # 创建事件引擎
     event_engine = EventEngine()
     
@@ -57,52 +130,15 @@ def test_ctp_connection(logger):
     main_engine.add_gateway(CtpGateway, "CTP")
     ctp_gateway = main_engine.get_gateway("CTP")
     
-    # 配置信息 - 使用SimNow 7x24测试环境
-    setting = {
-        "用户名": "242407",
-        "密码": "Crh1234567!",
-        "经纪商代码": "9999",
-        "交易服务器": "tcp://182.254.243.31:30001",  # 7x24测试环境：#182.254.243.31：40011
-        "行情服务器": "tcp://182.254.243.31:30011",  # 7x24测试环境：#182.254.243.31：40001
-        "产品名称": "simnow_client_test",
-        "授权编码": "0000000000000000"
-    }
-    
-    
-    #setting = {
-    #    "用户名": "000002",
-    #    "密码": "fnqh123456",
-    #    "经纪商代码": "8888",
-    #    "交易服务器": "tcp://117.25.161.29:61205",
-    #    "行情服务器": "tcp://117.25.161.29:61213",
-    #    "产品名称": "client_ARBIG_1.0.0",
-    #    "授权编码": "8NTZL54IEGNEB6CP"
-    #}
-    
-    # ========== 网络连接测试 ==========
-    logger.info("="*50)
-    logger.info("网络连接测试")
-    logger.info("="*50)
-    
-    servers = [
-        ("交易服务器", "117.25.161.29", 61205),
-        ("行情服务器", "117.25.161.29", 61213)
-    ]
-    
-    for name, host, port in servers:
-        success, msg = check_network_connection(host, port)
-        status = "✓" if success else "✗"
-        logger.info(f"{status} {name} {host}:{port} - {msg}")
-    
     # ========== 账户信息验证 ==========
     logger.info("\n" + "="*50)
     logger.info("账户信息验证")
     logger.info("="*50)
-    logger.info(f"经纪商代码: {setting['经纪商代码']}")
-    logger.info(f"用户名: {setting['用户名']}")
-    logger.info(f"密码: {'*' * len(setting['密码'])}")
-    logger.info(f"产品名称: {setting['产品名称']}")
-    logger.info(f"授权编码: {setting['授权编码']}")
+    logger.info(f"经纪商代码: {config['经纪商代码']}")
+    logger.info(f"用户名: {config['用户名']}")
+    logger.info(f"密码: {'*' * len(config['密码'])}")
+    logger.info(f"产品名称: {config.get('产品名称', 'simnow_client_test')}")
+    logger.info(f"授权编码: {config.get('授权编码', '0000000000000000')}")
     
     # 注册事件处理函数
     def handle_event(event):
@@ -124,7 +160,7 @@ def test_ctp_connection(logger):
     logger.info("\n" + "="*50)
     logger.info("开始连接CTP服务器...")
     logger.info("="*50)
-    ctp_gateway.connect(setting)
+    ctp_gateway.connect(vnpy_config)
     
     # 延长等待时间
     logger.info("等待连接建立(15秒)...")
@@ -174,29 +210,49 @@ def test_ctp_connection(logger):
                 logger.error(f"行情API错误信息: {ctp_gateway.md_api.error_message}")
     
     # ========== 合约查询与订阅 ==========
-    # 订阅黄金合约
+    # 收集合约并订阅主力合约
     if md_connected and md_login_status:
-        logger.info("尝试订阅黄金合约...")
-        gold_symbols = [
-            "au2508", "au2510",  # 2025年8月和10月合约
-            "au2512"             # 2025年12月合约
-        ]
-        for symbol in gold_symbols:
-            vt_symbol = f"{symbol}.SHFE"
-            contract = main_engine.get_contract(vt_symbol)
-            if contract:
-                logger.info(f"合约已缓存: {vt_symbol}")
+        logger.info("等待合约推送(10秒)...")
+        time.sleep(10)
+        
+        # 获取所有合约
+        all_contracts = main_engine.get_all_contracts()
+        if all_contracts:
+            logger.info(f"收到 {len(all_contracts)} 个合约")
+            
+            # 筛选黄金合约
+            gold_contracts = [c for c in all_contracts if c.symbol.startswith("au") and c.exchange == Exchange.SHFE]
+            if gold_contracts:
+                # 按持仓量排序，选择主力合约
+                gold_contracts.sort(key=lambda c: getattr(c, 'open_interest', 0) or 0, reverse=True)
+                main_contract = gold_contracts[0]
+                
+                logger.info(f"选择主力合约: {main_contract.symbol} (持仓量: {getattr(main_contract, 'open_interest', 0)})")
+                
+                try:
+                    req = SubscribeRequest(
+                        symbol=main_contract.symbol,
+                        exchange=main_contract.exchange
+                    )
+                    ctp_gateway.subscribe(req)
+                    logger.info(f"已订阅主力合约: {main_contract.symbol}")
+                except Exception as e:
+                    logger.error(f"订阅主力合约失败: {e}")
             else:
-                logger.warning(f"未找到合约: {vt_symbol}")
-            try:
-                req = SubscribeRequest(
-                    symbol=symbol,
-                    exchange=Exchange.SHFE
-                )
-                ctp_gateway.subscribe(req)
-                logger.info(f"已订阅: {symbol}")
-            except Exception as e:
-                logger.error(f"订阅{symbol}失败: {e}")
+                logger.warning("未找到黄金合约，尝试订阅默认合约")
+                # 如果没有黄金合约，订阅第一个可用的合约
+                try:
+                    first_contract = all_contracts[0]
+                    req = SubscribeRequest(
+                        symbol=first_contract.symbol,
+                        exchange=first_contract.exchange
+                    )
+                    ctp_gateway.subscribe(req)
+                    logger.info(f"已订阅默认合约: {first_contract.symbol}")
+                except Exception as e:
+                    logger.error(f"订阅默认合约失败: {e}")
+        else:
+            logger.warning("未收到任何合约信息")
 
     # ========== 等待行情数据 ==========
     logger.info("等待行情数据(120秒)...")
@@ -227,12 +283,21 @@ def test_ctp_connection(logger):
     logger.info(f"行情服务器登录: {'✓ 成功' if md_login_status else '✗ 失败'}")
     logger.info(f"收到行情数据: {'✓ 是' if received_ticks else '✗ 否'}")
     
-    # 断开连接
-    ctp_gateway.close()
-    time.sleep(1)
-    main_engine.close()
+    # ========== 清理资源 ==========
+    logger.info("\n" + "="*50)
+    logger.info("清理资源")
+    logger.info("="*50)
     
-    logger.info("测试完成，结果已保存到 ctp_test.log")
+    try:
+        # 断开连接
+        ctp_gateway.close()
+        time.sleep(1)
+        main_engine.close()
+        logger.info("✓ 资源清理完成")
+    except Exception as e:
+        logger.error(f"资源清理时出错: {e}")
+    
+    logger.info("测试完成")
     
     # 最终建议
     if not received_ticks:
@@ -248,5 +313,5 @@ def test_ctp_connection(logger):
         logger.info("5. 联系SimNow技术支持: service@simnow.com.cn")
 
 if __name__ == "__main__":
-    logger = setup_logging()
-    test_ctp_connection(logger)
+   logger = setup_logging()
+   test_ctp_connection(logger)

@@ -10,3 +10,17 @@ loguru>=0.5.3
 pytest>=6.2.5
 pytest-cov>=2.12.0
 quickfix==1.15.1
+
+# Web服务依赖
+fastapi>=0.104.0
+uvicorn>=0.24.0
+websockets>=11.0.0
+pydantic>=2.0.0
+python-multipart>=0.0.6
+jinja2>=3.1.0
+
+# 系统监控依赖
+psutil>=5.9.0
+
+# YAML配置支持
+PyYAML>=6.0
