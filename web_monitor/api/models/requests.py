@@ -106,3 +106,14 @@ class AnalysisRequest(BaseModel):
     symbols: Optional[List[str]] = Field(None, description="合约列表")
     strategy: Optional[str] = Field(None, description="策略名称")
     params: Optional[Dict[str, Any]] = Field(None, description="分析参数")
+
+class OrderRequest(BaseModel):
+    """订单请求"""
+    symbol: str = Field(..., description="合约代码")
+    exchange: str = Field("SHFE", description="交易所")
+    direction: str = Field(..., description="方向: LONG/SHORT")
+    type: str = Field("LIMIT", description="订单类型: LIMIT/MARKET")
+    volume: float = Field(..., description="数量")
+    price: Optional[float] = Field(None, description="价格")
+    offset: str = Field("OPEN", description="开平: OPEN/CLOSE")
+    reference: Optional[str] = Field(None, description="订单引用")

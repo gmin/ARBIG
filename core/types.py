@@ -131,8 +131,8 @@ class EventData:
 @dataclass
 class TickEventData(EventData):
     """Tick事件数据"""
-    tick: TickData
-    
+    tick: TickData = None
+
     def __post_init__(self):
         super().__post_init__()
         self.event_type = "TICK"
@@ -141,8 +141,8 @@ class TickEventData(EventData):
 @dataclass
 class OrderEventData(EventData):
     """订单事件数据"""
-    order: OrderData
-    
+    order: OrderData = None
+
     def __post_init__(self):
         super().__post_init__()
         self.event_type = "ORDER"
@@ -151,8 +151,8 @@ class OrderEventData(EventData):
 @dataclass
 class TradeEventData(EventData):
     """成交事件数据"""
-    trade: TradeData
-    
+    trade: TradeData = None
+
     def __post_init__(self):
         super().__post_init__()
         self.event_type = "TRADE"
@@ -161,8 +161,8 @@ class TradeEventData(EventData):
 @dataclass
 class SignalEventData(EventData):
     """信号事件数据"""
-    signal: SignalData
-    
+    signal: SignalData = None
+
     def __post_init__(self):
         super().__post_init__()
         self.event_type = "SIGNAL"
@@ -171,9 +171,9 @@ class SignalEventData(EventData):
 @dataclass
 class RiskEventData(EventData):
     """风险事件数据"""
-    risk_type: str
-    risk_level: str
-    message: str
+    risk_type: str = ""
+    risk_level: str = ""
+    message: str = ""
     metrics: Optional[RiskMetrics] = None
     
     def __post_init__(self):
@@ -190,11 +190,11 @@ class RiskEventData(EventData):
 @dataclass
 class CtpConfig:
     """CTP配置"""
-    userid: str
-    password: str
-    brokerid: str
-    td_address: str
-    md_address: str
+    userid: str = ""
+    password: str = ""
+    brokerid: str = ""
+    td_address: str = ""
+    md_address: str = ""
     appid: str = ""
     auth_code: str = ""
     product_info: str = ""

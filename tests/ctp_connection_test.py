@@ -7,9 +7,9 @@ from datetime import datetime
 from vnpy.event import EventEngine
 from vnpy.trader.engine import MainEngine
 from vnpy_ctp import CtpGateway
-from vnpy.trader.object import SubscribeRequest
-from vnpy.trader.constant import Exchange
-from vnpy.trader.event import EVENT_CONTRACT, EVENT_TICK, EVENT_LOG
+from vnpy.trader.object import SubscribeRequest, OrderRequest
+from vnpy.trader.constant import Exchange, Direction, OrderType, Offset
+from vnpy.trader.event import EVENT_CONTRACT, EVENT_TICK, EVENT_LOG, EVENT_ORDER, EVENT_TRADE, EVENT_ACCOUNT
 
 def setup_logging():
     """配置日志记录"""
@@ -140,8 +140,13 @@ def test_ctp_connection(logger):
     logger.info(f"产品名称: {config.get('产品名称', 'simnow_client_test')}")
     logger.info(f"授权编码: {config.get('授权编码', '0000000000000000')}")
     
+    # 存储交易相关数据
+    account_info = None
+    test_orders = []
+
     # 注册事件处理函数
     def handle_event(event):
+        nonlocal account_info
         if event.type == EVENT_LOG:
             logger.info(f"[日志] {event.data}")
         elif event.type == EVENT_CONTRACT:
@@ -151,10 +156,23 @@ def test_ctp_connection(logger):
         elif event.type == EVENT_TICK:
             tick = event.data
             logger.info(f"行情更新: {tick.symbol} 最新价={tick.last_price} 量={tick.volume}")
-    
+        elif event.type == EVENT_ORDER:
+            order = event.data
+            logger.info(f"📋 订单更新: {order.symbol} {order.direction.value} {order.volume}@{order.price} 状态:{order.status.value}")
+        elif event.type == EVENT_TRADE:
+            trade = event.data
+            logger.info(f"💰 成交回报: {trade.symbol} {trade.direction.value} {trade.volume}@{trade.price}")
+        elif event.type == EVENT_ACCOUNT:
+            account = event.data
+            account_info = account
+            logger.info(f"💳 账户更新: 总资金={account.balance:,.2f} 可用={account.available:,.2f}")
+
     event_engine.register(EVENT_LOG, handle_event)
     event_engine.register(EVENT_CONTRACT, handle_event)
     event_engine.register(EVENT_TICK, handle_event)
+    event_engine.register(EVENT_ORDER, handle_event)
+    event_engine.register(EVENT_TRADE, handle_event)
+    event_engine.register(EVENT_ACCOUNT, handle_event)
     
     # ========== 连接CTP ==========
     logger.info("\n" + "="*50)

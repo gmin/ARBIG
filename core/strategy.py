@@ -3,7 +3,7 @@
 负责生成交易信号和计算交易仓位
 """
 
-from ..utils.logger import get_logger
+from utils.logger import get_logger
 
 logger = get_logger(__name__)
 

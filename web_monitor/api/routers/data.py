@@ -8,7 +8,7 @@ from typing import List, Optional
 import uuid
 from datetime import datetime
 
-from ..models.requests import MarketDataRequest, AnalysisRequest
+from ..models.requests import MarketDataRequest, AnalysisRequest, OrderRequest
 from ..models.responses import (
     APIResponse, MarketDataResponse, AccountResponse, PositionsResponse,
     RiskResponse, TickData, AccountInfo, PositionInfo, RiskMetrics
@@ -231,4 +231,98 @@ async def get_symbols(data_manager=Depends(get_data_manager)):
         raise HTTPException(
             status_code=500,
             detail=f"获取合约列表失败: {str(e)}"
+        )
+
+@router.post("/orders/send", response_model=APIResponse, summary="发送订单")
+async def send_order(
+    request: OrderRequest,
+    data_manager=Depends(get_data_manager)
+):
+    """发送交易订单"""
+    try:
+        # 这里需要连接到实际的交易服务
+        # 暂时返回模拟响应
+        order_id = f"order_{uuid.uuid4().hex[:8]}"
+
+        return APIResponse(
+            success=True,
+            message="订单发送成功",
+            data={
+                "order_id": order_id,
+                "symbol": request.symbol,
+                "direction": request.direction,
+                "volume": request.volume,
+                "price": request.price,
+                "type": request.type,
+                "status": "submitted",
+                "submit_time": datetime.now().isoformat()
+            },
+            request_id=str(uuid.uuid4())
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"发送订单失败: {str(e)}"
+        )
+
+@router.post("/orders/cancel", response_model=APIResponse, summary="撤销订单")
+async def cancel_order(
+    order_id: str,
+    data_manager=Depends(get_data_manager)
+):
+    """撤销订单"""
+    try:
+        # 这里需要连接到实际的交易服务
+        # 暂时返回模拟响应
+        return APIResponse(
+            success=True,
+            message="订单撤销成功",
+            data={
+                "order_id": order_id,
+                "status": "cancelled",
+                "cancel_time": datetime.now().isoformat()
+            },
+            request_id=str(uuid.uuid4())
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"撤销订单失败: {str(e)}"
+        )
+
+@router.get("/orders", response_model=APIResponse, summary="获取订单列表")
+async def get_orders(
+    status: Optional[str] = Query(None, description="订单状态过滤"),
+    limit: int = Query(100, description="返回数量限制"),
+    data_manager=Depends(get_data_manager)
+):
+    """获取订单列表"""
+    try:
+        # 模拟订单数据
+        orders = [
+            {
+                "order_id": "order_12345678",
+                "symbol": "au2509",
+                "direction": "LONG",
+                "volume": 1.0,
+                "price": 485.50,
+                "type": "LIMIT",
+                "status": "submitted",
+                "submit_time": datetime.now().isoformat()
+            }
+        ]
+
+        return APIResponse(
+            success=True,
+            message="订单列表获取成功",
+            data={"orders": orders},
+            request_id=str(uuid.uuid4())
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"获取订单列表失败: {str(e)}"
         )

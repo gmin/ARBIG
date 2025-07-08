@@ -10,9 +10,9 @@ from typing import Dict, Optional, Tuple
 from vnpy.trader.constant import Exchange
 from vnpy.trader.object import TickData
 
-from .shfe.gateway import SHFEGateway
-from .mt5.gateway import MT5Gateway
-from ..utils.logger import get_logger
+from core.shfe.gateway import SHFEGateway
+from core.mt5.gateway import MT5Gateway
+from utils.logger import get_logger
 
 logger = get_logger(__name__)
 

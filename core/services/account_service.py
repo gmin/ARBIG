@@ -15,7 +15,7 @@ from ..types import (
     ServiceStatus, ServiceConfig, AccountSnapshot
 )
 from ..constants import ACCOUNT_EVENT, POSITION_EVENT, ORDER_EVENT, TRADE_EVENT
-from ...utils.logger import get_logger
+from utils.logger import get_logger
 
 logger = get_logger(__name__)
 

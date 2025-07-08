@@ -22,9 +22,9 @@ from vnpy.trader.event import (
     EVENT_ACCOUNT, EVENT_POSITION, EVENT_CONTRACT, EVENT_LOG
 )
 
-from ..core.types import OrderRequest, ServiceStatus
-from ..core.config_manager import ConfigManager
-from ..utils.logger import get_logger
+from core.types import OrderRequest, ServiceStatus
+from core.config_manager import ConfigManager
+from utils.logger import get_logger
 
 logger = get_logger(__name__)
 

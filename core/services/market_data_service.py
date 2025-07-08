@@ -14,7 +14,7 @@ from ..types import (
     TickEventData
 )
 from ..constants import TICK_EVENT, SERVICE_EVENT
-from ...utils.logger import get_logger
+from utils.logger import get_logger
 
 logger = get_logger(__name__)
 

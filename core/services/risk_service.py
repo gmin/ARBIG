@@ -13,7 +13,7 @@ from ..types import (
     ServiceStatus, ServiceConfig, Direction
 )
 from ..constants import RISK_EVENT, TRADE_EVENT
-from ...utils.logger import get_logger
+from utils.logger import get_logger
 
 logger = get_logger(__name__)
 

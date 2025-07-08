@@ -13,7 +13,7 @@ from vnpy.trader.constant import Exchange
 from vnpy.trader.gateway import BaseGateway
 from vnpy.trader.object import TickData
 
-from ..utils.logger import get_logger
+from utils.logger import get_logger
 from .utils import load_config
 from .api import MT5FIXApplication
 

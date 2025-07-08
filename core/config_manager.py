@@ -4,12 +4,13 @@
 """
 
 import os
+import json
 import yaml
 from typing import Dict, Any, Optional
 from pathlib import Path
 
-from .types import CtpConfig, DatabaseConfig, RedisConfig, ServiceConfig
-from ..utils.logger import get_logger
+from core.types import CtpConfig, DatabaseConfig, RedisConfig, ServiceConfig
+from utils.logger import get_logger
 
 logger = get_logger(__name__)
 
@@ -26,6 +27,7 @@ class ConfigManager:
         self.config_path = Path(config_path)
         self.config: Dict[str, Any] = {}
         self._load_config()
+        self._load_ctp_config()
     
     def _load_config(self) -> None:
         """加载配置文件"""
@@ -41,7 +43,46 @@ class ConfigManager:
         except Exception as e:
             logger.error(f"加载配置文件失败: {e}")
             self.config = self._get_default_config()
-    
+
+    def _load_ctp_config(self) -> None:
+        """加载CTP配置文件"""
+        try:
+            ctp_config_path = Path("config/ctp_sim.json")
+            if ctp_config_path.exists():
+                with open(ctp_config_path, 'r', encoding='utf-8') as f:
+                    ctp_config = json.load(f)
+
+                # 将CTP配置合并到主配置中
+                if 'ctp' not in self.config:
+                    self.config['ctp'] = {}
+
+                self.config['ctp']['trading'] = {
+                    'userid': ctp_config.get('用户名', ''),
+                    'password': ctp_config.get('密码', ''),
+                    'brokerid': ctp_config.get('经纪商代码', ''),
+                    'td_address': ctp_config.get('交易服务器', ''),
+                    'appid': ctp_config.get('产品名称', ''),
+                    'auth_code': ctp_config.get('授权编码', ''),
+                    'product_info': ctp_config.get('产品信息', '')
+                }
+
+                self.config['ctp']['market'] = {
+                    'userid': ctp_config.get('用户名', ''),
+                    'password': ctp_config.get('密码', ''),
+                    'brokerid': ctp_config.get('经纪商代码', ''),
+                    'md_address': ctp_config.get('行情服务器', ''),
+                    'appid': ctp_config.get('产品名称', ''),
+                    'auth_code': ctp_config.get('授权编码', ''),
+                    'product_info': ctp_config.get('产品信息', '')
+                }
+
+                logger.info(f"CTP配置文件加载成功: {ctp_config_path}")
+            else:
+                logger.warning(f"CTP配置文件不存在: {ctp_config_path}")
+
+        except Exception as e:
+            logger.error(f"加载CTP配置文件失败: {e}")
+
     def _get_default_config(self) -> Dict[str, Any]:
         """获取默认配置"""
         return {
