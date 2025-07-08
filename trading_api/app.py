@@ -1,6 +1,6 @@
 """
-ARBIG Web监控与风控系统
-提供实时交易监控和人工风控干预功能
+ARBIG 交易API服务
+提供交易、账户、行情、风控等核心业务API接口
 """
 
 import asyncio

@@ -1,6 +1,6 @@
 """
-ARBIG Web监控与风控系统主应用
-提供实时交易监控和人工风控干预功能
+ARBIG Web管理系统主应用
+提供交易管理、风控管理、系统监控等功能
 """
 
 import asyncio
@@ -30,13 +30,13 @@ from utils.logger import get_logger
 logger = get_logger(__name__)
 
 class ARBIGWebApp:
-    """ARBIG Web监控应用"""
-    
+    """ARBIG Web管理系统"""
+
     def __init__(self):
         self.app = FastAPI(
-            title="ARBIG监控与风控系统", 
+            title="ARBIG Web管理系统",
             version="1.0.0",
-            description="实时交易监控和人工风控干预系统"
+            description="量化交易管理、风控管理、系统监控平台"
         )
         
         # 设置CORS
