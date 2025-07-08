@@ -21,7 +21,7 @@ from core.types import (
 )
 from core.constants import SIGNAL_EVENT
 from gateways.ctp_gateway import CtpGatewayWrapper
-from web_monitor.app import web_app
+from web_admin.app import web_app
 from utils.logger import get_logger
 
 logger = get_logger(__name__)

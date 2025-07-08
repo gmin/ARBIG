@@ -13,7 +13,7 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from web_monitor.app import web_app, run_web_service
+from web_admin.app import web_app, run_web_service
 from core.event_engine import EventEngine
 from core.config_manager import ConfigManager
 from core.services.market_data_service import MarketDataService

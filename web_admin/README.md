@@ -54,7 +54,7 @@ pip install fastapi uvicorn websockets
 
 ```bash
 cd /root/ARBIG
-python web_monitor/run_web_monitor.py --mode integrated
+python web_admin/run_web_monitor.py --mode integrated
 ```
 
 #### 方式二：独立模式
@@ -62,7 +62,7 @@ python web_monitor/run_web_monitor.py --mode integrated
 
 ```bash
 cd /root/ARBIG
-python web_monitor/run_web_monitor.py --mode standalone
+python web_admin/run_web_monitor.py --mode standalone
 ```
 
 ### 3. 访问界面

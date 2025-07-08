@@ -17,7 +17,7 @@ def main():
     print("=" * 50)
     
     try:
-        from web_monitor.api.main import start_api_server
+        from web_admin.api.main import start_api_server
         
         print("📋 API信息:")
         print("  - 服务地址: http://localhost:8000")

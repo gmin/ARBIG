@@ -796,7 +796,7 @@ def main():
 
         # 连接服务容器到Web API
         try:
-            from web_monitor.api.dependencies import set_service_container
+            from web_admin.api.dependencies import set_service_container
             set_service_container(service_container)
             logger.info("✓ 服务容器已连接到Web API")
         except ImportError:
@@ -808,7 +808,7 @@ def main():
 
             # 在单独线程中启动API服务
             import threading
-            from web_monitor.api.main import start_api_server
+            from web_admin.api.main import start_api_server
 
             api_thread = threading.Thread(
                 target=start_api_server,

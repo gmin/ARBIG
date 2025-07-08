@@ -61,7 +61,7 @@ def main():
         print("🎉 所有依赖安装完成！")
         print("\n📋 下一步:")
         print("1. 配置CTP账户: vi config/ctp_sim.json")
-        print("2. 启动Web服务: python web_monitor/run_web_monitor.py --mode standalone")
+        print("2. 启动Web服务: python web_admin/run_web_monitor.py --mode standalone")
         print("3. 访问监控界面: http://localhost:8000")
         return 0
     else:

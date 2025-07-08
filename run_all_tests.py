@@ -275,11 +275,11 @@ class ARBIGTestSuite:
             
             # 测试Web监控模块导入
             try:
-                from web_monitor.app import web_app
+                from web_admin.app import web_app
                 logger.info("  ✓ Web监控模块导入成功")
                 
                 # 测试启动脚本
-                start_script = self.project_root / 'web_monitor' / 'run_web_monitor.py'
+                start_script = self.project_root / 'web_admin' / 'run_web_monitor.py'
                 if start_script.exists():
                     logger.info("  ✓ Web监控启动脚本存在")
                     return True

@@ -142,7 +142,7 @@ class ARBIGDeployer:
                 'core',
                 'gateways', 
                 'utils',
-                'web_monitor',
+                'web_admin',
                 'examples',
                 'tests',
                 'requirements.txt',
@@ -270,7 +270,7 @@ class ARBIGDeployer:
                         'max_single_order_volume': 10
                     }
                 },
-                'web_monitor': {
+                'web_admin': {
                     'enabled': True,
                     'host': self.config.get('web_host', '0.0.0.0'),
                     'port': self.config.get('web_port', 8000)
@@ -311,7 +311,7 @@ class ARBIGDeployer:
             
             # 设置执行权限
             executable_files = [
-                self.deployment_dir / 'web_monitor' / 'run_web_monitor.py',
+                self.deployment_dir / 'web_admin' / 'run_web_monitor.py',
                 self.venv_dir / 'bin' / 'python',
                 self.venv_dir / 'bin' / 'pip'
             ]
@@ -345,7 +345,7 @@ export PYTHONPATH=$ARBIG_HOME:$PYTHONPATH
 cd $ARBIG_HOME
 
 # 启动Web监控服务
-{self.venv_dir}/bin/python web_monitor/run_web_monitor.py --mode integrated &
+{self.venv_dir}/bin/python web_admin/run_web_monitor.py --mode integrated &
 
 echo "ARBIG系统启动完成"
 """
@@ -417,7 +417,7 @@ WantedBy=multi-user.target
             # 检查关键文件
             critical_files = [
                 self.deployment_dir / 'core' / '__init__.py',
-                self.deployment_dir / 'web_monitor' / 'app.py',
+                self.deployment_dir / 'web_admin' / 'app.py',
                 self.config_dir / 'config.yaml',
                 self.venv_dir / 'bin' / 'python'
             ]

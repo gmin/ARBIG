@@ -128,7 +128,7 @@ async def api_info():
 def start_api_server(host: str = "0.0.0.0", port: int = 8000, reload: bool = False):
     """启动API服务器"""
     uvicorn.run(
-        "web_monitor.api.main:app",
+        "web_admin.api.main:app",
         host=host,
         port=port,
         reload=reload,
