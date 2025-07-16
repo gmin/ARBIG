@@ -117,7 +117,7 @@ class StrategyListResponse(APIResponse):
 class TickData(BaseModel):
     """Tick数据"""
     symbol: str = Field(..., description="合约代码")
-    datetime: datetime = Field(..., description="时间")
+    timestamp: datetime = Field(..., description="时间")
     last_price: float = Field(..., description="最新价")
     bid_price: float = Field(..., description="买价")
     ask_price: float = Field(..., description="卖价")
@@ -129,7 +129,7 @@ class TickData(BaseModel):
 class KlineData(BaseModel):
     """K线数据"""
     symbol: str = Field(..., description="合约代码")
-    datetime: datetime = Field(..., description="时间")
+    timestamp: datetime = Field(..., description="时间")
     open_price: float = Field(..., description="开盘价")
     high_price: float = Field(..., description="最高价")
     low_price: float = Field(..., description="最低价")

@@ -13,6 +13,7 @@ from ..models.responses import (
     StrategyInfo, CurrentStrategyInfo, StrategyStatistics
 )
 from ..dependencies import get_strategy_manager
+from typing import Dict, Any
 
 router = APIRouter(prefix="/api/v1/strategies", tags=["策略管理"])
 
@@ -20,35 +21,60 @@ router = APIRouter(prefix="/api/v1/strategies", tags=["策略管理"])
 async def get_strategies_list(strategy_manager=Depends(get_strategy_manager)):
     """获取所有可用策略的列表"""
     try:
-        strategies = [
-            StrategyInfo(
-                name="spread_arbitrage",
-                display_name="套利策略",
-                description="黄金期货跨期套利策略",
-                version="1.0.0",
-                risk_level="medium",
-                status="available",
-                author="ARBIG Team"
-            ),
-            StrategyInfo(
-                name="trend_following",
-                display_name="趋势跟踪策略",
-                description="基于技术指标的趋势跟踪",
-                version="1.2.0",
-                risk_level="high",
-                status="available",
-                author="ARBIG Team"
-            ),
-            StrategyInfo(
-                name="high_frequency",
-                display_name="高频策略",
-                description="高频交易策略",
-                version="0.9.0",
-                risk_level="very_high",
-                status="available",
-                author="ARBIG Team"
-            )
-        ]
+        strategies = []
+
+        # 从实际的策略管理器获取策略信息
+        if strategy_manager and hasattr(strategy_manager, 'services') and 'StrategyService' in strategy_manager.services:
+            strategy_service = strategy_manager.services['StrategyService']
+
+            # 获取配置中的策略
+            if hasattr(strategy_service, 'config_manager') and strategy_service.config_manager:
+                strategies_config = strategy_service.config_manager.get_config('strategies', {})
+
+                for strategy_name, strategy_config in strategies_config.items():
+                    # 确定策略状态
+                    status = "available"
+                    if strategy_config.get('enabled', False):
+                        status = "running" if strategy_name in getattr(strategy_service, 'running_strategies', {}) else "loaded"
+
+                    # 根据策略类型确定显示名称和描述
+                    display_name = strategy_name
+                    description = f"{strategy_name} 策略"
+                    risk_level = "medium"
+
+                    if strategy_name == "shfe_quant":
+                        display_name = "SHFE量化策略"
+                        description = "上海期货交易所黄金量化交易策略"
+                        risk_level = "high"
+                    # 删除spread_arbitrage相关分支
+                    # elif strategy_name == "spread_arbitrage":
+                    #     display_name = "套利策略"
+                    #     description = "黄金期货跨期套利策略"
+                    #     risk_level = "medium"
+
+                    strategies.append(StrategyInfo(
+                        name=strategy_name,
+                        display_name=display_name,
+                        description=description,
+                        version="1.0.0",
+                        risk_level=risk_level,
+                        status=status,
+                        author="ARBIG Team"
+                    ))
+
+        # 删除默认策略列表中的套利策略
+        if not strategies:
+            strategies = [
+                StrategyInfo(
+                    name="shfe_quant",
+                    display_name="SHFE量化策略",
+                    description="上海期货交易所黄金量化交易策略",
+                    version="1.0.0",
+                    risk_level="high",
+                    status="available",
+                    author="ARBIG Team"
+                )
+            ]
         
         return StrategyListResponse(
             success=True,
@@ -67,10 +93,10 @@ async def get_strategies_list(strategy_manager=Depends(get_strategy_manager)):
 async def get_current_strategy(strategy_manager=Depends(get_strategy_manager)):
     """获取当前运行的策略信息"""
     try:
-        # 模拟当前策略数据
+        # 删除spread_arbitrage相关模拟数据
         current_strategy = CurrentStrategyInfo(
-            strategy_name="spread_arbitrage",
-            display_name="套利策略",
+            strategy_name="shfe_quant",
+            display_name="SHFE量化策略",
             status="running",
             start_time=datetime.now(),
             runtime="2h 30m 15s",
@@ -86,18 +112,116 @@ async def get_current_strategy(strategy_manager=Depends(get_strategy_manager)):
                 max_drawdown=-0.12
             )
         )
-        
+
         return StrategyStatusResponse(
             success=True,
             message="当前策略信息获取成功",
             data=current_strategy,
             request_id=str(uuid.uuid4())
         )
-        
+
     except Exception as e:
         raise HTTPException(
             status_code=500,
             detail=f"获取当前策略失败: {str(e)}"
+        )
+
+@router.get("/{strategy_name}/details", response_model=StrategyStatusResponse, summary="获取策略详细信息")
+async def get_strategy_details(
+    strategy_name: str,
+    strategy_manager=Depends(get_strategy_manager)
+):
+    """获取指定策略的详细信息"""
+    try:
+        # 从实际的策略管理器获取策略信息
+        if strategy_manager and hasattr(strategy_manager, 'services') and 'StrategyService' in strategy_manager.services:
+            strategy_service = strategy_manager.services['StrategyService']
+
+            # 获取策略配置
+            if hasattr(strategy_service, 'config_manager') and strategy_service.config_manager:
+                strategies_config = strategy_service.config_manager.get_config('strategies', {})
+                strategy_config = strategies_config.get(strategy_name, {})
+
+                if strategy_config:
+                    # 找到策略配置，继续处理
+                    pass
+                else:
+                    # 策略配置不存在，但我们仍然可以返回默认信息
+                    strategy_config = {}
+
+                # 构建策略详细信息
+                display_name = strategy_name
+                if strategy_name == "shfe_quant":
+                    display_name = "SHFE量化策略"
+                # elif strategy_name == "spread_arbitrage":
+                #     display_name = "套利策略"
+
+                # 模拟策略统计数据
+                current_strategy = CurrentStrategyInfo(
+                    strategy_name=strategy_name,
+                    display_name=display_name,
+                    status="stopped",  # 默认停止状态
+                    start_time=datetime.now().isoformat(),
+                    runtime="00:00:00",
+                    statistics=StrategyStatistics(
+                        signals_generated=0,
+                        orders_executed=0,
+                        successful_trades=0,
+                        failed_trades=0,
+                        current_profit=0.0,
+                        today_profit=0.0,
+                        win_rate=0.0,
+                        sharpe_ratio=0.0,
+                        max_drawdown=0.0
+                    )
+                )
+
+                return StrategyStatusResponse(
+                    success=True,
+                    message=f"策略 {strategy_name} 详细信息获取成功",
+                    data=current_strategy,
+                    request_id=str(uuid.uuid4())
+                )
+
+        # 如果无法从配置获取，返回默认信息
+        display_name = strategy_name
+        if strategy_name == "shfe_quant":
+            display_name = "SHFE量化策略"
+        # elif strategy_name == "spread_arbitrage":
+        #     display_name = "套利策略"
+
+        current_strategy = CurrentStrategyInfo(
+            strategy_name=strategy_name,
+            display_name=display_name,
+            status="stopped",
+            start_time=datetime.now().isoformat(),
+            runtime="00:00:00",
+            statistics=StrategyStatistics(
+                signals_generated=0,
+                orders_executed=0,
+                successful_trades=0,
+                failed_trades=0,
+                current_profit=0.0,
+                today_profit=0.0,
+                win_rate=0.0,
+                sharpe_ratio=0.0,
+                max_drawdown=0.0
+            )
+        )
+
+        return StrategyStatusResponse(
+            success=True,
+            message=f"策略 {strategy_name} 详细信息获取成功",
+            data=current_strategy,
+            request_id=str(uuid.uuid4())
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"获取策略详细信息失败: {str(e)}"
         )
 
 @router.post("/switch", response_model=APIResponse, summary="切换策略")
@@ -167,4 +291,89 @@ async def resume_strategy(strategy_manager=Depends(get_strategy_manager)):
         raise HTTPException(
             status_code=500,
             detail=f"恢复策略失败: {str(e)}"
+        )
+
+@router.get("/{strategy_name}/params", summary="获取策略参数")
+async def get_strategy_params(strategy_name: str, strategy_manager=Depends(get_strategy_manager)):
+    """获取指定策略的参数配置"""
+    try:
+        # 演示模式返回模拟参数
+        demo_params = {
+            "ma_short": 5,
+            "ma_long": 20,
+            "rsi_period": 14,
+            "rsi_overbought": 70,
+            "stop_loss": 0.05,
+            "take_profit": 0.08,
+            "position_size": 1,
+            "max_position": 5,
+            "risk_factor": 0.02,
+            "add_interval": 50,
+            "position_mode": "fixed",
+            "position_multiplier": 1.0
+        }
+
+        return APIResponse(
+            success=True,
+            message="获取策略参数成功",
+            data=demo_params,
+            request_id=str(uuid.uuid4())
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"获取策略参数失败: {str(e)}"
+        )
+
+@router.post("/{strategy_name}/params", summary="更新策略参数")
+async def update_strategy_params(strategy_name: str, params: Dict[str, Any], strategy_manager=Depends(get_strategy_manager)):
+    """更新指定策略的参数配置"""
+    try:
+        # 在演示模式下，只记录参数更新
+        print(f"演示模式：更新策略 {strategy_name} 参数: {params}")
+
+        return APIResponse(
+            success=True,
+            message=f"策略 {strategy_name} 参数更新成功（演示模式）",
+            data={"updated_params": params},
+            request_id=str(uuid.uuid4())
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"更新策略参数失败: {str(e)}"
+        )
+
+@router.post("/{strategy_name}/backtest", summary="运行历史回测")
+async def run_backtest(strategy_name: str, config: Dict[str, Any], strategy_manager=Depends(get_strategy_manager)):
+    """运行指定策略的历史回测"""
+    try:
+        # 演示模式返回模拟回测结果
+        import random
+
+        backtest_results = {
+            "total_return": round(random.uniform(-0.1, 0.3), 4),
+            "annual_return": round(random.uniform(-0.05, 0.25), 4),
+            "max_drawdown": round(random.uniform(0.02, 0.15), 4),
+            "sharpe_ratio": round(random.uniform(0.5, 2.5), 2),
+            "win_rate": round(random.uniform(0.4, 0.8), 2),
+            "total_trades": random.randint(50, 200),
+            "start_date": config.get("start_date", "2024-01-01"),
+            "end_date": config.get("end_date", "2024-12-31"),
+            "initial_capital": config.get("initial_capital", 100000)
+        }
+
+        return APIResponse(
+            success=True,
+            message="回测完成（演示模式）",
+            data=backtest_results,
+            request_id=str(uuid.uuid4())
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"运行回测失败: {str(e)}"
         )

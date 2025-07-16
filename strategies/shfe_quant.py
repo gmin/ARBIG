@@ -9,6 +9,7 @@ from typing import Dict, Any, List
 from core.strategy_base import StrategyBase
 from core.event_engine import Event
 from core.constants import *
+from core.position_manager import PositionManager
 
 class SHFEQuantStrategy(StrategyBase):
     """
@@ -30,6 +31,13 @@ class SHFEQuantStrategy(StrategyBase):
         self.rsi_period = config.get('rsi_period', 14) # RSI周期
         self.rsi_overbought = config.get('rsi_overbought', 70)
         self.rsi_oversold = config.get('rsi_oversold', 30)
+
+        # 风险控制参数
+        self.stop_loss = config.get('stop_loss', 0.05)    # 止损比例
+        self.take_profit = config.get('take_profit', 0.08) # 止盈比例
+
+        # 初始化仓位管理器
+        self.position_manager = PositionManager(config)
         
         # 数据缓存
         self.price_history: List[float] = []
@@ -90,12 +98,18 @@ class SHFEQuantStrategy(StrategyBase):
         """处理成交事件"""
         trade_data = event.data
         print(f"[{self.name}] 成交更新: {trade_data}")
-        
+
         # 更新持仓
         if trade_data.get('direction') == 'BUY':
             self.position += trade_data.get('volume', 0)
         else:
             self.position -= trade_data.get('volume', 0)
+
+        # 如果是平仓交易，更新交易结果到仓位管理器
+        if trade_data.get('offset') == 'CLOSE':
+            pnl = trade_data.get('pnl', 0)
+            is_win = pnl > 0
+            self.position_manager.update_trade_result(is_win, pnl)
             
     def on_account(self, event: Event):
         """处理账户事件"""
@@ -128,8 +142,9 @@ class SHFEQuantStrategy(StrategyBase):
             adjusted_signal = self._adjust_signal_by_direction(signal)
             
             if adjusted_signal:
-                # 计算仓位
-                position = self._calculate_position(adjusted_signal)
+                # 计算仓位，传入当前价格
+                current_price = self.price_history[-1] if self.price_history else 0
+                position = self._calculate_position(adjusted_signal, current_price)
                 
                 if position != 0:
                     # 发送交易信号
@@ -392,29 +407,43 @@ class SHFEQuantStrategy(StrategyBase):
         
         return (upper, lower)
         
-    def _calculate_position(self, signal: str) -> int:
+    def _calculate_position(self, signal: str, current_price: float = 0) -> int:
         """计算交易仓位"""
-        base_position = 100  # 基础仓位
-        
-        # 根据方向置信度调整仓位
-        if self.direction_confidence > 0.7:
-            position_multiplier = 1.0  # 高置信度，正常仓位
-        elif self.direction_confidence > 0.5:
-            position_multiplier = 0.8  # 中等置信度，减少仓位
-        else:
-            position_multiplier = 0.5  # 低置信度，大幅减少仓位
-            
-        if signal == 'BUY':
-            available = self.max_position - self.position
-            return min(int(available * position_multiplier), base_position)
-        elif signal == 'SELL':
-            available = self.max_position + self.position
-            return -min(int(available * position_multiplier), base_position)
-        elif signal in ['CLOSE_LONG', 'CLOSE_SHORT']:
-            # 平仓信号
-            if signal == 'CLOSE_LONG' and self.position > 0:
-                return -self.position
-            elif signal == 'CLOSE_SHORT' and self.position < 0:
-                return -self.position
-                
-        return 0 
+        try:
+            # 使用仓位管理器计算基础仓位
+            base_position = self.position_manager.calculate_position_size(
+                signal=signal,
+                current_position=self.position,
+                price=current_price,
+                account_info=None  # TODO: 从账户服务获取
+            )
+
+            # 根据方向置信度调整仓位
+            confidence_multiplier = 1.0
+            if self.direction_confidence > 0.7:
+                confidence_multiplier = 1.0  # 高置信度，正常仓位
+            elif self.direction_confidence > 0.5:
+                confidence_multiplier = 0.8  # 中等置信度，减少仓位
+            else:
+                confidence_multiplier = 0.5  # 低置信度，大幅减少仓位
+
+            # 应用置信度调整
+            final_position = int(base_position * confidence_multiplier)
+
+            # 确保不超过可用仓位
+            if signal == 'BUY':
+                available = self.max_position - self.position
+                final_position = min(final_position, available)
+            elif signal == 'SELL':
+                available = self.max_position + self.position
+                final_position = min(final_position, available)
+                final_position = -final_position  # 卖出为负数
+
+            print(f"[{self.name}] 仓位计算: 信号={signal}, 基础仓位={base_position}, "
+                  f"置信度={self.direction_confidence:.2f}, 最终仓位={final_position}")
+
+            return final_position
+
+        except Exception as e:
+            print(f"[{self.name}] 仓位计算失败: {e}")
+            return 0

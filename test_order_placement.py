@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
+优化版下单测试脚本
+支持开仓/平仓、做多/做空、多种订单类型
 基于成功CTP连接的下单测试脚本
-使用与ctp_connection_test.py相同的连接方式
 """
 
 import time
@@ -250,102 +251,154 @@ class OrderTester:
             self.logger.error(f"订阅行情失败: {e}")
             return False
     
-    def send_test_order(self):
-        """发送测试订单"""
+    def get_available_contracts(self):
+        """获取可用的黄金期货合约"""
+        gold_contracts = [c for c in self.contracts.values()
+                        if c.symbol.startswith("au") and c.exchange == Exchange.SHFE
+                        and len(c.symbol) == 6 and c.symbol[2:].isdigit()]
+        return sorted(gold_contracts, key=lambda x: x.symbol)
+
+    def get_current_positions(self):
+        """获取当前持仓"""
+        positions = {}
+        for pos in self.positions.values():
+            if pos.volume > 0:  # 只显示有持仓的合约
+                positions[pos.vt_symbol] = pos
+        return positions
+
+    def calculate_order_price(self, tick, direction, order_type):
+        """计算下单价格"""
+        if order_type == OrderType.MARKET:
+            return 0.0  # 市价单不需要价格
+
+        current_price = tick.last_price
+
+        if direction == Direction.LONG:
+            # 买入：使用卖一价或当前价
+            if hasattr(tick, 'ask_price_1') and tick.ask_price_1 > 0:
+                price = tick.ask_price_1
+            else:
+                price = current_price
+        else:
+            # 卖出：使用买一价或当前价
+            if hasattr(tick, 'bid_price_1') and tick.bid_price_1 > 0:
+                price = tick.bid_price_1
+            else:
+                price = current_price
+
+        # 调整价格到最小变动价位（0.02的倍数）
+        return round(price / 0.02) * 0.02
+
+    def send_order(self, symbol, direction, offset, order_type=OrderType.LIMIT, volume=1, price=None):
+        """发送订单的通用方法"""
         try:
-            self.logger.info("📋 发送测试订单...")
-            
             # 检查账户资金
             if not self.account_info:
                 self.logger.error("无账户信息，无法下单")
                 return False
-            
+
             if self.account_info.available < 50000:  # 至少5万可用资金
                 self.logger.error(f"可用资金不足: {self.account_info.available:,.2f}")
                 return False
-            
-            # 选择黄金期货合约（排除期权）
-            gold_contracts = [c for c in self.contracts.values()
-                            if c.symbol.startswith("au") and c.exchange == Exchange.SHFE
-                            and len(c.symbol) == 6 and c.symbol[2:].isdigit()]
 
-            if not gold_contracts:
-                self.logger.error("无可用的黄金期货合约")
+            # 查找合约
+            contract = None
+            for c in self.contracts.values():
+                if c.symbol == symbol and c.exchange == Exchange.SHFE:
+                    contract = c
+                    break
+
+            if not contract:
+                self.logger.error(f"未找到合约: {symbol}")
                 return False
 
-            contract = sorted(gold_contracts, key=lambda x: x.symbol)[0]
-            self.logger.info(f"选择交易合约: {contract.symbol}")
-            
             # 获取当前行情
             tick = self.ticks.get(contract.vt_symbol)
             if not tick:
                 self.logger.error("无行情数据，无法下单")
                 return False
-            
-            current_price = tick.last_price
-            # 使用买一价下单，确保能够立即成交，并调整到最小变动价位
-            # 黄金期货最小变动价位是0.02元
-            if hasattr(tick, 'ask_price_1') and tick.ask_price_1 > 0:
-                order_price = tick.ask_price_1
+
+            # 计算下单价格
+            if price is None:
+                order_price = self.calculate_order_price(tick, direction, order_type)
             else:
-                order_price = current_price
+                order_price = round(price / 0.02) * 0.02  # 调整到最小变动价位
 
-            # 调整价格到最小变动价位（0.02的倍数）
-            order_price = round(order_price / 0.02) * 0.02
-            
-            self.logger.info(f"当前价格: {current_price}")
-            self.logger.info(f"买一价: {getattr(tick, 'ask_price_1', 'N/A')}")
-            self.logger.info(f"卖一价: {getattr(tick, 'bid_price_1', 'N/A')}")
-            self.logger.info(f"下单价格: {order_price}")
-            self.logger.info(f"合约信息: {contract.symbol} 交易所: {contract.exchange}")
+            # 显示市场信息
+            self.logger.info(f"📊 市场信息:")
+            self.logger.info(f"  当前价格: {tick.last_price}")
+            self.logger.info(f"  买一价: {getattr(tick, 'bid_price_1', 'N/A')}")
+            self.logger.info(f"  卖一价: {getattr(tick, 'ask_price_1', 'N/A')}")
+            self.logger.info(f"  成交量: {getattr(tick, 'volume', 'N/A')}")
 
-            # 创建订单请求 - 使用限价单，价格设置为买一价确保成交
+            # 创建订单请求
             order_req = OrderRequest(
                 symbol=contract.symbol,
                 exchange=contract.exchange,
-                direction=Direction.LONG,
-                type=OrderType.LIMIT,  # 使用限价单
-                volume=1,  # 1手黄金期货
-                price=order_price,  # 使用调整后的价格
-                offset=Offset.OPEN,  # 开仓
-                reference="test_limit_order"
+                direction=direction,
+                type=order_type,
+                volume=volume,
+                price=order_price,
+                offset=offset,
+                reference=f"enhanced_test_{direction.value}_{offset.value}"
             )
 
-            self.logger.info("订单参数详情:")
-            self.logger.info(f"  symbol: {order_req.symbol}")
-            self.logger.info(f"  exchange: {order_req.exchange}")
-            self.logger.info(f"  direction: {order_req.direction}")
-            self.logger.info(f"  type: {order_req.type}")
-            self.logger.info(f"  volume: {order_req.volume}")
-            self.logger.info(f"  price: {order_req.price}")
-            self.logger.info(f"  offset: {order_req.offset}")
-            self.logger.info(f"  reference: {order_req.reference}")
-            
+            # 显示订单详情
+            direction_str = "买入" if direction == Direction.LONG else "卖出"
+            offset_str = "开仓" if offset == Offset.OPEN else "平仓"
+            type_str = "限价单" if order_type == OrderType.LIMIT else "市价单"
+
+            self.logger.info(f"📋 订单详情:")
+            self.logger.info(f"  合约: {order_req.symbol}")
+            self.logger.info(f"  方向: {direction_str}")
+            self.logger.info(f"  开平: {offset_str}")
+            self.logger.info(f"  类型: {type_str}")
+            self.logger.info(f"  数量: {order_req.volume}手")
+            self.logger.info(f"  价格: {order_req.price if order_type == OrderType.LIMIT else '市价'}")
+
             # 发送订单
             vt_orderid = self.ctp_gateway.send_order(order_req)
-            
+
             if vt_orderid:
                 self.logger.info(f"✓ 订单发送成功: {vt_orderid}")
                 self.test_orders.append(vt_orderid)
-                
+
                 # 等待订单状态更新
                 time.sleep(3)
-                
+
                 # 检查订单状态
                 if vt_orderid in self.orders:
                     order = self.orders[vt_orderid]
                     self.logger.info(f"✓ 订单状态: {order.status.value}")
+                    if hasattr(order, 'traded') and order.traded > 0:
+                        self.logger.info(f"✓ 已成交: {order.traded}手")
                 else:
                     self.logger.warning("⚠ 未收到订单状态更新")
-                
+
                 return True
             else:
                 self.logger.error("✗ 订单发送失败")
                 return False
-                
+
         except Exception as e:
-            self.logger.error(f"发送测试订单失败: {e}")
+            self.logger.error(f"发送订单失败: {e}")
             return False
+
+    def send_test_order(self):
+        """发送测试订单 - 保持向后兼容"""
+        contracts = self.get_available_contracts()
+        if not contracts:
+            self.logger.error("无可用的黄金期货合约")
+            return False
+
+        contract = contracts[0]  # 选择第一个合约
+        return self.send_order(
+            symbol=contract.symbol,
+            direction=Direction.LONG,
+            offset=Offset.OPEN,
+            order_type=OrderType.LIMIT,
+            volume=1
+        )
     
     def cancel_test_orders(self):
         """撤销测试订单"""
@@ -379,45 +432,380 @@ class OrderTester:
         except Exception as e:
             self.logger.error(f"资源清理失败: {e}")
 
+def show_menu():
+    """显示交互菜单"""
+    print("\n" + "="*60)
+    print("🎛️  ARBIG 增强版下单测试系统")
+    print("="*60)
+    print("1. 📊 查看账户信息")
+    print("2. 📈 查看可用合约")
+    print("3. 📋 查看当前持仓")
+    print("4. 🟢 做多开仓 (买入开仓)")
+    print("5. 🔴 做空开仓 (卖出开仓)")
+    print("6. ✅ 平多仓 (卖出平仓)")
+    print("7. ✅ 平空仓 (买入平仓)")
+    print("8. 📤 自定义下单")
+    print("9. ❌ 撤销所有测试订单")
+    print("10. 📊 查看订单状态")
+    print("0. 🚪 退出系统")
+    print("="*60)
+
+def get_user_choice():
+    """获取用户选择"""
+    try:
+        choice = input("请选择操作 (0-10): ").strip()
+        return int(choice) if choice.isdigit() else -1
+    except:
+        return -1
+
+def interactive_trading(tester):
+    """交互式交易"""
+    while True:
+        show_menu()
+        choice = get_user_choice()
+
+        if choice == 0:
+            print("👋 退出系统")
+            break
+        elif choice == 1:
+            show_account_info(tester)
+        elif choice == 2:
+            show_available_contracts(tester)
+        elif choice == 3:
+            show_current_positions(tester)
+        elif choice == 4:
+            do_long_open(tester)
+        elif choice == 5:
+            do_short_open(tester)
+        elif choice == 6:
+            do_long_close(tester)
+        elif choice == 7:
+            do_short_close(tester)
+        elif choice == 8:
+            do_custom_order(tester)
+        elif choice == 9:
+            tester.cancel_test_orders()
+        elif choice == 10:
+            show_order_status(tester)
+        else:
+            print("❌ 无效选择，请重新输入")
+
+        input("\n按Enter键继续...")
+
+def show_account_info(tester):
+    """显示账户信息"""
+    if tester.account_info:
+        print(f"\n💰 账户信息:")
+        print(f"  账户ID: {tester.account_info.accountid}")
+        print(f"  总资金: {tester.account_info.balance:,.2f}")
+        print(f"  可用资金: {tester.account_info.available:,.2f}")
+        print(f"  冻结资金: {tester.account_info.frozen:,.2f}")
+    else:
+        print("❌ 无账户信息")
+
+def show_available_contracts(tester):
+    """显示可用合约"""
+    contracts = tester.get_available_contracts()
+    if contracts:
+        print(f"\n📈 可用黄金期货合约 ({len(contracts)}个):")
+        for i, contract in enumerate(contracts, 1):
+            tick = tester.ticks.get(contract.vt_symbol)
+            price_info = f"价格: {tick.last_price}" if tick else "无行情"
+            print(f"  {i}. {contract.symbol} - {price_info}")
+    else:
+        print("❌ 无可用合约")
+
+def show_current_positions(tester):
+    """显示当前持仓"""
+    positions = tester.get_current_positions()
+    if positions:
+        print(f"\n📋 当前持仓 ({len(positions)}个):")
+        for vt_symbol, pos in positions.items():
+            direction = "多头" if pos.direction == Direction.LONG else "空头"
+            pnl_str = f"盈亏: {pos.pnl:+.2f}" if hasattr(pos, 'pnl') else ""
+            print(f"  {pos.symbol}: {direction} {pos.volume}手 @{pos.price:.2f} {pnl_str}")
+    else:
+        print("📋 当前无持仓")
+
+def select_contract(tester):
+    """选择合约"""
+    contracts = tester.get_available_contracts()
+    if not contracts:
+        print("❌ 无可用合约")
+        return None
+
+    print("\n📈 选择合约:")
+    for i, contract in enumerate(contracts, 1):
+        tick = tester.ticks.get(contract.vt_symbol)
+        price_info = f"价格: {tick.last_price}" if tick else "无行情"
+        print(f"  {i}. {contract.symbol} - {price_info}")
+
+    try:
+        choice = int(input(f"请选择合约 (1-{len(contracts)}): ")) - 1
+        if 0 <= choice < len(contracts):
+            return contracts[choice].symbol
+    except:
+        pass
+
+    print("❌ 无效选择")
+    return None
+
+def get_volume():
+    """获取下单数量"""
+    try:
+        volume = int(input("请输入下单数量 (手, 默认1): ") or "1")
+        if volume > 0:
+            return volume
+    except:
+        pass
+    print("❌ 无效数量，使用默认值1手")
+    return 1
+
+def do_long_open(tester):
+    """做多开仓"""
+    print("\n🟢 做多开仓 (买入开仓)")
+    symbol = select_contract(tester)
+    if symbol:
+        volume = get_volume()
+        tester.send_order(symbol, Direction.LONG, Offset.OPEN, OrderType.LIMIT, volume)
+
+def do_short_open(tester):
+    """做空开仓"""
+    print("\n🔴 做空开仓 (卖出开仓)")
+    symbol = select_contract(tester)
+    if symbol:
+        volume = get_volume()
+        tester.send_order(symbol, Direction.SHORT, Offset.OPEN, OrderType.LIMIT, volume)
+
+def do_long_close(tester):
+    """平多仓"""
+    print("\n✅ 平多仓 (卖出平仓)")
+    positions = tester.get_current_positions()
+    long_positions = {k: v for k, v in positions.items() if v.direction == Direction.LONG}
+
+    if not long_positions:
+        print("❌ 当前无多头持仓")
+        return
+
+    print("选择要平仓的多头持仓:")
+    pos_list = list(long_positions.items())
+    for i, (vt_symbol, pos) in enumerate(pos_list, 1):
+        print(f"  {i}. {pos.symbol}: {pos.volume}手 @{pos.price:.2f}")
+
+    try:
+        choice = int(input(f"请选择 (1-{len(pos_list)}): ")) - 1
+        if 0 <= choice < len(pos_list):
+            vt_symbol, pos = pos_list[choice]
+
+            # 选择平仓类型
+            print("\n选择平仓类型:")
+            print("1. 平今仓 (平当日开仓)")
+            print("2. 平昨仓 (平昨日持仓)")
+            print("3. 自动平仓 (系统自动选择)")
+
+            try:
+                offset_choice = int(input("请选择 (1-3): "))
+                if offset_choice == 1:
+                    offset = Offset.CLOSETODAY
+                    offset_desc = "平今仓"
+                elif offset_choice == 2:
+                    offset = Offset.CLOSEYESTERDAY
+                    offset_desc = "平昨仓"
+                else:
+                    offset = Offset.CLOSE
+                    offset_desc = "自动平仓"
+
+                print(f"\n📋 平仓类型: {offset_desc}")
+                max_volume = int(pos.volume)
+                volume = min(get_volume(), max_volume)
+                tester.send_order(pos.symbol, Direction.SHORT, offset, OrderType.LIMIT, volume)
+            except:
+                print("❌ 无效的平仓类型选择")
+    except:
+        print("❌ 无效选择")
+
+def do_short_close(tester):
+    """平空仓"""
+    print("\n✅ 平空仓 (买入平仓)")
+    positions = tester.get_current_positions()
+    short_positions = {k: v for k, v in positions.items() if v.direction == Direction.SHORT}
+
+    if not short_positions:
+        print("❌ 当前无空头持仓")
+        return
+
+    print("选择要平仓的空头持仓:")
+    pos_list = list(short_positions.items())
+    for i, (vt_symbol, pos) in enumerate(pos_list, 1):
+        print(f"  {i}. {pos.symbol}: {pos.volume}手 @{pos.price:.2f}")
+
+    try:
+        choice = int(input(f"请选择 (1-{len(pos_list)}): ")) - 1
+        if 0 <= choice < len(pos_list):
+            vt_symbol, pos = pos_list[choice]
+
+            # 选择平仓类型
+            print("\n选择平仓类型:")
+            print("1. 平今仓 (平当日开仓)")
+            print("2. 平昨仓 (平昨日持仓)")
+            print("3. 自动平仓 (系统自动选择)")
+
+            try:
+                offset_choice = int(input("请选择 (1-3): "))
+                if offset_choice == 1:
+                    offset = Offset.CLOSETODAY
+                    offset_desc = "平今仓"
+                elif offset_choice == 2:
+                    offset = Offset.CLOSEYESTERDAY
+                    offset_desc = "平昨仓"
+                else:
+                    offset = Offset.CLOSE
+                    offset_desc = "自动平仓"
+
+                print(f"\n📋 平仓类型: {offset_desc}")
+                max_volume = int(pos.volume)
+                volume = min(get_volume(), max_volume)
+                tester.send_order(pos.symbol, Direction.LONG, offset, OrderType.LIMIT, volume)
+            except:
+                print("❌ 无效的平仓类型选择")
+    except:
+        print("❌ 无效选择")
+
+def do_custom_order(tester):
+    """自定义下单"""
+    print("\n📤 自定义下单")
+
+    # 选择合约
+    symbol = select_contract(tester)
+    if not symbol:
+        return
+
+    # 选择方向
+    print("\n选择交易方向:")
+    print("1. 买入")
+    print("2. 卖出")
+    try:
+        dir_choice = int(input("请选择 (1-2): "))
+        direction = Direction.LONG if dir_choice == 1 else Direction.SHORT
+    except:
+        print("❌ 无效选择")
+        return
+
+    # 选择开平仓
+    print("\n选择开平仓:")
+    print("1. 开仓")
+    print("2. 平仓")
+    try:
+        offset_choice = int(input("请选择 (1-2): "))
+        if offset_choice == 1:
+            offset = Offset.OPEN
+            offset_desc = "开仓"
+        else:
+            # 如果选择平仓，进一步选择平仓类型
+            print("\n选择平仓类型:")
+            print("1. 平今仓 (平当日开仓)")
+            print("2. 平昨仓 (平昨日持仓)")
+            print("3. 自动平仓 (系统自动选择)")
+
+            try:
+                close_choice = int(input("请选择 (1-3): "))
+                if close_choice == 1:
+                    offset = Offset.CLOSETODAY
+                    offset_desc = "平今仓"
+                elif close_choice == 2:
+                    offset = Offset.CLOSEYESTERDAY
+                    offset_desc = "平昨仓"
+                else:
+                    offset = Offset.CLOSE
+                    offset_desc = "自动平仓"
+            except:
+                print("❌ 无效的平仓类型选择")
+                return
+
+        print(f"\n📋 开平仓类型: {offset_desc}")
+    except:
+        print("❌ 无效选择")
+        return
+
+    # 选择订单类型
+    print("\n选择订单类型:")
+    print("1. 限价单")
+    print("2. 市价单")
+    try:
+        type_choice = int(input("请选择 (1-2): "))
+        order_type = OrderType.LIMIT if type_choice == 1 else OrderType.MARKET
+    except:
+        print("❌ 无效选择")
+        return
+
+    # 获取数量
+    volume = get_volume()
+
+    # 获取价格（限价单）
+    price = None
+    if order_type == OrderType.LIMIT:
+        try:
+            price_input = input("请输入价格 (留空使用市场价): ").strip()
+            if price_input:
+                price = float(price_input)
+        except:
+            print("❌ 无效价格，将使用市场价")
+
+    # 发送订单
+    tester.send_order(symbol, direction, offset, order_type, volume, price)
+
+def show_order_status(tester):
+    """显示订单状态"""
+    if tester.test_orders:
+        print(f"\n📊 测试订单状态 ({len(tester.test_orders)}个):")
+        for vt_orderid in tester.test_orders:
+            if vt_orderid in tester.orders:
+                order = tester.orders[vt_orderid]
+                print(f"  {vt_orderid}: {order.status.value}")
+                if hasattr(order, 'traded') and order.traded > 0:
+                    print(f"    已成交: {order.traded}手")
+            else:
+                print(f"  {vt_orderid}: 状态未知")
+    else:
+        print("📊 当前无测试订单")
+
 def main():
     """主函数"""
     logger = setup_logging()
     tester = OrderTester(logger)
-    
+
     try:
-        logger.info("🧪 开始下单测试")
+        logger.info("🧪 开始增强版下单测试")
         logger.info("=" * 50)
-        
+
         # 1. 连接CTP
         if not tester.connect_ctp():
             logger.error("❌ CTP连接失败")
             return 1
-        
+
         # 2. 查询账户信息
         if not tester.query_account_info():
             logger.error("❌ 账户信息查询失败")
             return 1
-        
+
         # 3. 订阅行情
         if not tester.subscribe_market_data():
             logger.error("❌ 行情订阅失败")
             return 1
-        
-        # 4. 发送测试订单
-        if not tester.send_test_order():
-            logger.error("❌ 测试订单失败")
-            return 1
-        
-        # 5. 等待观察
-        logger.info("⏰ 等待30秒观察订单状态...")
-        time.sleep(30)
-        
-        # 6. 撤销测试订单
-        tester.cancel_test_orders()
-        
-        logger.info("🎉 下单测试完成!")
+
+        logger.info("✅ 系统初始化完成，进入交互模式")
+
+        # 4. 进入交互模式
+        interactive_trading(tester)
+
+        # 5. 退出前撤销所有测试订单
+        if tester.test_orders:
+            print("\n🧹 清理测试订单...")
+            tester.cancel_test_orders()
+
+        logger.info("🎉 测试完成!")
         return 0
-        
+
     except KeyboardInterrupt:
         logger.info("测试被用户中断")
         return 0

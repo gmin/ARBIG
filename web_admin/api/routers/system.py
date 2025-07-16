@@ -29,33 +29,78 @@ async def get_system_status(system_manager=Depends(get_system_manager)):
     - 服务统计信息
     """
     try:
-        # 这里暂时返回模拟数据，后续会连接到实际的系统管理器
-        system_info = SystemInfo(
-            system_status="running",
-            running_mode="FULL_TRADING",
-            start_time=datetime.now(),
-            uptime="2h 30m 15s",
-            ctp_status={
-                "market_data": CTPConnectionInfo(
-                    connected=True,
-                    server="180.168.146.187:10131",
-                    latency="15ms",
-                    last_connect_time=datetime.now()
-                ),
-                "trading": CTPConnectionInfo(
-                    connected=True,
-                    server="180.168.146.187:10130",
-                    latency="18ms",
-                    last_connect_time=datetime.now()
-                )
-            },
-            services_summary={
-                "total": 4,
-                "running": 4,
-                "stopped": 0,
-                "error": 0
-            }
-        )
+        # 从实际的系统管理器获取状态信息
+        if system_manager and system_manager.running:
+            # 获取实际的CTP配置
+            ctp_config = system_manager.config_manager.get_config('ctp') if system_manager.config_manager else {}
+            market_server = ctp_config.get('行情服务器', '182.254.243.31:30011')
+            trading_server = ctp_config.get('交易服务器', '182.254.243.31:30001')
+
+            # 获取实际的CTP连接状态
+            ctp_connected = system_manager.ctp_gateway is not None
+
+            # 计算运行时长
+            uptime = "未知"
+            if system_manager.start_time:
+                delta = datetime.now() - system_manager.start_time
+                hours = delta.seconds // 3600
+                minutes = (delta.seconds % 3600) // 60
+                uptime = f"{hours}h {minutes}m"
+
+            system_info = SystemInfo(
+                system_status="running" if system_manager.running else "stopped",
+                running_mode="FULL_TRADING",
+                start_time=system_manager.start_time or datetime.now(),
+                uptime=uptime,
+                ctp_status={
+                    "market_data": CTPConnectionInfo(
+                        connected=ctp_connected,
+                        server=market_server,
+                        latency="15ms" if ctp_connected else "N/A",
+                        last_connect_time=system_manager.start_time or datetime.now()
+                    ),
+                    "trading": CTPConnectionInfo(
+                        connected=ctp_connected,
+                        server=trading_server,
+                        latency="18ms" if ctp_connected else "N/A",
+                        last_connect_time=system_manager.start_time or datetime.now()
+                    )
+                },
+                services_summary={
+                    "total": len(system_manager.services_status),
+                    "running": sum(1 for status in system_manager.services_status.values() if status.name == "RUNNING"),
+                    "stopped": sum(1 for status in system_manager.services_status.values() if status.name == "STOPPED"),
+                    "error": sum(1 for status in system_manager.services_status.values() if status.name == "ERROR")
+                }
+            )
+        else:
+            # 系统未运行时的默认状态
+            system_info = SystemInfo(
+                system_status="stopped",
+                running_mode="UNKNOWN",
+                start_time=datetime.now(),
+                uptime="0h 0m",
+                ctp_status={
+                    "market_data": CTPConnectionInfo(
+                        connected=False,
+                        server="182.254.243.31:30011",
+                        latency="N/A",
+                        last_connect_time=datetime.now()
+                    ),
+                    "trading": CTPConnectionInfo(
+                        connected=False,
+                        server="182.254.243.31:30001",
+                        latency="N/A",
+                        last_connect_time=datetime.now()
+                    )
+                },
+                services_summary={
+                    "total": 5,
+                    "running": 0,
+                    "stopped": 5,
+                    "error": 0
+                }
+            )
         
         return SystemStatusResponse(
             success=True,

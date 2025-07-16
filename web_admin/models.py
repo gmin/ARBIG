@@ -31,6 +31,25 @@ class StopLossUpdate(BaseModel):
     reason: str = Field(..., description="设置原因")
     operator: str = Field("web_user", description="操作员")
 
+class OrderRequest(BaseModel):
+    """下单请求"""
+    symbol: str = Field(..., description="合约代码")
+    exchange: str = Field(..., description="交易所")
+    direction: str = Field(..., description="买卖方向: buy/sell")
+    offset: str = Field(..., description="开平仓: open/close")
+    order_type: str = Field("limit", description="订单类型: limit/market")
+    volume: int = Field(..., description="下单数量")
+    price: Optional[float] = Field(None, description="下单价格（限价单必填）")
+    strategy_name: Optional[str] = Field(None, description="策略名称")
+    signal_id: Optional[str] = Field(None, description="信号ID")
+    operator: str = Field("web_user", description="操作员")
+
+class OrderModification(BaseModel):
+    """订单修改"""
+    price: Optional[float] = Field(None, description="新价格")
+    volume: Optional[int] = Field(None, description="新数量")
+    operator: str = Field("web_user", description="操作员")
+
 # ========== 响应模型 ==========
 
 class SystemStatus(BaseModel):

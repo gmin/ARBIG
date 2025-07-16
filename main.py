@@ -19,6 +19,7 @@ from core.services.market_data_service import MarketDataService
 from core.services.account_service import AccountService
 from core.services.trading_service import TradingService
 from core.services.risk_service import RiskService
+from core.services.strategy_service import StrategyService
 from core.types import ServiceConfig
 from gateways.ctp_gateway import CtpGatewayWrapper
 from utils.logger import get_logger
@@ -77,7 +78,8 @@ class ARBIGServiceContainer:
             'MarketDataService': ServiceStatus.STOPPED,
             'AccountService': ServiceStatus.STOPPED,
             'RiskService': ServiceStatus.STOPPED,
-            'TradingService': ServiceStatus.STOPPED
+            'TradingService': ServiceStatus.STOPPED,
+            'StrategyService': ServiceStatus.STOPPED
         }
 
         # 服务启动时间
@@ -88,7 +90,8 @@ class ARBIGServiceContainer:
             'MarketDataService': ['ctp_gateway'],
             'AccountService': ['ctp_gateway'],
             'RiskService': ['AccountService'],
-            'TradingService': ['ctp_gateway', 'MarketDataService', 'AccountService', 'RiskService']
+            'TradingService': ['ctp_gateway', 'MarketDataService', 'AccountService', 'RiskService'],
+            'StrategyService': ['MarketDataService', 'AccountService', 'TradingService']
         }
 
         # 线程锁
@@ -148,6 +151,49 @@ class ARBIGServiceContainer:
         except Exception as e:
             logger.error(f"系统启动失败: {e}")
             return ServiceResult(False, f"系统启动异常: {e}")
+
+    def start_system_demo_mode(self) -> ServiceResult:
+        """启动系统演示模式（不需要CTP连接）"""
+        try:
+            with self._lock:
+                if self.running:
+                    return ServiceResult(False, "系统已在运行中")
+
+                logger.info("="*60)
+                logger.info("🎭 启动ARBIG量化交易系统 - 演示模式")
+                logger.info("="*60)
+
+                # 1. 初始化配置管理器
+                if not self._init_config_manager():
+                    return ServiceResult(False, "配置管理器初始化失败")
+
+                # 2. 跳过CTP连接，使用模拟网关
+                logger.info("演示模式：跳过CTP连接")
+                self.ctp_gateway = None  # 模拟网关
+
+                # 3. 启动事件引擎
+                if not self._start_event_engine():
+                    return ServiceResult(False, "事件引擎启动失败")
+
+                # 4. 启动核心服务（演示模式）
+                self._start_services_demo_mode()
+
+                # 5. 系统启动完成
+                self.running = True
+                self.start_time = datetime.now()
+
+                logger.info("="*60)
+                logger.info("🎉 ARBIG系统演示模式启动成功！")
+                logger.info("="*60)
+
+                return ServiceResult(True, "系统演示模式启动成功", {
+                    "start_time": self.start_time.isoformat(),
+                    "mode": "DEMO"
+                })
+
+        except Exception as e:
+            logger.error(f"系统演示模式启动失败: {e}")
+            return ServiceResult(False, f"系统演示模式启动异常: {e}")
 
     def stop_system(self) -> ServiceResult:
         """停止整个系统"""
@@ -296,6 +342,8 @@ class ARBIGServiceContainer:
                     success = self._start_risk_service(config)
                 elif service_name == 'TradingService':
                     success = self._start_trading_service(config)
+                elif service_name == 'StrategyService':
+                    success = self._start_strategy_service(config)
                 else:
                     return ServiceResult(False, f"未知的服务: {service_name}")
 
@@ -724,6 +772,66 @@ class ARBIGServiceContainer:
             logger.warning(f"⚠ 交易服务启动异常: {e}")
             return False
 
+    def _start_strategy_service(self, config: Dict[str, Any] = None) -> bool:
+        """启动策略服务"""
+        try:
+            # 检查依赖服务
+            market_data_service = self.services.get('MarketDataService')
+            account_service = self.services.get('AccountService')
+            trading_service = self.services.get('TradingService')
+
+            if not market_data_service:
+                logger.error("策略服务需要行情服务，但行情服务未启动")
+                return False
+
+            if not account_service:
+                logger.error("策略服务需要账户服务，但账户服务未启动")
+                return False
+
+            if not trading_service:
+                logger.error("策略服务需要交易服务，但交易服务未启动")
+                return False
+
+            strategy_service = StrategyService(self.event_engine, self.config_manager)
+
+            if strategy_service.start():
+                self.services['StrategyService'] = strategy_service
+                logger.info("✓ 策略服务启动成功")
+                return True
+            else:
+                logger.warning("⚠ 策略服务启动失败")
+                return False
+
+        except Exception as e:
+            logger.warning(f"⚠ 策略服务启动异常: {e}")
+            return False
+
+    def _start_services_demo_mode(self):
+        """启动演示模式的服务"""
+        logger.info("启动演示模式服务...")
+
+        # 在演示模式下，我们只启动策略服务，其他服务使用模拟数据
+        try:
+            strategy_service = StrategyService(self.event_engine, self.config_manager)
+
+            if strategy_service.start():
+                self.services['StrategyService'] = strategy_service
+                self.services_status['StrategyService'] = ServiceStatus.RUNNING
+                logger.info("✓ 策略服务（演示模式）启动成功")
+            else:
+                logger.warning("⚠ 策略服务（演示模式）启动失败")
+
+            # 模拟其他服务状态
+            self.services_status['MarketDataService'] = ServiceStatus.RUNNING
+            self.services_status['AccountService'] = ServiceStatus.RUNNING
+            self.services_status['TradingService'] = ServiceStatus.RUNNING
+            self.services_status['RiskService'] = ServiceStatus.RUNNING
+
+            logger.info("✓ 演示模式服务启动完成")
+
+        except Exception as e:
+            logger.error(f"演示模式服务启动失败: {e}")
+
     def run(self):
         """运行系统主循环（保持兼容性）"""
         try:
@@ -771,6 +879,7 @@ def main():
     parser.add_argument('--daemon', '-d', action='store_true', help='后台运行模式')
     parser.add_argument('--api-only', action='store_true', help='仅启动API服务')
     parser.add_argument('--auto-start', action='store_true', help='自动启动系统')
+    parser.add_argument('--demo-mode', action='store_true', help='演示模式（不需要CTP连接）')
 
     args = parser.parse_args()
 
@@ -788,7 +897,12 @@ def main():
         # 如果指定自动启动，则启动系统
         if args.auto_start:
             logger.info("自动启动系统...")
-            result = service_container.start_system()
+            if args.demo_mode:
+                logger.info("演示模式：跳过CTP连接，直接启动服务...")
+                result = service_container.start_system_demo_mode()
+            else:
+                result = service_container.start_system()
+
             if result.success:
                 logger.info("✓ 系统自动启动成功")
             else:

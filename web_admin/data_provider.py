@@ -7,8 +7,9 @@ from datetime import datetime
 from typing import Dict, List, Optional, Any
 
 from .models import (
-    SystemStatus, PositionInfo, OrderInfo, TradeInfo, 
-    MarketDataInfo, RiskMetrics, TradingStatistics
+    SystemStatus, PositionInfo, OrderInfo, TradeInfo,
+    MarketDataInfo, RiskMetrics, TradingStatistics,
+    OrderRequest, OrderModification
 )
 from utils.logger import get_logger
 
@@ -276,3 +277,144 @@ class DataProvider:
             return reference
         except:
             return None
+
+    # ========== 交易操作方法 ==========
+
+    async def submit_order(self, order_request: OrderRequest) -> Dict[str, Any]:
+        """提交订单"""
+        try:
+            # 构建订单数据
+            order_data = {
+                "symbol": order_request.symbol,
+                "exchange": order_request.exchange,
+                "direction": order_request.direction,
+                "offset": order_request.offset,
+                "order_type": order_request.order_type,
+                "volume": order_request.volume,
+                "price": order_request.price,
+                "strategy_name": order_request.strategy_name,
+                "signal_id": order_request.signal_id,
+                "operator": order_request.operator,
+                "timestamp": datetime.now()
+            }
+
+            # 调用交易服务下单
+            if hasattr(self.trading_system, 'trading_service'):
+                result = await self.trading_system.trading_service.submit_order(order_data)
+                logger.info(f"手动下单成功: {order_request.symbol} {order_request.direction} {order_request.volume}")
+                return result
+            else:
+                # 模拟下单结果
+                order_id = f"WEB_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                logger.info(f"模拟下单: {order_request.symbol} {order_request.direction} {order_request.volume}")
+                return {
+                    "order_id": order_id,
+                    "status": "submitted",
+                    "message": "订单已提交"
+                }
+
+        except Exception as e:
+            logger.error(f"下单失败: {e}")
+            raise
+
+    async def cancel_order(self, order_id: str) -> Dict[str, Any]:
+        """撤销订单"""
+        try:
+            if hasattr(self.trading_system, 'trading_service'):
+                result = await self.trading_system.trading_service.cancel_order(order_id)
+                logger.info(f"撤单成功: {order_id}")
+                return result
+            else:
+                # 模拟撤单结果
+                logger.info(f"模拟撤单: {order_id}")
+                return {
+                    "order_id": order_id,
+                    "status": "cancelled",
+                    "message": "订单已撤销"
+                }
+
+        except Exception as e:
+            logger.error(f"撤单失败: {e}")
+            raise
+
+    async def modify_order(self, order_id: str, modification: OrderModification) -> Dict[str, Any]:
+        """修改订单"""
+        try:
+            if hasattr(self.trading_system, 'trading_service'):
+                result = await self.trading_system.trading_service.modify_order(order_id, modification.dict())
+                logger.info(f"订单修改成功: {order_id}")
+                return result
+            else:
+                # 模拟修改结果
+                logger.info(f"模拟订单修改: {order_id}")
+                return {
+                    "order_id": order_id,
+                    "status": "modified",
+                    "message": "订单已修改"
+                }
+
+        except Exception as e:
+            logger.error(f"订单修改失败: {e}")
+            raise
+
+    async def get_strategies(self):
+        """获取策略列表"""
+        try:
+            strategy_service = self.trading_system.services.get('StrategyService')
+            if strategy_service:
+                return strategy_service.get_strategy_list()
+            else:
+                logger.warning("策略服务未启动")
+                return []
+        except Exception as e:
+            logger.error(f"获取策略列表失败: {e}")
+            return []
+
+    async def start_strategy(self, strategy_name: str):
+        """启动策略"""
+        try:
+            strategy_service = self.trading_system.services.get('StrategyService')
+            if strategy_service:
+                success = strategy_service.start_strategy(strategy_name)
+                if success:
+                    return {"strategy_name": strategy_name, "status": "started"}
+                else:
+                    raise Exception(f"策略 {strategy_name} 启动失败")
+            else:
+                raise Exception("策略服务未启动")
+        except Exception as e:
+            logger.error(f"启动策略失败: {e}")
+            raise
+
+    async def stop_strategy(self, strategy_name: str):
+        """停止策略"""
+        try:
+            strategy_service = self.trading_system.services.get('StrategyService')
+            if strategy_service:
+                success = strategy_service.stop_strategy(strategy_name)
+                if success:
+                    return {"strategy_name": strategy_name, "status": "stopped"}
+                else:
+                    raise Exception(f"策略 {strategy_name} 停止失败")
+            else:
+                raise Exception("策略服务未启动")
+        except Exception as e:
+            logger.error(f"停止策略失败: {e}")
+            raise
+
+    async def halt_strategy(self, strategy_name: str, reason: str):
+        """暂停策略"""
+        try:
+            strategy_service = self.trading_system.services.get('StrategyService')
+            if strategy_service:
+                success = strategy_service.stop_strategy(strategy_name)
+                if success:
+                    logger.info(f"策略 {strategy_name} 已暂停，原因: {reason}")
+                    return {"strategy_name": strategy_name, "status": "halted", "reason": reason}
+                else:
+                    raise Exception(f"策略 {strategy_name} 暂停失败")
+            else:
+                raise Exception("策略服务未启动")
+        except Exception as e:
+            logger.error(f"暂停策略失败: {e}")
+            raise

@@ -109,6 +109,18 @@
             color: #dc3545;
             margin-bottom: 1rem;
         }
+
+        .emergency-btn-group {
+            display: flex;
+            gap: 3px;
+            justify-content: center;
+        }
+
+        .emergency-btn-group .btn {
+            min-width: 30px;
+            padding: 4px 6px;
+            font-size: 12px;
+        }
         
         .button-group {
             display: flex;
@@ -150,6 +162,11 @@
         
         .btn-success:hover {
             background-color: #218838;
+        }
+
+        .btn-sm {
+            padding: 0.25rem 0.5rem;
+            font-size: 0.875rem;
         }
         
         .data-table {
@@ -245,11 +262,36 @@
         }
         
         .form-group input,
-        .form-group textarea {
+        .form-group textarea,
+        .form-group select {
             width: 100%;
             padding: 0.5rem;
             border: 1px solid #ddd;
             border-radius: 4px;
+        }
+
+        .trading-form {
+            background: #f8f9fa;
+            padding: 1.5rem;
+            border-radius: 8px;
+            margin-top: 1rem;
+        }
+
+        .form-row {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .form-row .form-group {
+            flex: 1;
+        }
+
+        .form-actions {
+            display: flex;
+            gap: 1rem;
+            justify-content: flex-end;
+            margin-top: 1.5rem;
         }
         
         @media (max-width: 768px) {
@@ -299,6 +341,11 @@
                 <h3>📈 交易统计</h3>
                 <div id="tradingStats" class="loading">加载中...</div>
             </div>
+
+            <div class="card">
+                <h3>🤖 策略监控</h3>
+                <div id="strategyMonitor" class="loading">加载中...</div>
+            </div>
         </div>
 
         <!-- 紧急控制面板 -->
@@ -317,6 +364,76 @@
                 <button class="btn btn-success" onclick="resumeTrading()">
                     ▶️ 恢复交易
                 </button>
+            </div>
+        </div>
+
+        <!-- 手动下单 -->
+        <div class="card">
+            <h3>🎛️ 手动下单</h3>
+            <div class="trading-form">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>合约代码:</label>
+                        <select id="orderSymbol">
+                            <option value="au2508">au2508 (黄金2508)</option>
+                            <option value="au2509">au2509 (黄金2509)</option>
+                            <option value="au2512">au2512 (黄金2512)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>交易所:</label>
+                        <select id="orderExchange">
+                            <option value="SHFE">SHFE (上期所)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>买卖方向:</label>
+                        <select id="orderDirection">
+                            <option value="buy">买入</option>
+                            <option value="sell">卖出</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>开平仓:</label>
+                        <select id="orderOffset">
+                            <option value="open">开仓</option>
+                            <option value="close">平仓</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>订单类型:</label>
+                        <select id="orderType">
+                            <option value="limit">限价单</option>
+                            <option value="market">市价单</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>数量:</label>
+                        <input type="number" id="orderVolume" value="1" min="1" max="100">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>价格:</label>
+                        <input type="number" id="orderPrice" step="0.01" placeholder="限价单必填">
+                    </div>
+                    <div class="form-group">
+                        <label>策略名称:</label>
+                        <input type="text" id="orderStrategy" placeholder="可选">
+                    </div>
+                </div>
+                <div class="form-actions">
+                    <button class="btn btn-success" onclick="submitOrder()">
+                        📤 提交订单
+                    </button>
+                    <button class="btn btn-secondary" onclick="clearOrderForm()">
+                        🔄 清空表单
+                    </button>
+                </div>
             </div>
         </div>
 
@@ -351,6 +468,40 @@
                 <textarea id="haltReason" placeholder="请输入暂停原因"></textarea>
             </div>
             <button class="btn btn-warning" onclick="confirmHaltStrategy()">确认暂停</button>
+        </div>
+    </div>
+
+    <!-- 策略紧急控制模态框 -->
+    <div id="strategyEmergencyModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal('strategyEmergencyModal')">&times;</span>
+            <h3>🚨 策略紧急控制</h3>
+            <div class="form-group">
+                <label>策略名称:</label>
+                <div id="emergencyStrategyName" style="font-weight: bold; color: #dc3545;"></div>
+            </div>
+            <div class="form-group">
+                <label for="emergencyAction">紧急操作:</label>
+                <select id="emergencyAction">
+                    <option value="halt">紧急暂停策略</option>
+                    <option value="close_positions">紧急平仓</option>
+                    <option value="stop_new_orders">停止新订单</option>
+                    <option value="reduce_position">减少持仓</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="emergencyReason">操作原因:</label>
+                <textarea id="emergencyReason" placeholder="请详细说明紧急操作的原因" required></textarea>
+            </div>
+            <div class="form-group" id="confirmationGroup" style="display: none;">
+                <label for="emergencyConfirmCode">确认码:</label>
+                <input type="text" id="emergencyConfirmCode" placeholder="输入 EMERGENCY_CONFIRM">
+                <small style="color: #666;">紧急平仓需要输入确认码</small>
+            </div>
+            <div class="button-group">
+                <button class="btn btn-danger" onclick="executeStrategyEmergency()">执行紧急操作</button>
+                <button class="btn btn-secondary" onclick="closeModal('strategyEmergencyModal')">取消</button>
+            </div>
         </div>
     </div>
 
@@ -425,6 +576,7 @@
                     loadAccountInfo(),
                     loadRiskMetrics(),
                     loadTradingStats(),
+                    loadStrategyMonitor(),
                     loadActiveOrders(),
                     loadPositions(),
                     loadOperationLog()
@@ -434,21 +586,49 @@
             }
         }
 
+        // API端点映射 - 将旧API端点映射到新的v1 API
+        const API_ENDPOINTS = {
+            '/status': '/api/v1/system/status',
+            '/account': '/api/v1/data/account/info',
+            '/risk_metrics': '/api/v1/data/risk/metrics',
+            '/statistics': '/api/v1/data/risk/metrics', // 暂时使用风险指标作为统计数据
+            '/strategies': '/api/v1/strategies/list',
+            '/strategies/start': '/api/v1/strategies/start',
+            '/strategies/stop': '/api/v1/strategies/stop',
+            '/strategies/halt': '/api/v1/strategies/halt',
+            '/orders': '/api/v1/data/orders',
+            '/positions': '/api/v1/data/account/positions',
+            '/trades': '/api/v1/data/account/trades',
+            '/market_data': '/api/v1/data/market/ticks',
+            '/risk/emergency_halt': '/api/v1/services/emergency_halt',
+            '/risk/emergency_close': '/api/v1/services/emergency_close'
+        };
+
         // API调用函数
         async function apiCall(endpoint, options = {}) {
-            const response = await fetch(`/api${endpoint}`, {
+            // 映射到新的API端点
+            const actualEndpoint = API_ENDPOINTS[endpoint] || `/api${endpoint}`;
+
+            const response = await fetch(actualEndpoint, {
                 headers: {
                     'Content-Type': 'application/json',
                     ...options.headers
                 },
                 ...options
             });
-            
+
             if (!response.ok) {
                 throw new Error(`API调用失败: ${response.statusText}`);
             }
-            
-            return response.json();
+
+            const result = await response.json();
+
+            // 新API返回格式为 {success: true, data: {...}}，需要提取data部分
+            if (result.success && result.data !== undefined) {
+                return result.data;
+            }
+
+            return result;
         }
 
         // 加载系统状态
@@ -463,38 +643,47 @@
 
         // 更新系统状态显示
         function updateSystemStatus(status) {
+            // 适配新API数据结构
+            const servicesRunning = status.services_summary ? status.services_summary.running : 4;
+            const servicesTotal = status.services_summary ? status.services_summary.total : 4;
+            const ctpMdConnected = status.ctp_status ? status.ctp_status.market_data.connected : false;
+            const ctpTdConnected = status.ctp_status ? status.ctp_status.trading.connected : false;
+
             const html = `
                 <div class="status-grid">
                     <div class="status-item">
-                        <span>行情服务</span>
-                        <div class="status-indicator status-${status.services.market_data.toLowerCase()}"></div>
+                        <span>系统状态</span>
+                        <div class="status-indicator status-${status.system_status === 'running' ? 'running' : 'stopped'}"></div>
                     </div>
                     <div class="status-item">
-                        <span>账户服务</span>
-                        <div class="status-indicator status-${status.services.account.toLowerCase()}"></div>
+                        <span>运行模式</span>
+                        <span class="mode-indicator">${status.running_mode || 'UNKNOWN'}</span>
                     </div>
                     <div class="status-item">
-                        <span>交易服务</span>
-                        <div class="status-indicator status-${status.services.trading.toLowerCase()}"></div>
-                    </div>
-                    <div class="status-item">
-                        <span>风控服务</span>
-                        <div class="status-indicator status-${status.services.risk.toLowerCase()}"></div>
+                        <span>服务状态</span>
+                        <span class="service-count">${servicesRunning}/${servicesTotal}</span>
                     </div>
                     <div class="status-item">
                         <span>CTP行情</span>
-                        <div class="status-indicator ${status.connections.ctp_md ? 'status-running' : 'status-stopped'}"></div>
+                        <div class="status-indicator ${ctpMdConnected ? 'status-running' : 'status-stopped'}"></div>
                     </div>
                     <div class="status-item">
                         <span>CTP交易</span>
-                        <div class="status-indicator ${status.connections.ctp_td ? 'status-running' : 'status-stopped'}"></div>
+                        <div class="status-indicator ${ctpTdConnected ? 'status-running' : 'status-stopped'}"></div>
+                    </div>
+                    <div class="status-item">
+                        <span>版本</span>
+                        <span class="version-info">${status.version || '1.0.0'}</span>
                     </div>
                 </div>
-                <div style="margin-top: 1rem;">
-                    <span>风险级别: </span>
-                    <span class="risk-level risk-${status.risk_level.toLowerCase()}">${status.risk_level}</span>
+                <div class="system-info" style="margin-top: 1rem;">
+                    <div>启动时间: ${status.start_time ? new Date(status.start_time).toLocaleString() : '未知'}</div>
+                    <div>运行时长: ${status.uptime || '未知'}</div>
+                    ${status.ctp_status && status.ctp_status.market_data ?
+                        `<div>行情服务器: ${status.ctp_status.market_data.server}</div>` : ''}
+                    ${status.ctp_status && status.ctp_status.trading ?
+                        `<div>交易服务器: ${status.ctp_status.trading.server}</div>` : ''}
                 </div>
-                ${status.trading_halted ? '<div style="color: #dc3545; margin-top: 0.5rem;">⚠️ 交易已暂停</div>' : ''}
             `;
             document.getElementById('systemStatus').innerHTML = html;
         }
@@ -555,6 +744,123 @@
             }
         }
 
+        // 针对单个策略的紧急控制函数
+        async function emergencyHaltStrategy(strategyName) {
+            if (!confirm(`确认紧急暂停策略 "${strategyName}"？`)) return;
+
+            const reason = prompt('请输入暂停原因:');
+            if (!reason) return;
+
+            try {
+                const result = await apiCall('/strategies/halt', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        strategy_name: strategyName,
+                        reason: reason,
+                        emergency: true,
+                        operator: 'web_user'
+                    })
+                });
+
+                showAlert(result.message, result.success ? 'success' : 'error');
+                if (result.success) {
+                    loadStrategyMonitor();
+                }
+            } catch (error) {
+                showAlert('紧急暂停失败: ' + error.message, 'error');
+            }
+        }
+
+        async function emergencyCloseStrategy(strategyName) {
+            const confirmCode = prompt(`紧急平仓策略 "${strategyName}" 需要确认码，请输入 EMERGENCY_CONFIRM:`);
+            if (confirmCode !== 'EMERGENCY_CONFIRM') {
+                showAlert('确认码错误', 'error');
+                return;
+            }
+
+            const reason = prompt('请输入平仓原因:');
+            if (!reason) return;
+
+            try {
+                const result = await apiCall('/strategies/emergency_close', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        strategy_name: strategyName,
+                        action: 'emergency_close',
+                        reason: reason,
+                        operator: 'web_user',
+                        confirmation_code: confirmCode
+                    })
+                });
+
+                showAlert(result.message, result.success ? 'success' : 'error');
+                if (result.success) {
+                    loadStrategyMonitor();
+                }
+            } catch (error) {
+                showAlert('紧急平仓失败: ' + error.message, 'error');
+            }
+        }
+
+        function showStrategyEmergencyModal(strategyName) {
+            document.getElementById('emergencyStrategyName').textContent = strategyName;
+            document.getElementById('strategyEmergencyModal').style.display = 'block';
+
+            // 监听操作类型变化
+            document.getElementById('emergencyAction').onchange = function() {
+                const confirmationGroup = document.getElementById('confirmationGroup');
+                if (this.value === 'close_positions') {
+                    confirmationGroup.style.display = 'block';
+                } else {
+                    confirmationGroup.style.display = 'none';
+                }
+            };
+        }
+
+        async function executeStrategyEmergency() {
+            const strategyName = document.getElementById('emergencyStrategyName').textContent;
+            const action = document.getElementById('emergencyAction').value;
+            const reason = document.getElementById('emergencyReason').value;
+            const confirmCode = document.getElementById('emergencyConfirmCode').value;
+
+            if (!reason) {
+                showAlert('请填写操作原因', 'error');
+                return;
+            }
+
+            if (action === 'close_positions' && confirmCode !== 'EMERGENCY_CONFIRM') {
+                showAlert('紧急平仓需要正确的确认码', 'error');
+                return;
+            }
+
+            try {
+                let endpoint = '/strategies/emergency';
+                let payload = {
+                    strategy_name: strategyName,
+                    action: action,
+                    reason: reason,
+                    operator: 'web_user'
+                };
+
+                if (action === 'close_positions') {
+                    payload.confirmation_code = confirmCode;
+                }
+
+                const result = await apiCall(endpoint, {
+                    method: 'POST',
+                    body: JSON.stringify(payload)
+                });
+
+                showAlert(result.message, result.success ? 'success' : 'error');
+                if (result.success) {
+                    closeModal('strategyEmergencyModal');
+                    loadStrategyMonitor();
+                }
+            } catch (error) {
+                showAlert('紧急操作失败: ' + error.message, 'error');
+            }
+        }
+
         // 显示提示信息
         function showAlert(message, type) {
             const alertDiv = document.createElement('div');
@@ -579,7 +885,26 @@
 
         // 其他加载函数的简化实现
         async function loadAccountInfo() {
-            document.getElementById('accountInfo').innerHTML = '<div>账户信息加载中...</div>';
+            try {
+                const account = await apiCall('/account');
+                updateAccountInfo(account);
+            } catch (error) {
+                document.getElementById('accountInfo').innerHTML = '<div class="error">账户信息加载失败</div>';
+            }
+        }
+
+        function updateAccountInfo(account) {
+            const html = `
+                <div>账户ID: ${account.account_id}</div>
+                <div>总资金: ${account.balance.toFixed(2)}</div>
+                <div>可用资金: ${account.available.toFixed(2)}</div>
+                <div>冻结资金: ${account.frozen.toFixed(2)}</div>
+                <div>占用保证金: ${account.margin.toFixed(2)}</div>
+                <div>手续费: ${account.commission.toFixed(2)}</div>
+                <div>平仓盈亏: ${account.close_profit.toFixed(2)}</div>
+                <div>持仓盈亏: ${account.position_profit.toFixed(2)}</div>
+            `;
+            document.getElementById('accountInfo').innerHTML = html;
         }
 
         async function loadRiskMetrics() {
@@ -602,7 +927,12 @@
         }
 
         async function loadTradingStats() {
-            document.getElementById('tradingStats').innerHTML = '<div>交易统计加载中...</div>';
+            try {
+                const stats = await apiCall('/statistics');
+                updateTradingStats(stats);
+            } catch (error) {
+                document.getElementById('tradingStats').innerHTML = '<div class="error">交易统计加载失败</div>';
+            }
         }
 
         function updateTradingStats(stats) {
@@ -617,16 +947,330 @@
             }
         }
 
+        async function loadStrategyMonitor() {
+            try {
+                const data = await apiCall('/strategies');
+                // API返回的数据结构是 {strategies: [...]}
+                const strategies = data.strategies || [];
+                updateStrategyMonitor(strategies);
+            } catch (error) {
+                document.getElementById('strategyMonitor').innerHTML = '<div class="error">策略监控加载失败</div>';
+            }
+        }
+
+        function updateStrategyMonitor(strategies) {
+            if (strategies && strategies.length > 0) {
+                const html = `
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>策略名称</th>
+                                <th>状态</th>
+                                <th>盈亏</th>
+                                <th>持仓</th>
+                                <th>操作</th>
+                            <th>紧急控制</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${strategies.map(strategy => `
+                                <tr>
+                                    <td>
+                                        <a href="/strategy_monitor.html?strategy=${strategy.name}"
+                                           style="color: #3498db; text-decoration: none; font-weight: bold;"
+                                           title="点击查看详细监控">
+                                            ${strategy.display_name || strategy.name}
+                                        </a>
+                                    </td>
+                                    <td>
+                                        <span class="status-indicator ${strategy.status === 'RUNNING' ? 'status-running' : 'status-stopped'}"></span>
+                                        ${strategy.status === 'RUNNING' ? '运行中' : '已停止'}
+                                    </td>
+                                    <td style="color: ${(strategy.pnl || 0) >= 0 ? 'green' : 'red'}">
+                                        ${(strategy.pnl || 0).toFixed(2)}
+                                    </td>
+                                    <td>${strategy.position || 0}</td>
+                                    <td>
+                                        ${strategy.status === 'RUNNING' ?
+                                            `<button class="btn btn-warning btn-sm" onclick="stopStrategy('${strategy.name}')">停止</button>` :
+                                            `<button class="btn btn-success btn-sm" onclick="startStrategy('${strategy.name}')">启动</button>`
+                                        }
+                                        <button class="btn btn-info btn-sm" onclick="window.open('/strategy_monitor.html?strategy=${strategy.name}', '_blank')"
+                                                style="background: #9b59b6; margin-left: 5px;">详情</button>
+                                    </td>
+                                    <td>
+                                        <div class="emergency-btn-group">
+                                            <button class="btn btn-danger btn-sm" onclick="emergencyHaltStrategy('${strategy.name}')"
+                                                    title="紧急暂停策略" style="margin-right: 3px;">
+                                                ⏸️
+                                            </button>
+                                            <button class="btn btn-danger btn-sm" onclick="emergencyCloseStrategy('${strategy.name}')"
+                                                    title="紧急平仓策略" style="margin-right: 3px;">
+                                                🔴
+                                            </button>
+                                            <button class="btn btn-warning btn-sm" onclick="showStrategyEmergencyModal('${strategy.name}')"
+                                                    title="策略紧急设置">
+                                                ⚠️
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                `;
+                document.getElementById('strategyMonitor').innerHTML = html;
+            } else {
+                document.getElementById('strategyMonitor').innerHTML = '<div>暂无运行中的策略</div>';
+            }
+        }
+
         async function loadActiveOrders() {
-            document.getElementById('activeOrders').innerHTML = '<div>活跃订单加载中...</div>';
+            try {
+                const response = await fetch('/api/orders?active_only=true');
+                const orders = await response.json();
+
+                if (orders && orders.length > 0) {
+                    const html = `
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>订单ID</th>
+                                    <th>合约</th>
+                                    <th>方向</th>
+                                    <th>类型</th>
+                                    <th>数量</th>
+                                    <th>价格</th>
+                                    <th>状态</th>
+                                    <th>策略</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${orders.map(order => `
+                                    <tr>
+                                        <td>${order.order_id}</td>
+                                        <td>${order.symbol}</td>
+                                        <td>${order.direction === 'buy' ? '买入' : '卖出'}</td>
+                                        <td>${order.order_type}</td>
+                                        <td>${order.volume}</td>
+                                        <td>${order.price || '市价'}</td>
+                                        <td>${order.status}</td>
+                                        <td>${order.strategy_name || '-'}</td>
+                                        <td>
+                                            <button class="btn btn-danger btn-sm" onclick="cancelOrder('${order.order_id}')">
+                                                撤单
+                                            </button>
+                                        </td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    `;
+                    document.getElementById('activeOrders').innerHTML = html;
+                } else {
+                    document.getElementById('activeOrders').innerHTML = '<div>暂无活跃订单</div>';
+                }
+            } catch (error) {
+                console.error('加载活跃订单失败:', error);
+                document.getElementById('activeOrders').innerHTML = '<div class="error">加载活跃订单失败</div>';
+            }
         }
 
         async function loadPositions() {
             document.getElementById('positions').innerHTML = '<div>持仓信息加载中...</div>';
         }
 
+        // ========== 手动下单功能 ==========
+
+        async function submitOrder() {
+            try {
+                // 获取表单数据
+                const orderData = {
+                    symbol: document.getElementById('orderSymbol').value,
+                    exchange: document.getElementById('orderExchange').value,
+                    direction: document.getElementById('orderDirection').value,
+                    offset: document.getElementById('orderOffset').value,
+                    order_type: document.getElementById('orderType').value,
+                    volume: parseInt(document.getElementById('orderVolume').value),
+                    price: parseFloat(document.getElementById('orderPrice').value) || null,
+                    strategy_name: document.getElementById('orderStrategy').value || null
+                };
+
+                // 验证数据
+                if (!orderData.symbol || !orderData.volume) {
+                    showAlert('请填写必要的订单信息', 'error');
+                    return;
+                }
+
+                if (orderData.order_type === 'limit' && !orderData.price) {
+                    showAlert('限价单必须填写价格', 'error');
+                    return;
+                }
+
+                // 确认下单
+                const confirmMsg = `确认下单：${orderData.direction} ${orderData.symbol} ${orderData.volume}手 ${orderData.price ? '@' + orderData.price : '市价'}？`;
+                if (!confirm(confirmMsg)) {
+                    return;
+                }
+
+                // 提交订单
+                const response = await fetch('/api/orders', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(orderData)
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    showAlert('下单成功！订单ID: ' + result.data.order_id, 'success');
+                    clearOrderForm();
+                    // 刷新订单列表
+                    await loadActiveOrders();
+                } else {
+                    showAlert('下单失败: ' + result.message, 'error');
+                }
+
+            } catch (error) {
+                console.error('下单错误:', error);
+                showAlert('下单失败: ' + error.message, 'error');
+            }
+        }
+
+        function clearOrderForm() {
+            document.getElementById('orderSymbol').value = 'au2508';
+            document.getElementById('orderExchange').value = 'SHFE';
+            document.getElementById('orderDirection').value = 'buy';
+            document.getElementById('orderOffset').value = 'open';
+            document.getElementById('orderType').value = 'limit';
+            document.getElementById('orderVolume').value = '1';
+            document.getElementById('orderPrice').value = '';
+            document.getElementById('orderStrategy').value = '';
+        }
+
+        async function cancelOrder(orderId) {
+            try {
+                if (!confirm('确认撤销订单 ' + orderId + '？')) {
+                    return;
+                }
+
+                const response = await fetch(`/api/orders/${orderId}`, {
+                    method: 'DELETE'
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    showAlert('撤单成功！', 'success');
+                    // 刷新订单列表
+                    await loadActiveOrders();
+                } else {
+                    showAlert('撤单失败: ' + result.message, 'error');
+                }
+
+            } catch (error) {
+                console.error('撤单错误:', error);
+                showAlert('撤单失败: ' + error.message, 'error');
+            }
+        }
+
+        // 订单类型变化时的处理
+        document.addEventListener('DOMContentLoaded', function() {
+            const orderTypeSelect = document.getElementById('orderType');
+            const priceInput = document.getElementById('orderPrice');
+
+            if (orderTypeSelect && priceInput) {
+                orderTypeSelect.addEventListener('change', function() {
+                    if (this.value === 'market') {
+                        priceInput.disabled = true;
+                        priceInput.placeholder = '市价单无需填写价格';
+                        priceInput.value = '';
+                    } else {
+                        priceInput.disabled = false;
+                        priceInput.placeholder = '限价单必填';
+                    }
+                });
+            }
+        });
+
         async function loadOperationLog() {
             document.getElementById('operationLog').innerHTML = '<div>操作日志加载中...</div>';
+        }
+
+        // 策略控制函数
+        async function startStrategy(strategyName) {
+            try {
+                if (!confirm(`确认启动策略 ${strategyName}？`)) {
+                    return;
+                }
+
+                const result = await apiCall('/strategies/start', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        strategy_name: strategyName
+                    })
+                });
+
+                showAlert(result.message, result.success ? 'success' : 'error');
+                if (result.success) {
+                    loadStrategyMonitor();
+                }
+            } catch (error) {
+                showAlert('启动策略失败: ' + error.message, 'error');
+            }
+        }
+
+        async function stopStrategy(strategyName) {
+            try {
+                if (!confirm(`确认停止策略 ${strategyName}？`)) {
+                    return;
+                }
+
+                const result = await apiCall('/strategies/stop', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        strategy_name: strategyName
+                    })
+                });
+
+                showAlert(result.message, result.success ? 'success' : 'error');
+                if (result.success) {
+                    loadStrategyMonitor();
+                }
+            } catch (error) {
+                showAlert('停止策略失败: ' + error.message, 'error');
+            }
+        }
+
+        async function confirmHaltStrategy() {
+            const strategyName = document.getElementById('strategyName').value;
+            const reason = document.getElementById('haltReason').value;
+
+            if (!strategyName || !reason) {
+                showAlert('请填写策略名称和暂停原因', 'error');
+                return;
+            }
+
+            try {
+                const result = await apiCall('/strategies/halt', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        strategy_name: strategyName,
+                        reason: reason
+                    })
+                });
+
+                showAlert(result.message, result.success ? 'success' : 'error');
+                if (result.success) {
+                    closeModal('haltStrategyModal');
+                    loadStrategyMonitor();
+                }
+            } catch (error) {
+                showAlert('暂停策略失败: ' + error.message, 'error');
+            }
         }
     </script>
 </body>
