@@ -16,7 +16,14 @@ import asyncio
 from pathlib import Path
 from typing import List
 
-from .routers import system_router, services_router, strategies_router, data_router
+try:
+    from .routers import system_router, services_router, strategies_router, data_router
+except ImportError:
+    # 如果相对导入失败，使用绝对导入
+    import sys
+    import os
+    sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+    from web_admin.api.routers import system_router, services_router, strategies_router, data_router
 from .models.responses import APIResponse, ErrorResponse
 
 # WebSocket连接管理器
@@ -187,6 +194,45 @@ async def strategy_monitor():
                 return f.read()
         else:
             return HTMLResponse("<html><body><h1>策略监控页面未找到</h1></body></html>")
+    except Exception as e:
+        return HTMLResponse(f"<html><body><h1>错误</h1><p>{str(e)}</p></body></html>")
+
+@app.get("/test_simple.html", response_class=HTMLResponse)
+async def test_simple():
+    """简单测试页面"""
+    try:
+        static_dir = Path(__file__).parent.parent / "static"
+        test_file = static_dir / "test_simple.html"
+        if test_file.exists():
+            with open(test_file, "r", encoding="utf-8") as f:
+                return f.read()
+        else:
+            return HTMLResponse("""
+            <html>
+            <head><title>测试页面</title></head>
+            <body>
+            <h1>如果您能看到这个页面，说明Web服务器工作正常</h1>
+            <p>当前时间: <span id="time"></span></p>
+            <script>
+            document.getElementById('time').textContent = new Date().toLocaleString();
+            </script>
+            </body>
+            </html>
+            """)
+    except Exception as e:
+        return HTMLResponse(f"<html><body><h1>错误</h1><p>{str(e)}</p></body></html>")
+
+@app.get("/debug.html", response_class=HTMLResponse)
+async def debug_page():
+    """调试页面"""
+    try:
+        static_dir = Path(__file__).parent.parent / "static"
+        debug_file = static_dir / "debug.html"
+        if debug_file.exists():
+            with open(debug_file, "r", encoding="utf-8") as f:
+                return f.read()
+        else:
+            return HTMLResponse("<html><body><h1>调试页面未找到</h1></body></html>")
     except Exception as e:
         return HTMLResponse(f"<html><body><h1>错误</h1><p>{str(e)}</p></body></html>")
 

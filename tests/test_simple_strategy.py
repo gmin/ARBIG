@@ -94,22 +94,7 @@ class MockStrategyBase:
     def on_account(self, event):
         print(f"[{self.name}] 处理账户事件: {event.data}")
 
-class MockSpreadArbitrageStrategy(MockStrategyBase):
-    def __init__(self, name, event_engine, config):
-        super().__init__(name, event_engine, config)
-        self.spread_threshold = config.get('spread_threshold', 0.5)
-        
-    def on_tick(self, event):
-        print(f"[{self.name}] 基差套利策略处理Tick: {event.data}")
-        # 模拟基差计算
-        if 'shfe_price' in event.data and 'mt5_price' in event.data:
-            spread = event.data['shfe_price'] - event.data['mt5_price']
-            if abs(spread) > self.spread_threshold:
-                self.send_signal({
-                    'signal': 'ARBITRAGE',
-                    'spread': spread,
-                    'threshold': self.spread_threshold
-                })
+
 
 class MockSHFEQuantStrategy(MockStrategyBase):
     def __init__(self, name, event_engine, config):
@@ -157,25 +142,18 @@ class MockMainController:
         return {
             'event_persist_path': 'events.jsonl',
             'data': {
-                'shfe': {},
-                'mt5': {}
+                'shfe': {}
             },
             'strategies': [
-                {
-                    'name': 'spread_arbitrage',
-                    'type': 'spread_arbitrage',
-                    'config': {
-                        'spread_threshold': 0.5,
-                        'max_position': 1000
-                    }
-                },
                 {
                     'name': 'shfe_quant',
                     'type': 'shfe_quant',
                     'config': {
                         'strategy_type': 'trend',
                         'symbol': 'AU9999',
-                        'max_position': 1000
+                        'max_position': 1000,
+                        'price_threshold_high': 450,
+                        'price_threshold_low': 440
                     }
                 }
             ]
@@ -229,13 +207,7 @@ class MockMainController:
         strategy_type = strategy_config.get('type')
         config = strategy_config.get('config', {})
         
-        if strategy_type == 'spread_arbitrage':
-            return MockSpreadArbitrageStrategy(
-                name=strategy_name,
-                event_engine=self.event_engine,
-                config=config
-            )
-        elif strategy_type == 'shfe_quant':
+        if strategy_type == 'shfe_quant':
             return MockSHFEQuantStrategy(
                 name=strategy_name,
                 event_engine=self.event_engine,
@@ -328,25 +300,18 @@ def test_single_strategy_mode():
     test_config = {
         'event_persist_path': 'test_events.jsonl',
         'data': {
-            'shfe': {},
-            'mt5': {}
+            'shfe': {}
         },
         'strategies': [
-            {
-                'name': 'spread_arbitrage',
-                'type': 'spread_arbitrage',
-                'config': {
-                    'spread_threshold': 0.5,
-                    'max_position': 1000
-                }
-            },
             {
                 'name': 'shfe_quant',
                 'type': 'shfe_quant',
                 'config': {
                     'strategy_type': 'trend',
                     'symbol': 'AU9999',
-                    'max_position': 1000
+                    'max_position': 1000,
+                    'price_threshold_high': 450,
+                    'price_threshold_low': 440
                 }
             }
         ]
@@ -359,12 +324,12 @@ def test_single_strategy_mode():
     try:
         # 测试1: 指定策略运行
         print("\n1. 测试指定策略运行")
-        controller = MockMainController(config_path='test_config.yaml', strategy_name='spread_arbitrage')
-        
+        controller = MockMainController(config_path='test_config.yaml', strategy_name='shfe_quant')
+
         # 验证策略加载
-        assert controller.load_strategy('spread_arbitrage') == True
+        assert controller.load_strategy('shfe_quant') == True
         assert controller.current_strategy is not None
-        assert controller.current_strategy.name == 'spread_arbitrage'
+        assert controller.current_strategy.name == 'shfe_quant'
         print("✓ 策略加载成功")
         
         # 测试2: 事件分发
@@ -390,29 +355,17 @@ def test_single_strategy_mode():
         
         # 测试4: 策略信号生成
         print("\n4. 测试策略信号生成")
-        # 测试基差套利策略
-        controller.load_strategy('spread_arbitrage')
-        controller.current_strategy.start()
-        
-        # 发送基差数据
-        spread_event = MockEvent("TICK_EVENT", {
-            'shfe_price': 456.7,
-            'mt5_price': 456.0,
-            'spread': 0.7
-        })
-        controller._on_tick(spread_event)
-        
-        # 测试上海量化策略
+        # 测试SHFE量化策略
         controller.load_strategy('shfe_quant')
         controller.current_strategy.start()
-        
+
         # 发送价格数据
         price_event = MockEvent("TICK_EVENT", {
             'symbol': 'AU9999',
             'last_price': 460.0
         })
         controller._on_tick(price_event)
-        
+
         print("✓ 策略信号生成正常")
         
         print("\n=== 所有测试通过 ===")
@@ -425,12 +378,30 @@ def test_single_strategy_mode():
 def test_event_isolation():
     """测试事件隔离"""
     print("\n=== 测试事件隔离 ===")
-    
+
     # 创建控制器
     controller = MockMainController()
-    
+
+    # 创建测试配置
+    test_config = {
+        'strategies': [
+            {
+                'name': 'shfe_quant',
+                'type': 'shfe_quant',
+                'config': {
+                    'strategy_type': 'trend',
+                    'symbol': 'AU9999',
+                    'max_position': 1000,
+                    'price_threshold_high': 450,
+                    'price_threshold_low': 440
+                }
+            }
+        ]
+    }
+    controller.config = test_config
+
     # 加载策略
-    controller.load_strategy('spread_arbitrage')
+    controller.load_strategy('shfe_quant')
     
     # 验证只有一个策略在运行
     assert controller.current_strategy is not None

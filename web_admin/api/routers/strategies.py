@@ -46,11 +46,7 @@ async def get_strategies_list(strategy_manager=Depends(get_strategy_manager)):
                         display_name = "SHFE量化策略"
                         description = "上海期货交易所黄金量化交易策略"
                         risk_level = "high"
-                    # 删除spread_arbitrage相关分支
-                    # elif strategy_name == "spread_arbitrage":
-                    #     display_name = "套利策略"
-                    #     description = "黄金期货跨期套利策略"
-                    #     risk_level = "medium"
+
 
                     strategies.append(StrategyInfo(
                         name=strategy_name,
@@ -93,7 +89,7 @@ async def get_strategies_list(strategy_manager=Depends(get_strategy_manager)):
 async def get_current_strategy(strategy_manager=Depends(get_strategy_manager)):
     """获取当前运行的策略信息"""
     try:
-        # 删除spread_arbitrage相关模拟数据
+
         current_strategy = CurrentStrategyInfo(
             strategy_name="shfe_quant",
             display_name="SHFE量化策略",
@@ -153,8 +149,7 @@ async def get_strategy_details(
                 display_name = strategy_name
                 if strategy_name == "shfe_quant":
                     display_name = "SHFE量化策略"
-                # elif strategy_name == "spread_arbitrage":
-                #     display_name = "套利策略"
+
 
                 # 模拟策略统计数据
                 current_strategy = CurrentStrategyInfo(
@@ -187,8 +182,7 @@ async def get_strategy_details(
         display_name = strategy_name
         if strategy_name == "shfe_quant":
             display_name = "SHFE量化策略"
-        # elif strategy_name == "spread_arbitrage":
-        #     display_name = "套利策略"
+
 
         current_strategy = CurrentStrategyInfo(
             strategy_name=strategy_name,

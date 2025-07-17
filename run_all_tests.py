@@ -300,23 +300,29 @@ class ARBIGTestSuite:
         try:
             logger.info("运行系统集成测试...")
             
-            test_script = self.project_root / 'tests' / 'test_system_integration.py'
-            if test_script.exists():
-                # 运行集成测试（限时120秒）
-                result = subprocess.run([
-                    sys.executable, str(test_script)
-                ], capture_output=True, text=True, timeout=120)
-                
-                if result.returncode == 0:
-                    logger.info("  ✓ 系统集成测试通过")
-                    return True
+            # 使用可用的测试文件
+            test_scripts = [
+                self.project_root / 'tests' / 'test_ctp_safe.py',
+                self.project_root / 'tests' / 'test_simple_strategy.py'
+            ]
+
+            all_passed = True
+            for test_script in test_scripts:
+                if test_script.exists():
+                    logger.info(f"  运行 {test_script.name}...")
+                    result = subprocess.run([
+                        sys.executable, str(test_script)
+                    ], capture_output=True, text=True, timeout=60)
+
+                    if result.returncode == 0:
+                        logger.info(f"  ✓ {test_script.name} 通过")
+                    else:
+                        logger.error(f"  ✗ {test_script.name} 失败")
+                        all_passed = False
                 else:
-                    logger.error(f"  ✗ 系统集成测试失败")
-                    logger.error(f"    错误输出: {result.stderr}")
-                    return False
-            else:
-                logger.warning("  ⚠ 系统集成测试脚本不存在")
-                return True
+                    logger.warning(f"  ⚠ {test_script.name} 不存在")
+
+            return all_passed
                 
         except subprocess.TimeoutExpired:
             logger.warning("  ⚠ 系统集成测试超时")
@@ -330,20 +336,22 @@ class ARBIGTestSuite:
         try:
             logger.info("运行性能基准测试...")
             
-            test_script = self.project_root / 'tests' / 'test_performance_benchmark.py'
+            # 使用可用的测试文件
+            test_script = self.project_root / 'tests' / 'test_order_placement.py'
             if test_script.exists():
+                logger.info(f"  运行 {test_script.name}...")
                 result = subprocess.run([
                     sys.executable, str(test_script)
-                ], capture_output=True, text=True, timeout=180)
-                
+                ], capture_output=True, text=True, timeout=60)
+
                 if result.returncode == 0:
-                    logger.info("  ✓ 性能基准测试通过")
+                    logger.info(f"  ✓ 下单测试通过")
                     return True
                 else:
-                    logger.error(f"  ✗ 性能基准测试失败")
+                    logger.error(f"  ✗ 下单测试失败")
                     return False
             else:
-                logger.warning("  ⚠ 性能基准测试脚本不存在")
+                logger.warning(f"  ⚠ 下单测试脚本不存在")
                 return True
                 
         except subprocess.TimeoutExpired:

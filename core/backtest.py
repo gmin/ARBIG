@@ -7,7 +7,13 @@ import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional
-from ..utils.logger import get_logger
+try:
+    from ..utils.logger import get_logger
+except ImportError:
+    # 如果相对导入失败，使用绝对导入
+    import logging
+    def get_logger(name):
+        return logging.getLogger(name)
 
 logger = get_logger(__name__)
 
@@ -30,36 +36,52 @@ class SimpleBacktester:
         self.trades = []
         self.equity_curve = []
         
-    def run_backtest(self, strategy_params: Dict[str, Any], 
+    def run_backtest(self, strategy_params: Dict[str, Any],
                     start_date: str, end_date: str) -> Dict[str, Any]:
         """
         运行回测
-        
+
         Args:
             strategy_params: 策略参数
             start_date: 开始日期
             end_date: 结束日期
-            
+
         Returns:
             Dict: 回测结果
         """
         try:
+            # 重置回测状态
+            self.current_capital = self.initial_capital
+            self.positions = []
+            self.trades = []
+            self.equity_curve = []
+
             # 生成模拟价格数据
             price_data = self._generate_mock_data(start_date, end_date)
-            
+
             # 运行策略
             signals = self._generate_signals(price_data, strategy_params)
-            
-            # 执行交易
+
+            # 执行交易（考虑开仓模式）
             self._execute_trades(price_data, signals, strategy_params)
-            
+
             # 计算回测指标
             results = self._calculate_metrics()
-            
+
+            # 添加回测配置信息
+            results.update({
+                "start_date": start_date,
+                "end_date": end_date,
+                "initial_capital": self.initial_capital,
+                "strategy_params": strategy_params,
+                "data_points": len(price_data),
+                "success": True
+            })
+
             logger.info(f"回测完成: {start_date} 到 {end_date}, 总收益: {results['total_return']:.2%}")
-            
+
             return results
-            
+
         except Exception as e:
             logger.error(f"回测失败: {e}")
             return {
@@ -71,46 +93,51 @@ class SimpleBacktester:
         """生成模拟价格数据"""
         start = datetime.strptime(start_date, "%Y-%m-%d")
         end = datetime.strptime(end_date, "%Y-%m-%d")
-        
+
         # 生成日期序列
         dates = pd.date_range(start=start, end=end, freq='D')
-        
+
         # 生成模拟价格（随机游走 + 趋势）
-        np.random.seed(42)  # 固定随机种子，确保结果可重现
-        
+        # 使用日期作为种子，确保相同日期范围的结果一致
+        seed = hash(f"{start_date}_{end_date}") % (2**32)
+        np.random.seed(seed)
+
         base_price = 450.0  # 黄金基础价格
         returns = np.random.normal(0.0001, 0.02, len(dates))  # 日收益率
-        
+
         # 添加一些趋势和周期性
         trend = np.linspace(0, 0.1, len(dates))  # 轻微上升趋势
         cycle = 0.05 * np.sin(np.arange(len(dates)) * 2 * np.pi / 30)  # 30天周期
-        
+
         returns += trend / len(dates) + cycle / len(dates)
-        
+
         # 计算价格
         prices = [base_price]
         for ret in returns[1:]:
             prices.append(prices[-1] * (1 + ret))
-        
+
+        # 为OHLC生成创建独立的随机数生成器
+        rng = np.random.RandomState(seed)
+
         # 生成OHLC数据
         data = []
         for i, (date, price) in enumerate(zip(dates, prices)):
-            # 简单的OHLC生成
-            volatility = abs(np.random.normal(0, 0.01))
+            # 简单的OHLC生成，使用固定种子的随机数生成器
+            volatility = abs(rng.normal(0, 0.01))
             high = price * (1 + volatility)
             low = price * (1 - volatility)
             open_price = prices[i-1] if i > 0 else price
             close_price = price
-            
+
             data.append({
                 'date': date,
                 'open': open_price,
                 'high': high,
                 'low': low,
                 'close': close_price,
-                'volume': np.random.randint(1000, 10000)
+                'volume': rng.randint(1000, 10000)
             })
-        
+
         return pd.DataFrame(data)
     
     def _generate_signals(self, data: pd.DataFrame, params: Dict[str, Any]) -> List[str]:
@@ -179,47 +206,111 @@ class SimpleBacktester:
         """执行交易"""
         position = 0
         entry_price = 0
-        
+        consecutive_losses = 0  # 连续亏损次数，用于马丁格尔
+
+        # 获取开仓模式参数
+        position_mode = params.get('position_mode', 'fixed')
+        position_size = params.get('position_size', 1)
+        max_position = params.get('max_position', 5)
+        risk_factor = params.get('risk_factor', 0.02)
+        position_multiplier = params.get('position_multiplier', 1.0)
+
         for i, signal in enumerate(signals):
+            current_price = data.iloc[i]['close']
+
             if signal in ['BUY', 'SELL']:
                 if position == 0:  # 开仓
-                    entry_price = data.iloc[i]['close']
-                    position = 1 if signal == 'BUY' else -1
-                    
+                    # 计算开仓数量
+                    trade_size = self._calculate_position_size(
+                        position_mode, position_size, current_price,
+                        risk_factor, position_multiplier, consecutive_losses
+                    )
+
+                    # 限制最大持仓
+                    trade_size = min(trade_size, max_position)
+
+                    entry_price = current_price
+                    position = trade_size if signal == 'BUY' else -trade_size
+
                     trade = {
                         'type': 'OPEN',
                         'direction': signal,
                         'price': entry_price,
                         'date': data.iloc[i]['date'],
-                        'position': position
+                        'position': position,
+                        'size': trade_size,
+                        'mode': position_mode
                     }
                     self.trades.append(trade)
-                    
+
             elif signal in ['CLOSE_LONG', 'CLOSE_SHORT']:
                 if position != 0:  # 平仓
-                    exit_price = data.iloc[i]['close']
+                    exit_price = current_price
                     pnl = (exit_price - entry_price) * position
-                    
+
                     trade = {
                         'type': 'CLOSE',
                         'direction': signal,
                         'price': exit_price,
                         'date': data.iloc[i]['date'],
                         'pnl': pnl,
-                        'entry_price': entry_price
+                        'entry_price': entry_price,
+                        'position': position
                     }
                     self.trades.append(trade)
-                    
+
                     # 更新资金
                     self.current_capital += pnl
+
+                    # 更新连续亏损次数（用于马丁格尔）
+                    if pnl > 0:
+                        consecutive_losses = 0
+                    else:
+                        consecutive_losses += 1
+
                     position = 0
-            
+
             # 记录权益曲线
             self.equity_curve.append({
                 'date': data.iloc[i]['date'],
                 'equity': self.current_capital,
                 'position': position
             })
+
+    def _calculate_position_size(self, mode: str, base_size: int, price: float,
+                               risk_factor: float, multiplier: float, losses: int) -> int:
+        """根据开仓模式计算仓位大小"""
+        if mode == 'fixed':
+            return int(base_size * multiplier)
+
+        elif mode == 'risk_based':
+            # 风险比例模式
+            risk_amount = self.current_capital * risk_factor
+            stop_loss_ratio = 0.05  # 假设5%止损
+            risk_per_lot = price * stop_loss_ratio * 1000  # 假设每手1000克
+            if risk_per_lot > 0:
+                size = int(risk_amount / risk_per_lot * multiplier)
+                return max(1, size)
+            return base_size
+
+        elif mode == 'kelly':
+            # 凯利公式模式（简化版）
+            win_rate = 0.6
+            avg_win = 1.5
+            avg_loss = 1.0
+            kelly_fraction = (avg_win * win_rate - (1 - win_rate)) / avg_win
+            kelly_fraction = max(0, min(kelly_fraction, 0.25))  # 限制在25%以内
+            size = int(kelly_fraction * self.current_capital / (price * 1000) * multiplier)
+            return max(1, size)
+
+        elif mode == 'martingale':
+            # 马丁格尔模式
+            martingale_multiplier = 2.0
+            multiplier_factor = min(martingale_multiplier ** losses, 8)  # 最大8倍
+            size = int(base_size * multiplier_factor * multiplier)
+            return max(1, size)
+
+        return base_size
     
     def _calculate_metrics(self) -> Dict[str, Any]:
         """计算回测指标"""

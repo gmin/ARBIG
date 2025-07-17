@@ -11,7 +11,6 @@ from vnpy.trader.constant import Exchange
 from vnpy.trader.object import TickData
 
 from core.shfe.gateway import SHFEGateway
-from core.mt5.gateway import MT5Gateway
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -33,7 +32,6 @@ class DataManager:
         
         # 初始化数据源
         self.shfe_gateway = SHFEGateway(self.config.get("shfe"))
-        self.mt5_gateway = MT5Gateway(self.config.get("mt5"))
         
         # 数据缓存
         self.last_update_time: Optional[datetime] = None
@@ -51,13 +49,8 @@ class DataManager:
             if not self.shfe_gateway.connect():
                 logger.error("上海黄金期货连接失败")
                 return False
-                
-            # 连接MT5
-            if not self.mt5_gateway.connect():
-                logger.error("MT5连接失败")
-                return False
-                
-            logger.info("所有数据源连接成功")
+
+            logger.info("数据源连接成功")
             return True
             
         except Exception as e:
@@ -67,19 +60,17 @@ class DataManager:
     def subscribe(self, symbol: str, source: str) -> bool:
         """
         订阅指定数据源的合约
-        
+
         Args:
             symbol: 合约代码
-            source: 数据源，可选值："shfe" 或 "mt5"
-            
+            source: 数据源，目前仅支持："shfe"
+
         Returns:
             bool: 订阅是否成功
         """
         try:
             if source == "shfe":
                 return self.shfe_gateway.subscribe(symbol)
-            elif source == "mt5":
-                return self.mt5_gateway.subscribe(symbol)
             else:
                 logger.error(f"未知的数据源: {source}")
                 return False
@@ -101,11 +92,6 @@ class DataManager:
             if shfe_price:
                 self.price_cache["shfe"] = shfe_price
                 
-            # 更新MT5价格
-            mt5_price = self.mt5_gateway.get_latest_price()
-            if mt5_price:
-                self.price_cache["mt5"] = mt5_price
-                
             # 更新最后更新时间
             self.last_update_time = datetime.now()
             
@@ -124,15 +110,14 @@ class DataManager:
         """
         try:
             # 检查是否有足够的价格数据
-            if "shfe" not in self.price_cache or "mt5" not in self.price_cache:
+            if "shfe" not in self.price_cache:
                 return None
-                
+
             # 获取价格
             shfe_price = self.price_cache["shfe"]["last_price"]
-            mt5_price = self.price_cache["mt5"]["last_price"]
-            
-            # 计算价差
-            spread = shfe_price - mt5_price
+
+            # 由于不再使用MT5，这里返回一个模拟价差
+            spread = 0.0
             
             return spread
             
@@ -156,11 +141,8 @@ class DataManager:
         try:
             # 断开上海黄金期货连接
             self.shfe_gateway.disconnect()
-            
-            # 断开MT5连接
-            self.mt5_gateway.disconnect()
-            
-            logger.info("所有数据源已断开连接")
+
+            logger.info("数据源已断开连接")
             
         except Exception as e:
             logger.error(f"断开数据源连接失败: {str(e)}")

@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ARBIG 调试页面</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f0f0f0;
+            line-height: 1.6;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+        h1, h2 {
+            color: #333;
+            border-bottom: 2px solid #4caf50;
+            padding-bottom: 10px;
+        }
+        .status {
+            background: #e8f5e8;
+            border-left: 4px solid #4caf50;
+            padding: 15px;
+            margin: 15px 0;
+        }
+        .error {
+            background: #ffeaea;
+            border-left: 4px solid #f44336;
+            padding: 15px;
+            margin: 15px 0;
+        }
+        .info {
+            background: #e3f2fd;
+            border-left: 4px solid #2196f3;
+            padding: 15px;
+            margin: 15px 0;
+        }
+        .test-button {
+            background: #4caf50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        .test-button:hover {
+            background: #45a049;
+        }
+        #results {
+            background: #f9f9f9;
+            border: 1px solid #ddd;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 20px 0;
+            min-height: 200px;
+            white-space: pre-wrap;
+            font-family: monospace;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        .success { color: #4caf50; font-weight: bold; }
+        .error-text { color: #f44336; font-weight: bold; }
+        .warning { color: #ff9800; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 ARBIG 系统调试页面</h1>
+        
+        <div class="status">
+            <h3>✅ 如果您能看到这个页面，说明：</h3>
+            <ul>
+                <li>Web服务器正在正常运行</li>
+                <li>HTML文件可以正确加载</li>
+                <li>CSS样式可以正常应用</li>
+                <li>JavaScript即将开始执行</li>
+            </ul>
+        </div>
+        
+        <h2>📊 系统信息</h2>
+        <table>
+            <tr><td>当前时间</td><td id="current-time">加载中...</td></tr>
+            <tr><td>页面URL</td><td id="page-url">加载中...</td></tr>
+            <tr><td>用户代理</td><td id="user-agent">加载中...</td></tr>
+            <tr><td>屏幕分辨率</td><td id="screen-resolution">加载中...</td></tr>
+            <tr><td>浏览器语言</td><td id="browser-language">加载中...</td></tr>
+        </table>
+        
+        <h2>🧪 功能测试</h2>
+        <div>
+            <button class="test-button" onclick="testBasicJS()">测试基础JavaScript</button>
+            <button class="test-button" onclick="testAPIConnection()">测试API连接</button>
+            <button class="test-button" onclick="testFetch()">测试Fetch功能</button>
+            <button class="test-button" onclick="testLocalStorage()">测试本地存储</button>
+            <button class="test-button" onclick="clearResults()">清空结果</button>
+        </div>
+        
+        <h2>📋 测试结果</h2>
+        <div id="results">点击上面的按钮开始测试...</div>
+        
+        <h2>🔗 快速链接</h2>
+        <div class="info">
+            <p><a href="/" target="_blank">主页面</a> | 
+               <a href="/strategy_monitor.html?strategy=shfe_quant" target="_blank">策略监控</a> | 
+               <a href="/api/docs" target="_blank">API文档</a> | 
+               <a href="/api/v1/system/status" target="_blank">系统状态</a></p>
+        </div>
+        
+        <h2>⚠️ 常见问题排查</h2>
+        <div class="info">
+            <h4>如果主页面无法显示内容：</h4>
+            <ol>
+                <li><strong>清空浏览器缓存</strong>：按 Ctrl+Shift+R 强制刷新</li>
+                <li><strong>检查开发者工具</strong>：按 F12 查看Console和Network标签</li>
+                <li><strong>尝试无痕模式</strong>：排除扩展程序干扰</li>
+                <li><strong>检查JavaScript</strong>：确认JavaScript未被禁用</li>
+                <li><strong>网络问题</strong>：检查网络连接和代理设置</li>
+            </ol>
+        </div>
+    </div>
+
+    <script>
+        // 页面加载完成后执行
+        window.onload = function() {
+            updateSystemInfo();
+            logMessage('页面加载完成，JavaScript正常工作！');
+        };
+        
+        // 更新系统信息
+        function updateSystemInfo() {
+            try {
+                document.getElementById('current-time').textContent = new Date().toLocaleString('zh-CN');
+                document.getElementById('page-url').textContent = window.location.href;
+                document.getElementById('user-agent').textContent = navigator.userAgent;
+                document.getElementById('screen-resolution').textContent = screen.width + 'x' + screen.height;
+                document.getElementById('browser-language').textContent = navigator.language;
+                
+                // 每秒更新时间
+                setInterval(function() {
+                    document.getElementById('current-time').textContent = new Date().toLocaleString('zh-CN');
+                }, 1000);
+                
+            } catch (error) {
+                logMessage('更新系统信息失败: ' + error.message, 'error');
+            }
+        }
+        
+        // 日志记录函数
+        function logMessage(message, type = 'info') {
+            const results = document.getElementById('results');
+            const timestamp = new Date().toLocaleTimeString();
+            const prefix = type === 'error' ? '❌' : type === 'success' ? '✅' : 'ℹ️';
+            results.textContent += `[${timestamp}] ${prefix} ${message}\n`;
+            results.scrollTop = results.scrollHeight;
+        }
+        
+        // 测试基础JavaScript
+        function testBasicJS() {
+            logMessage('开始测试基础JavaScript功能...');
+            
+            try {
+                // 测试基本运算
+                const result = 2 + 2;
+                if (result === 4) {
+                    logMessage('✅ 基本运算正常', 'success');
+                } else {
+                    logMessage('❌ 基本运算异常', 'error');
+                }
+                
+                // 测试DOM操作
+                const testDiv = document.createElement('div');
+                testDiv.textContent = '测试';
+                if (testDiv.textContent === '测试') {
+                    logMessage('✅ DOM操作正常', 'success');
+                } else {
+                    logMessage('❌ DOM操作异常', 'error');
+                }
+                
+                // 测试JSON
+                const testObj = {test: 'value'};
+                const jsonStr = JSON.stringify(testObj);
+                const parsedObj = JSON.parse(jsonStr);
+                if (parsedObj.test === 'value') {
+                    logMessage('✅ JSON处理正常', 'success');
+                } else {
+                    logMessage('❌ JSON处理异常', 'error');
+                }
+                
+                logMessage('基础JavaScript测试完成');
+                
+            } catch (error) {
+                logMessage('基础JavaScript测试失败: ' + error.message, 'error');
+            }
+        }
+        
+        // 测试API连接
+        async function testAPIConnection() {
+            logMessage('开始测试API连接...');
+            
+            try {
+                const response = await fetch('/api/v1/system/status');
+                const data = await response.json();
+                
+                if (response.ok && data.success) {
+                    logMessage('✅ API连接成功', 'success');
+                    logMessage(`系统状态: ${data.data.system_status}`);
+                    logMessage(`运行模式: ${data.data.running_mode}`);
+                } else {
+                    logMessage('❌ API返回错误: ' + (data.message || '未知错误'), 'error');
+                }
+                
+            } catch (error) {
+                logMessage('❌ API连接失败: ' + error.message, 'error');
+            }
+        }
+        
+        // 测试Fetch功能
+        async function testFetch() {
+            logMessage('开始测试Fetch功能...');
+            
+            try {
+                // 测试获取当前页面
+                const response = await fetch(window.location.href);
+                if (response.ok) {
+                    logMessage('✅ Fetch功能正常', 'success');
+                    logMessage(`响应状态: ${response.status} ${response.statusText}`);
+                } else {
+                    logMessage('❌ Fetch响应异常: ' + response.status, 'error');
+                }
+                
+            } catch (error) {
+                logMessage('❌ Fetch功能失败: ' + error.message, 'error');
+            }
+        }
+        
+        // 测试本地存储
+        function testLocalStorage() {
+            logMessage('开始测试本地存储...');
+            
+            try {
+                const testKey = 'arbig_test';
+                const testValue = 'test_value_' + Date.now();
+                
+                // 测试存储
+                localStorage.setItem(testKey, testValue);
+                const retrievedValue = localStorage.getItem(testKey);
+                
+                if (retrievedValue === testValue) {
+                    logMessage('✅ 本地存储正常', 'success');
+                    localStorage.removeItem(testKey);
+                } else {
+                    logMessage('❌ 本地存储异常', 'error');
+                }
+                
+            } catch (error) {
+                logMessage('❌ 本地存储失败: ' + error.message, 'error');
+            }
+        }
+        
+        // 清空结果
+        function clearResults() {
+            document.getElementById('results').textContent = '结果已清空...\n';
+        }
+        
+        // 错误处理
+        window.onerror = function(message, source, lineno, colno, error) {
+            logMessage(`JavaScript错误: ${message} (${source}:${lineno})`, 'error');
+        };
+        
+        // 未处理的Promise错误
+        window.addEventListener('unhandledrejection', function(event) {
+            logMessage(`未处理的Promise错误: ${event.reason}`, 'error');
+        });
+    </script>
+</body>
+</html>

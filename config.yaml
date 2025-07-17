@@ -14,12 +14,7 @@ data:
     password: "your_password"
     broker_id: "9999"
     
-  # MT5配置
-  mt5:
-    server: "MetaQuotes-Demo"
-    login: 12345
-    password: "your_password"
-    symbol: "XAUUSD"
+
 
 # 策略配置
 strategies:

@@ -274,16 +274,7 @@
             color: white;
             box-shadow: 0 4px 15px rgba(243, 156, 18, 0.3);
         }
-        .btn-danger {
-            background: linear-gradient(135deg, #e74c3c, #c0392b);
-            color: white;
-            box-shadow: 0 4px 15px rgba(231, 76, 60, 0.3);
-        }
-        .btn-warning {
-            background: linear-gradient(135deg, #f39c12, #e67e22);
-            color: white;
-            box-shadow: 0 4px 15px rgba(243, 156, 18, 0.3);
-        }
+
 
         .btn:hover {
             transform: translateY(-3px);
@@ -989,21 +980,7 @@
                     </button>
                 </div>
 
-                <!-- 紧急控制面板 -->
-                <div style="margin-top: 20px; padding: 15px; background: #fff3cd; border-radius: 8px; border-left: 4px solid #ffc107;">
-                    <h4 style="color: #856404; margin-bottom: 10px;">🚨 紧急控制</h4>
-                    <div class="control-buttons">
-                        <button class="btn btn-danger" id="btn-emergency-halt">
-                            ⏸️ 紧急暂停
-                        </button>
-                        <button class="btn btn-danger" id="btn-emergency-close">
-                            🔴 紧急平仓
-                        </button>
-                        <button class="btn btn-warning" id="btn-emergency-settings">
-                            ⚠️ 紧急设置
-                        </button>
-                    </div>
-                </div>
+
 
                 <!-- 策略参数 -->
                 <div style="margin-top: 25px; padding: 20px; background: rgba(52, 152, 219, 0.1); border-radius: 16px; border-left: 4px solid #3498db;">
@@ -1476,10 +1453,7 @@
         document.getElementById('btn-pause').addEventListener('click', () => controlStrategy('halt'));
         document.getElementById('btn-stop').addEventListener('click', () => controlStrategy('stop'));
 
-        // 绑定紧急控制按钮事件
-        document.getElementById('btn-emergency-halt').addEventListener('click', () => emergencyHaltStrategy());
-        document.getElementById('btn-emergency-close').addEventListener('click', () => emergencyCloseStrategy());
-        document.getElementById('btn-emergency-settings').addEventListener('click', () => showEmergencySettings());
+
 
         // 绑定新功能按钮事件
         document.getElementById('btn-edit-params').addEventListener('click', () => showParamEditModal());
@@ -1563,85 +1537,9 @@
             setInterval(updateData, 10000);
         }
         
-        // 紧急控制函数
-        async function emergencyHaltStrategy() {
-            if (!confirm(`确认紧急暂停策略 "${strategyName}"？`)) return;
 
-            const reason = prompt('请输入暂停原因:');
-            if (!reason) return;
 
-            try {
-                addLogEntry('WARN', `正在紧急暂停策略: ${reason}`);
 
-                const response = await fetch(`${API_BASE}/strategies/halt`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        strategy_name: strategyName,
-                        reason: reason,
-                        emergency: true,
-                        operator: 'web_user'
-                    })
-                });
-
-                const result = await response.json();
-
-                if (result.success) {
-                    addLogEntry('INFO', `策略紧急暂停成功: ${result.message}`);
-                    updateStrategyStatus('stopped');
-                } else {
-                    addLogEntry('ERROR', `策略紧急暂停失败: ${result.message}`);
-                }
-            } catch (error) {
-                addLogEntry('ERROR', `紧急暂停异常: ${error.message}`);
-            }
-        }
-
-        async function emergencyCloseStrategy() {
-            const confirmCode = prompt(`紧急平仓策略 "${strategyName}" 需要确认码，请输入 EMERGENCY_CONFIRM:`);
-            if (confirmCode !== 'EMERGENCY_CONFIRM') {
-                addLogEntry('ERROR', '确认码错误，紧急平仓取消');
-                return;
-            }
-
-            const reason = prompt('请输入平仓原因:');
-            if (!reason) return;
-
-            try {
-                addLogEntry('WARN', `正在紧急平仓策略: ${reason}`);
-
-                const response = await fetch(`${API_BASE}/strategies/emergency_close`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        strategy_name: strategyName,
-                        action: 'emergency_close',
-                        reason: reason,
-                        operator: 'web_user',
-                        confirmation_code: confirmCode
-                    })
-                });
-
-                const result = await response.json();
-
-                if (result.success) {
-                    addLogEntry('INFO', `策略紧急平仓成功: ${result.message}`);
-                } else {
-                    addLogEntry('ERROR', `策略紧急平仓失败: ${result.message}`);
-                }
-            } catch (error) {
-                addLogEntry('ERROR', `紧急平仓异常: ${error.message}`);
-            }
-        }
-
-        function showEmergencySettings() {
-            addLogEntry('INFO', '紧急设置功能开发中...');
-            alert('紧急设置功能正在开发中，敬请期待！');
-        }
 
         // 参数编辑功能
         function showParamEditModal() {
