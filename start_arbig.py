@@ -32,12 +32,31 @@ def check_environment():
         print("❌ Python版本过低，需要Python 3.8+")
         return False
     
-    # 检查vnpy环境
-    try:
-        import vnpy
-        print(f"✅ VNPy版本: {vnpy.__version__}")
-    except ImportError:
-        print("❌ 未找到VNPy，请确保在vnpy环境中运行")
+    # 检查核心依赖
+    core_deps = [
+        ("vnpy", "VeNpy"),
+        ("vnpy_ctp", "VeNpy-CTP"),
+        ("pandas", "Pandas"),
+        ("numpy", "NumPy"),
+        ("fastapi", "FastAPI"),
+        ("uvicorn", "Uvicorn"),
+        ("websockets", "WebSockets"),
+        ("pydantic", "Pydantic")
+    ]
+
+    missing_deps = []
+    for module_name, display_name in core_deps:
+        try:
+            module = __import__(module_name)
+            version = getattr(module, '__version__', 'unknown')
+            print(f"✅ {display_name}: {version}")
+        except ImportError:
+            print(f"❌ {display_name}: 未安装")
+            missing_deps.append(display_name)
+
+    if missing_deps:
+        print(f"\n❌ 缺少依赖包: {', '.join(missing_deps)}")
+        print("请运行: pip install -r requirements.txt")
         return False
     
     # 检查配置文件
@@ -110,9 +129,9 @@ def main():
     
     # 显示启动选项
     print("\n📋 启动选项:")
-    print("1. 启动Web管理系统 (web_admin)")
-    print("2. 启动交易API服务 (trading_api)")
-    print("3. 启动完整系统 (web_admin + trading_api)")
+    print("1. 启动ARBIG Web管理系统 (推荐) - 完整功能")
+    print("2. 启动交易API服务 (仅API)")
+    print("3. 启动完整ARBIG系统 (与选项1相同，推荐)")
     print("4. 运行下单测试")
     print("5. 运行信号监控测试")
     print("0. 退出")
@@ -126,16 +145,21 @@ def main():
                 return 0
             
             elif choice == "1":
-                # 启动Web管理系统
+                # 启动Web管理系统（完整ARBIG系统）
                 process = start_service(
-                    "Web管理系统",
-                    "python -m web_admin.app",
+                    "ARBIG Web管理系统",
+                    "python main.py --auto-start --demo-mode",
                     8000
                 )
                 if process:
-                    print("\n🎛️  Web管理系统已启动")
-                    print("   功能: 交易管理、风控管理、系统监控")
+                    print("\n🎛️  ARBIG Web管理系统已启动")
+                    print("   功能: 完整的量化交易系统")
+                    print("   • 交易管理、风控管理、系统监控")
+                    print("   • 策略监控、实时数据推送")
+                    print("   • 演示模式（无需CTP连接）")
                     print("   访问: http://localhost:8000")
+                    print("   策略页面: http://localhost:8000/strategy_monitor.html?strategy=shfe_quant")
+                    print("   API文档: http://localhost:8000/api/docs")
                     input("\n按Enter键停止服务...")
                     process.terminate()
                 break
@@ -156,42 +180,32 @@ def main():
                 break
             
             elif choice == "3":
-                # 启动完整系统
-                print("\n🚀 启动完整ARBIG系统...")
-                
-                # 启动交易API服务
-                api_process = start_service(
-                    "交易API服务",
-                    "python -m trading_api.app",
-                    8001
-                )
-                
-                # 启动Web管理系统
-                web_process = start_service(
-                    "Web管理系统", 
-                    "python -m web_admin.app",
+                # 启动完整ARBIG系统（推荐）
+                print("\n🚀 启动完整ARBIG量化交易系统...")
+
+                process = start_service(
+                    "ARBIG完整系统",
+                    "python main.py --auto-start --demo-mode",
                     8000
                 )
-                
-                if api_process and web_process:
-                    print("\n🎉 ARBIG系统启动完成！")
-                    print("   🔧 交易API服务: http://localhost:8001")
-                    print("   🎛️  Web管理系统: http://localhost:8000")
-                    print("\n系统功能:")
-                    print("   • 实时交易监控")
-                    print("   • 交易信号跟踪") 
-                    print("   • 风控管理")
-                    print("   • 紧急暂停/平仓")
-                    print("   • 系统状态监控")
-                    
-                    input("\n按Enter键停止所有服务...")
-                    
-                    if api_process:
-                        api_process.terminate()
-                    if web_process:
-                        web_process.terminate()
-                    
-                    print("✅ 所有服务已停止")
+
+                if process:
+                    print("\n🎉 ARBIG完整系统启动成功！")
+                    print("   🎛️  Web管理界面: http://localhost:8000")
+                    print("   📊 策略监控页面: http://localhost:8000/strategy_monitor.html?strategy=shfe_quant")
+                    print("   📖 API文档: http://localhost:8000/api/docs")
+                    print("\n✨ 系统功能:")
+                    print("   • 完整的量化交易系统")
+                    print("   • 实时交易监控与策略管理")
+                    print("   • 交易信号跟踪与分析")
+                    print("   • 风控管理与紧急控制")
+                    print("   • 系统状态监控与性能分析")
+                    print("   • WebSocket实时数据推送")
+                    print("   • 演示模式（无需CTP连接）")
+
+                    input("\n按Enter键停止系统...")
+                    process.terminate()
+                    print("✅ ARBIG系统已停止")
                 break
             
             elif choice == "4":

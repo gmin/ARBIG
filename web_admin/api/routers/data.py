@@ -87,27 +87,64 @@ async def get_market_klines(
 async def get_account_info(data_manager=Depends(get_data_manager)):
     """获取账户资金信息"""
     try:
-        # 模拟账户数据
+        # 尝试从真实的服务容器获取账户数据
+        if hasattr(data_manager, 'ctp_gateway') and data_manager.ctp_gateway:
+            # 先查询账户信息（如果还没有数据的话）
+            if not data_manager.ctp_gateway.account:
+                # 主动查询账户信息
+                query_success = data_manager.ctp_gateway.query_account()
+                if query_success:
+                    # 等待一下让查询结果返回
+                    import asyncio
+                    await asyncio.sleep(1.0)  # 增加等待时间
+
+            # 从CTP网关获取真实账户数据
+            account_data = data_manager.ctp_gateway.account
+            if account_data:
+                # 计算保证金（总资金 - 可用资金）
+                margin = float(account_data.balance - account_data.available)
+
+                account = AccountInfo(
+                    account_id=account_data.accountid,
+                    total_assets=float(account_data.balance),
+                    available=float(account_data.available),
+                    margin=margin,
+                    frozen=float(account_data.frozen),
+                    profit=float(getattr(account_data, 'close_profit', 0.0)),
+                    today_profit=float(getattr(account_data, 'position_profit', 0.0)),
+                    commission=float(getattr(account_data, 'commission', 0.0)),
+                    currency="CNY",
+                    update_time=datetime.now()
+                )
+
+                return AccountResponse(
+                    success=True,
+                    message=f"账户信息获取成功（真实数据 - {account_data.accountid}）",
+                    data=account,
+                    request_id=str(uuid.uuid4())
+                )
+
+        # 如果没有真实数据，返回提示信息
         account = AccountInfo(
-            account_id="123456789",
-            total_assets=1000000.00,
-            available=850000.00,
-            margin=150000.00,
+            account_id="未连接",
+            total_assets=0.00,
+            available=0.00,
+            margin=0.00,
             frozen=0.00,
-            profit=25000.00,
-            today_profit=5000.00,
-            commission=120.50,
+            profit=0.00,
+            today_profit=0.00,
+            commission=0.00,
             currency="CNY",
             update_time=datetime.now()
         )
-        
+
         return AccountResponse(
             success=True,
-            message="账户信息获取成功",
+            message="CTP未连接或账户信息查询失败",
             data=account,
             request_id=str(uuid.uuid4())
         )
-        
+
     except Exception as e:
         raise HTTPException(
             status_code=500,
@@ -118,68 +155,106 @@ async def get_account_info(data_manager=Depends(get_data_manager)):
 async def get_positions(data_manager=Depends(get_data_manager)):
     """获取持仓信息"""
     try:
-        # 模拟持仓数据
-        positions = [
-            PositionInfo(
-                symbol="au2509",
-                direction="long",
-                volume=5.0,
-                avg_price=483.20,
-                current_price=485.50,
-                profit=11500.00,
-                margin=120000.00,
-                open_time=datetime.now()
-            ),
-            PositionInfo(
-                symbol="au2512",
-                direction="short",
-                volume=2.0,
-                avg_price=486.80,
-                current_price=485.20,
-                profit=3200.00,
-                margin=48000.00,
-                open_time=datetime.now()
-            )
-        ]
-        
+        positions = []
+
+        # 尝试从真实的服务容器获取持仓数据
+        if hasattr(data_manager, 'ctp_gateway') and data_manager.ctp_gateway:
+            # 先查询持仓信息（如果还没有数据的话）
+            if not data_manager.ctp_gateway.positions:
+                # 主动查询持仓信息
+                query_success = data_manager.ctp_gateway.query_position()
+                if query_success:
+                    # 等待一下让查询结果返回
+                    import asyncio
+                    await asyncio.sleep(0.5)
+
+            # 从CTP网关获取真实持仓数据
+            ctp_positions = data_manager.ctp_gateway.positions
+            for vt_symbol, position_data in ctp_positions.items():
+                if position_data.volume > 0:  # 只显示有持仓的合约
+                    # 获取当前价格
+                    current_price = 0.0
+                    tick_data = data_manager.ctp_gateway.ticks.get(vt_symbol)
+                    if tick_data:
+                        current_price = float(tick_data.last_price)
+
+                    position = PositionInfo(
+                        symbol=position_data.symbol,
+                        direction="long" if position_data.direction.value == "多" else "short",
+                        volume=float(position_data.volume),
+                        avg_price=float(position_data.price),
+                        current_price=current_price,
+                        profit=float(position_data.pnl),
+                        margin=float(getattr(position_data, 'margin', 0.0)),
+                        open_time=datetime.now()  # CTP没有开仓时间，使用当前时间
+                    )
+                    positions.append(position)
+
         return PositionsResponse(
             success=True,
-            message="持仓信息获取成功",
+            message=f"持仓信息获取成功，共{len(positions)}个持仓（真实数据）",
             data={"positions": positions},
             request_id=str(uuid.uuid4())
         )
-        
+
     except Exception as e:
         raise HTTPException(
             status_code=500,
             detail=f"获取持仓信息失败: {str(e)}"
         )
 
-@router.get("/risk/metrics", response_model=RiskResponse, summary="获取风险指标")
+@router.get("/risk/metrics", response_model=APIResponse, summary="获取风险指标和交易统计")
 async def get_risk_metrics(data_manager=Depends(get_data_manager)):
-    """获取风险指标"""
+    """获取风险指标和交易统计"""
     try:
-        # 模拟风险数据
-        risk_metrics = RiskMetrics(
-            risk_level="medium",
-            position_ratio=0.65,
-            daily_loss=-2500.00,
-            max_drawdown=-8500.00,
-            var_95=-15000.00,
-            leverage=3.2,
-            concentration={
-                "au2509": 0.8,
-                "au2512": 0.2
+        # 尝试从真实的服务容器获取数据
+        if hasattr(data_manager, 'ctp_gateway') and data_manager.ctp_gateway:
+            # 从CTP网关获取真实数据
+            orders = data_manager.ctp_gateway.orders
+            trades = data_manager.ctp_gateway.trades
+
+            # 计算交易统计
+            total_orders = len(orders)
+            active_orders = len([o for o in orders.values() if o.status in ['未成交', '部分成交']])
+            total_trades = len(trades)
+            total_turnover = sum([t.volume * t.price for t in trades.values()])
+
+            trading_stats = {
+                "total_orders": total_orders,
+                "active_orders": active_orders,
+                "total_trades": total_trades,
+                "total_turnover": total_turnover
             }
-        )
-        
-        return RiskResponse(
+        else:
+            # 模拟交易统计
+            trading_stats = {
+                "total_orders": 0,
+                "active_orders": 0,
+                "total_trades": 0,
+                "total_turnover": 0.0
+            }
+
+        # 风险指标数据
+        risk_data = {
+            "risk_level": "low",
+            "position_ratio": 0.0,
+            "daily_loss": 0.0,
+            "max_drawdown": 0.0,
+            "var_95": 0.0,
+            "leverage": 1.0,
+            "concentration": {}
+        }
+
+        return APIResponse(
             success=True,
-            message="风险指标获取成功",
-            data=risk_metrics,
+            message="风险指标和交易统计获取成功",
+            data={
+                "risk_metrics": risk_data,
+                "trading": trading_stats
+            },
             request_id=str(uuid.uuid4())
         )
-        
+
     except Exception as e:
         raise HTTPException(
             status_code=500,
@@ -295,28 +370,46 @@ async def cancel_order(
 @router.get("/orders", response_model=APIResponse, summary="获取订单列表")
 async def get_orders(
     status: Optional[str] = Query(None, description="订单状态过滤"),
+    active_only: Optional[bool] = Query(False, description="仅获取活跃订单"),
     limit: int = Query(100, description="返回数量限制"),
     data_manager=Depends(get_data_manager)
 ):
     """获取订单列表"""
     try:
-        # 模拟订单数据
-        orders = [
-            {
-                "order_id": "order_12345678",
-                "symbol": "au2509",
-                "direction": "LONG",
-                "volume": 1.0,
-                "price": 485.50,
-                "type": "LIMIT",
-                "status": "submitted",
-                "submit_time": datetime.now().isoformat()
-            }
-        ]
+        orders = []
+
+        # 尝试从真实的服务容器获取订单数据
+        if hasattr(data_manager, 'ctp_gateway') and data_manager.ctp_gateway:
+            # 从CTP网关获取真实订单数据
+            ctp_orders = data_manager.ctp_gateway.orders
+
+            for order_id, order_data in ctp_orders.items():
+                # 过滤活跃订单
+                if active_only and order_data.status not in ['未成交', '部分成交']:
+                    continue
+
+                # 状态过滤
+                if status and order_data.status != status:
+                    continue
+
+                order_info = {
+                    "order_id": order_id,
+                    "symbol": order_data.symbol,
+                    "direction": order_data.direction.value,
+                    "volume": float(order_data.volume),
+                    "price": float(order_data.price),
+                    "type": order_data.type.value,
+                    "status": order_data.status,
+                    "submit_time": order_data.datetime.isoformat() if hasattr(order_data, 'datetime') else datetime.now().isoformat()
+                }
+                orders.append(order_info)
+
+                if len(orders) >= limit:
+                    break
 
         return APIResponse(
             success=True,
-            message="订单列表获取成功",
+            message=f"订单列表获取成功，共{len(orders)}个订单",
             data={"orders": orders},
             request_id=str(uuid.uuid4())
         )
@@ -325,4 +418,204 @@ async def get_orders(
         raise HTTPException(
             status_code=500,
             detail=f"获取订单列表失败: {str(e)}"
+        )
+
+@router.get("/trading/statistics", response_model=APIResponse, summary="获取交易统计")
+async def get_trading_statistics(data_manager=Depends(get_data_manager)):
+    """获取交易统计数据"""
+    try:
+        # 尝试从真实的服务容器获取交易统计
+        if hasattr(data_manager, 'ctp_gateway') and data_manager.ctp_gateway:
+            # 从CTP网关获取真实交易统计
+            orders = data_manager.ctp_gateway.orders
+            trades = data_manager.ctp_gateway.trades
+
+            # 计算统计数据
+            total_orders = len(orders)
+            active_orders = len([o for o in orders.values() if o.status in ['未成交', '部分成交']])
+            total_trades = len(trades)
+            total_turnover = sum([t.volume * t.price for t in trades.values()])
+
+            trading_stats = {
+                "total_orders": total_orders,
+                "active_orders": active_orders,
+                "total_trades": total_trades,
+                "total_turnover": total_turnover,
+                "today_pnl": 0.0,  # 今日盈亏
+                "commission": 0.0,  # 手续费
+                "update_time": datetime.now().isoformat()
+            }
+
+            return APIResponse(
+                success=True,
+                message="交易统计获取成功（真实数据）",
+                data={"trading": trading_stats},
+                request_id=str(uuid.uuid4())
+            )
+
+        # 如果没有真实数据，返回模拟数据
+        trading_stats = {
+            "total_orders": 0,
+            "active_orders": 0,
+            "total_trades": 0,
+            "total_turnover": 0.0,
+            "today_pnl": 0.0,
+            "commission": 0.0,
+            "update_time": datetime.now().isoformat()
+        }
+
+        return APIResponse(
+            success=True,
+            message="交易统计获取成功（无交易数据）",
+            data={"trading": trading_stats},
+            request_id=str(uuid.uuid4())
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"获取交易统计失败: {str(e)}"
+        )
+
+@router.get("/history/orders", response_model=APIResponse, summary="获取历史订单")
+async def get_history_orders(
+    limit: int = Query(100, description="返回数量限制"),
+    data_manager=Depends(get_data_manager)
+):
+    """获取CTP历史订单数据"""
+    try:
+        # 使用数据提供器的历史查询功能
+        if hasattr(data_manager, 'data_provider'):
+            history_orders = await data_manager.data_provider.get_history_orders()
+
+            # 转换为API响应格式
+            formatted_orders = []
+            for order in history_orders[:limit]:
+                formatted_order = {
+                    "order_id": order.get('OrderSysID', order.get('OrderLocalID', 'N/A')),
+                    "order_ref": order.get('OrderRef', 'N/A'),
+                    "symbol": order.get('InstrumentID', 'N/A'),
+                    "direction": "买入" if order.get('Direction') == '0' else "卖出",
+                    "volume": int(order.get('VolumeTotalOriginal', 0)),
+                    "price": float(order.get('LimitPrice', 0)),
+                    "status": order.get('StatusMsg', 'N/A'),
+                    "order_status": order.get('OrderStatus', 'N/A'),
+                    "traded_volume": int(order.get('VolumeTraded', 0)),
+                    "remaining_volume": int(order.get('VolumeTotal', 0)),
+                    "insert_date": order.get('InsertDate', 'N/A'),
+                    "insert_time": order.get('InsertTime', 'N/A'),
+                    "exchange": order.get('ExchangeID', 'N/A'),
+                    "session_id": order.get('SessionID', 'N/A')
+                }
+                formatted_orders.append(formatted_order)
+
+            return APIResponse(
+                success=True,
+                message=f"历史订单获取成功，共{len(formatted_orders)}条记录",
+                data={"orders": formatted_orders},
+                request_id=str(uuid.uuid4())
+            )
+        else:
+            return APIResponse(
+                success=False,
+                message="数据提供器未初始化",
+                data={"orders": []},
+                request_id=str(uuid.uuid4())
+            )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"获取历史订单失败: {str(e)}"
+        )
+
+@router.get("/history/trades", response_model=APIResponse, summary="获取历史成交")
+async def get_history_trades(
+    limit: int = Query(100, description="返回数量限制"),
+    data_manager=Depends(get_data_manager)
+):
+    """获取CTP历史成交数据"""
+    try:
+        # 使用数据提供器的历史查询功能
+        if hasattr(data_manager, 'data_provider'):
+            history_trades = await data_manager.data_provider.get_history_trades()
+
+            # 转换为API响应格式
+            formatted_trades = []
+            for trade in history_trades[:limit]:
+                formatted_trade = {
+                    "trade_id": trade.get('TradeID', 'N/A'),
+                    "order_id": trade.get('OrderSysID', 'N/A'),
+                    "order_ref": trade.get('OrderRef', 'N/A'),
+                    "symbol": trade.get('InstrumentID', 'N/A'),
+                    "direction": "买入" if trade.get('Direction') == '0' else "卖出",
+                    "volume": int(trade.get('Volume', 0)),
+                    "price": float(trade.get('Price', 0)),
+                    "trade_date": trade.get('TradeDate', 'N/A'),
+                    "trade_time": trade.get('TradeTime', 'N/A'),
+                    "exchange": trade.get('ExchangeID', 'N/A'),
+                    "amount": float(trade.get('Price', 0)) * int(trade.get('Volume', 0)) * 1000  # 黄金每手1000克
+                }
+                formatted_trades.append(formatted_trade)
+
+            return APIResponse(
+                success=True,
+                message=f"历史成交获取成功，共{len(formatted_trades)}条记录",
+                data={"trades": formatted_trades},
+                request_id=str(uuid.uuid4())
+            )
+        else:
+            return APIResponse(
+                success=False,
+                message="数据提供器未初始化",
+                data={"trades": []},
+                request_id=str(uuid.uuid4())
+            )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"获取历史成交失败: {str(e)}"
+        )
+
+@router.get("/trading/summary", response_model=APIResponse, summary="获取交易汇总")
+async def get_trading_summary(data_manager=Depends(get_data_manager)):
+    """获取交易汇总统计"""
+    try:
+        # 使用数据提供器的汇总功能
+        if hasattr(data_manager, 'data_provider'):
+            summary = await data_manager.data_provider.get_trading_summary()
+
+            return APIResponse(
+                success=True,
+                message="交易汇总获取成功",
+                data=summary,
+                request_id=str(uuid.uuid4())
+            )
+        else:
+            # 返回空汇总
+            summary = {
+                'total_orders': 0,
+                'successful_orders': 0,
+                'rejected_orders': 0,
+                'success_rate': 0,
+                'total_trades': 0,
+                'total_trade_amount': 0,
+                'today_orders': 0,
+                'today_trades': 0,
+                'today_trade_amount': 0,
+                'last_update': datetime.now().isoformat()
+            }
+
+            return APIResponse(
+                success=True,
+                message="数据提供器未初始化，返回空汇总",
+                data=summary,
+                request_id=str(uuid.uuid4())
+            )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"获取交易汇总失败: {str(e)}"
         )

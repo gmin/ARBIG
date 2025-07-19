@@ -171,17 +171,53 @@ class CtpGatewayWrapper:
             while wait_time < max_wait_time:
                 time.sleep(1)
                 wait_time += 1
-                
+
                 # 检查连接状态
                 self._update_connection_status()
-                
-                if self.md_connected and self.md_login_status:
-                    self.status = ServiceStatus.RUNNING
-                    logger.info("CTP网关连接成功")
-                    return True
-                
+
+                # 检查连接状态并记录详细信息
+                md_status = self.md_connected and self.md_login_status
+                td_status = self.td_connected and self.td_login_status
+
                 if wait_time % 5 == 0:
                     logger.info(f"等待连接... {wait_time}/{max_wait_time}秒")
+                    logger.info(f"  行情连接: {self.md_connected}, 行情登录: {self.md_login_status}")
+                    logger.info(f"  交易连接: {self.td_connected}, 交易登录: {self.td_login_status}")
+
+                # 理想情况：交易和行情都连接成功
+                if md_status and td_status:
+                    self.status = ServiceStatus.RUNNING
+                    logger.info("CTP网关连接成功 - 完整连接（交易+行情）")
+
+                    # 连接成功后，初始化查询历史数据
+                    logger.info("连接成功，开始初始化查询历史数据...")
+                    time.sleep(2)  # 等待连接稳定
+                    self.init_query()
+
+                    return True
+
+                # 如果等待时间超过20秒，检查是否至少有一个连接成功
+                if wait_time >= 20:
+                    if md_status and not td_status:
+                        logger.warning("⚠️ 交易连接失败，仅行情连接成功")
+                        logger.warning("⚠️ 这将限制交易功能，只能查看行情数据")
+                        logger.warning("⚠️ 无法进行下单、撤单、查询持仓等交易操作")
+                        self.status = ServiceStatus.RUNNING
+                        return True
+                    elif td_status and not md_status:
+                        logger.warning("⚠️ 行情连接失败，仅交易连接成功")
+                        logger.warning("⚠️ 可以交易但无法获取实时行情数据")
+                        self.status = ServiceStatus.RUNNING
+
+                        # 交易连接成功后，初始化查询历史数据
+                        logger.info("交易连接成功，开始初始化查询历史数据...")
+                        time.sleep(2)  # 等待连接稳定
+                        self.init_query()
+
+                        return True
+                    else:
+                        logger.error("❌ 交易和行情连接都失败")
+                        break
             
             # 连接超时
             logger.error("CTP连接超时")
@@ -376,12 +412,104 @@ class CtpGatewayWrapper:
             if not self.td_connected or not self.td_login_status:
                 logger.error("交易服务器未连接，无法查询持仓")
                 return False
-            
+
             self.ctp_gateway.query_position()
             return True
-            
+
         except Exception as e:
             logger.error(f"查询持仓信息失败: {e}")
+            return False
+
+    def query_history(self) -> bool:
+        """查询历史数据（订单和成交）"""
+        try:
+            if not self.td_connected or not self.td_login_status:
+                logger.error("交易服务器未连接，无法查询历史数据")
+                return False
+
+            logger.info("开始查询历史订单和成交数据...")
+
+            # 方法1: 尝试直接访问CTP API的查询方法
+            try:
+                # 获取CTP网关的td_api（交易API）
+                if hasattr(self.ctp_gateway, 'td_api') and self.ctp_gateway.td_api:
+                    td_api = self.ctp_gateway.td_api
+                    logger.info("找到CTP交易API，尝试查询历史数据")
+
+                    # 查询历史订单
+                    if hasattr(td_api, 'reqQryOrder'):
+                        logger.info("调用reqQryOrder查询历史订单")
+                        # 创建查询请求结构
+                        req = {}  # 空的查询请求，获取所有订单
+                        td_api.reqQryOrder(req, self.get_next_request_id())
+                        time.sleep(1)  # 避免查询过快
+
+                    # 查询历史成交
+                    if hasattr(td_api, 'reqQryTrade'):
+                        logger.info("调用reqQryTrade查询历史成交")
+                        req = {}  # 空的查询请求，获取所有成交
+                        td_api.reqQryTrade(req, self.get_next_request_id())
+                        time.sleep(1)
+
+                    logger.info("历史数据查询请求已发送")
+                    return True
+
+            except Exception as e:
+                logger.warning(f"直接API查询失败: {e}")
+
+            # 方法2: 检查是否有其他查询方法
+            logger.info("尝试其他查询方法...")
+
+            # 在vnpy中，历史数据通常在连接后自动获取
+            # 我们可以等待一段时间让数据自动加载
+            logger.info("等待CTP自动加载历史数据...")
+            time.sleep(3)
+
+            # 检查是否已经有数据了
+            orders_count = len(self.ctp_gateway.orders) if hasattr(self.ctp_gateway, 'orders') else 0
+            trades_count = len(self.ctp_gateway.trades) if hasattr(self.ctp_gateway, 'trades') else 0
+
+            logger.info(f"当前数据状态: 订单={orders_count}, 成交={trades_count}")
+
+            return True
+
+        except Exception as e:
+            logger.error(f"查询历史数据失败: {e}")
+            return False
+
+    def get_next_request_id(self) -> int:
+        """获取下一个请求ID"""
+        if not hasattr(self, '_request_id'):
+            self._request_id = 1
+        else:
+            self._request_id += 1
+        return self._request_id
+
+    def init_query(self) -> bool:
+        """初始化查询（查询账户、持仓、历史数据）"""
+        try:
+            if not self.td_connected or not self.td_login_status:
+                logger.error("交易服务器未连接，无法初始化查询")
+                return False
+
+            logger.info("开始初始化查询...")
+
+            # 查询账户信息
+            self.query_account()
+            time.sleep(1)  # 避免查询过快
+
+            # 查询持仓信息
+            self.query_position()
+            time.sleep(1)
+
+            # 查询历史数据
+            self.query_history()
+
+            logger.info("初始化查询完成")
+            return True
+
+        except Exception as e:
+            logger.error(f"初始化查询失败: {e}")
             return False
 
     # ========== 事件处理方法 ==========
@@ -545,10 +673,12 @@ class CtpGatewayWrapper:
 
     def is_md_connected(self) -> bool:
         """检查行情服务器是否已连接"""
+        self._update_connection_status()  # 实时更新状态
         return self.md_connected and self.md_login_status
 
     def is_td_connected(self) -> bool:
         """检查交易服务器是否已连接"""
+        self._update_connection_status()  # 实时更新状态
         return self.td_connected and self.td_login_status
 
     def get_contracts(self) -> Dict[str, ContractData]:

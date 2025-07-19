@@ -37,7 +37,11 @@ async def get_system_status(system_manager=Depends(get_system_manager)):
             trading_server = ctp_config.get('交易服务器', '182.254.243.31:30001')
 
             # 获取实际的CTP连接状态
-            ctp_connected = system_manager.ctp_gateway is not None
+            md_connected = False
+            td_connected = False
+            if system_manager.ctp_gateway:
+                md_connected = system_manager.ctp_gateway.is_md_connected()
+                td_connected = system_manager.ctp_gateway.is_td_connected()
 
             # 计算运行时长
             uptime = "未知"
@@ -54,15 +58,15 @@ async def get_system_status(system_manager=Depends(get_system_manager)):
                 uptime=uptime,
                 ctp_status={
                     "market_data": CTPConnectionInfo(
-                        connected=ctp_connected,
+                        connected=md_connected,
                         server=market_server,
-                        latency="15ms" if ctp_connected else "N/A",
+                        latency="15ms" if md_connected else "N/A",
                         last_connect_time=system_manager.start_time or datetime.now()
                     ),
                     "trading": CTPConnectionInfo(
-                        connected=ctp_connected,
+                        connected=td_connected,
                         server=trading_server,
-                        latency="18ms" if ctp_connected else "N/A",
+                        latency="18ms" if td_connected else "N/A",
                         last_connect_time=system_manager.start_time or datetime.now()
                     )
                 },

@@ -344,20 +344,33 @@ async def update_strategy_params(strategy_name: str, params: Dict[str, Any], str
 async def run_backtest(strategy_name: str, config: Dict[str, Any], strategy_manager=Depends(get_strategy_manager)):
     """运行指定策略的历史回测"""
     try:
-        # 演示模式返回模拟回测结果
-        import random
+        # 使用真正的回测引擎
+        from core.backtest import SimpleBacktester
 
-        backtest_results = {
-            "total_return": round(random.uniform(-0.1, 0.3), 4),
-            "annual_return": round(random.uniform(-0.05, 0.25), 4),
-            "max_drawdown": round(random.uniform(0.02, 0.15), 4),
-            "sharpe_ratio": round(random.uniform(0.5, 2.5), 2),
-            "win_rate": round(random.uniform(0.4, 0.8), 2),
-            "total_trades": random.randint(50, 200),
-            "start_date": config.get("start_date", "2024-01-01"),
-            "end_date": config.get("end_date", "2024-12-31"),
-            "initial_capital": config.get("initial_capital", 100000)
+        # 获取回测参数
+        start_date = config.get("start_date", "2024-01-01")
+        end_date = config.get("end_date", "2024-03-31")
+        initial_capital = config.get("initial_capital", 100000)
+
+        # 策略参数
+        strategy_params = {
+            'ma_short': config.get('ma_short', 5),
+            'ma_long': config.get('ma_long', 20),
+            'rsi_period': config.get('rsi_period', 14),
+            'rsi_overbought': config.get('rsi_overbought', 70),
+            'rsi_oversold': config.get('rsi_oversold', 30),
+            'stop_loss': config.get('stop_loss', 0.05),
+            'take_profit': config.get('take_profit', 0.08),
+            'position_size': config.get('position_size', 1),
+            'max_position': config.get('max_position', 5),
+            'risk_factor': config.get('risk_factor', 0.02),
+            'position_mode': config.get('position_mode', 'fixed'),
+            'position_multiplier': config.get('position_multiplier', 1.0)
         }
+
+        # 运行回测
+        backtester = SimpleBacktester(initial_capital)
+        backtest_results = backtester.run_backtest(strategy_params, start_date, end_date)
 
         return APIResponse(
             success=True,

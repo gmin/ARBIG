@@ -5,10 +5,15 @@ ARBIG 交易API服务
 
 import asyncio
 import json
+import sys
 import time
 from datetime import datetime
 from typing import Dict, List, Optional
 from pathlib import Path
+
+# 添加项目根目录到Python路径
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends
 from fastapi.staticfiles import StaticFiles
@@ -159,7 +164,7 @@ class ARBIGWebApp:
     def __init__(self):
         self.app = FastAPI(title="ARBIG监控与风控系统", version="1.0.0")
         self.setup_cors()
-        
+
         # 核心组件（这些需要从外部注入或连接）
         self.event_engine = None
         self.ctp_gateway = None
@@ -167,13 +172,19 @@ class ARBIGWebApp:
         self.account_service = None
         self.trading_service = None
         self.risk_service = None
-        
+
         # Web组件
         self.risk_controller = None
         self.websocket_connections = []
-        
+
         # 设置路由
         self.setup_routes()
+
+        # 挂载静态文件（Web界面）
+        self.setup_static_files()
+
+        # 尝试自动连接CTP（用于测试）
+        self.auto_connect_ctp()
         
     def setup_cors(self):
         """设置CORS"""
@@ -184,13 +195,33 @@ class ARBIGWebApp:
             allow_methods=["*"],
             allow_headers=["*"],
         )
+
+    def setup_static_files(self):
+        """设置静态文件服务"""
+        try:
+            # 挂载web_admin的静态文件
+            static_dir = Path(__file__).parent.parent / "web_admin" / "static"
+            if static_dir.exists():
+                self.app.mount("/static", StaticFiles(directory=static_dir), name="static")
+                logger.info(f"挂载静态文件目录: {static_dir}")
+
+                # 添加根路径重定向到主页
+                @self.app.get("/", response_class=HTMLResponse)
+                async def serve_index():
+                    index_file = static_dir / "index.html"
+                    if index_file.exists():
+                        return HTMLResponse(content=index_file.read_text(encoding='utf-8'))
+                    else:
+                        return {"message": "ARBIG监控与风控系统", "status": "running", "note": "Web界面文件未找到"}
+            else:
+                logger.warning(f"静态文件目录不存在: {static_dir}")
+        except Exception as e:
+            logger.error(f"设置静态文件失败: {e}")
     
     def setup_routes(self):
         """设置路由"""
         
-        @self.app.get("/")
-        async def root():
-            return {"message": "ARBIG监控与风控系统", "status": "running"}
+        # 根路径已在setup_static_files中定义
         
         @self.app.get("/api/status")
         async def get_system_status():
@@ -387,8 +418,226 @@ class ARBIGWebApp:
             """获取操作日志"""
             if not self._services_ready():
                 raise HTTPException(status_code=503, detail="服务未就绪")
-            
+
             return self.risk_controller.operation_log[-100:]  # 返回最近100条
+
+        @self.app.get("/api/history/orders")
+        async def get_history_orders(limit: int = 100):
+            """获取CTP历史订单"""
+            if not self._services_ready():
+                raise HTTPException(status_code=503, detail="服务未就绪")
+
+            try:
+                if not hasattr(self, 'ctp_gateway') or not self.ctp_gateway:
+                    raise HTTPException(status_code=503, detail="CTP网关未连接")
+
+                if not hasattr(self.ctp_gateway, 'td_api') or not self.ctp_gateway.td_api:
+                    raise HTTPException(status_code=503, detail="CTP交易API未连接")
+
+                td_api = self.ctp_gateway.td_api
+                received_orders = []
+
+                def order_callback(data, error, reqid, last):
+                    if error and error.ErrorID != 0:
+                        logger.error(f"历史订单查询错误: {error.ErrorID} - {error.ErrorMsg}")
+                    elif data:
+                        received_orders.append(data)
+
+                # 设置回调
+                original_callback = getattr(td_api, 'onRspQryOrder', None)
+                td_api.onRspQryOrder = order_callback
+
+                # 发送查询请求
+                result = td_api.reqQryOrder({}, int(time.time() * 1000) % 1000000)
+                if result != 0:
+                    raise HTTPException(status_code=500, detail=f"历史订单查询请求失败: {result}")
+
+                # 等待响应
+                for i in range(10):
+                    await asyncio.sleep(0.5)
+                    if len(received_orders) > 0:
+                        break
+
+                # 恢复原始回调
+                if original_callback:
+                    td_api.onRspQryOrder = original_callback
+
+                # 转换为API响应格式
+                formatted_orders = []
+                for order in received_orders[:limit]:
+                    formatted_order = {
+                        "order_id": order.get('OrderSysID', order.get('OrderLocalID', 'N/A')),
+                        "order_ref": order.get('OrderRef', 'N/A'),
+                        "symbol": order.get('InstrumentID', 'N/A'),
+                        "direction": "买入" if order.get('Direction') == '0' else "卖出",
+                        "volume": int(order.get('VolumeTotalOriginal', 0)),
+                        "price": float(order.get('LimitPrice', 0)),
+                        "status": order.get('StatusMsg', 'N/A'),
+                        "order_status": order.get('OrderStatus', 'N/A'),
+                        "traded_volume": int(order.get('VolumeTraded', 0)),
+                        "remaining_volume": int(order.get('VolumeTotal', 0)),
+                        "insert_date": order.get('InsertDate', 'N/A'),
+                        "insert_time": order.get('InsertTime', 'N/A'),
+                        "exchange": order.get('ExchangeID', 'N/A'),
+                        "session_id": order.get('SessionID', 'N/A')
+                    }
+                    formatted_orders.append(formatted_order)
+
+                logger.info(f"获取到 {len(formatted_orders)} 条历史订单")
+                return {
+                    "success": True,
+                    "message": f"历史订单获取成功，共{len(formatted_orders)}条记录",
+                    "data": {"orders": formatted_orders}
+                }
+
+            except HTTPException:
+                raise
+            except Exception as e:
+                logger.error(f"获取历史订单失败: {e}")
+                raise HTTPException(status_code=500, detail=f"获取历史订单失败: {str(e)}")
+
+        @self.app.get("/api/history/trades")
+        async def get_history_trades(limit: int = 100):
+            """获取CTP历史成交"""
+            if not self._services_ready():
+                raise HTTPException(status_code=503, detail="服务未就绪")
+
+            try:
+                if not hasattr(self, 'ctp_gateway') or not self.ctp_gateway:
+                    raise HTTPException(status_code=503, detail="CTP网关未连接")
+
+                if not hasattr(self.ctp_gateway, 'td_api') or not self.ctp_gateway.td_api:
+                    raise HTTPException(status_code=503, detail="CTP交易API未连接")
+
+                td_api = self.ctp_gateway.td_api
+                received_trades = []
+
+                def trade_callback(data, error, reqid, last):
+                    if error and error.ErrorID != 0:
+                        logger.error(f"历史成交查询错误: {error.ErrorID} - {error.ErrorMsg}")
+                    elif data:
+                        received_trades.append(data)
+
+                # 设置回调
+                original_callback = getattr(td_api, 'onRspQryTrade', None)
+                td_api.onRspQryTrade = trade_callback
+
+                # 发送查询请求
+                result = td_api.reqQryTrade({}, int(time.time() * 1000) % 1000000)
+                if result != 0:
+                    raise HTTPException(status_code=500, detail=f"历史成交查询请求失败: {result}")
+
+                # 等待响应
+                for i in range(10):
+                    await asyncio.sleep(0.5)
+                    if len(received_trades) > 0:
+                        break
+
+                # 恢复原始回调
+                if original_callback:
+                    td_api.onRspQryTrade = original_callback
+
+                # 转换为API响应格式
+                formatted_trades = []
+                for trade in received_trades[:limit]:
+                    formatted_trade = {
+                        "trade_id": trade.get('TradeID', 'N/A'),
+                        "order_id": trade.get('OrderSysID', 'N/A'),
+                        "order_ref": trade.get('OrderRef', 'N/A'),
+                        "symbol": trade.get('InstrumentID', 'N/A'),
+                        "direction": "买入" if trade.get('Direction') == '0' else "卖出",
+                        "volume": int(trade.get('Volume', 0)),
+                        "price": float(trade.get('Price', 0)),
+                        "trade_date": trade.get('TradeDate', 'N/A'),
+                        "trade_time": trade.get('TradeTime', 'N/A'),
+                        "exchange": trade.get('ExchangeID', 'N/A'),
+                        "amount": float(trade.get('Price', 0)) * int(trade.get('Volume', 0)) * 1000  # 黄金每手1000克
+                    }
+                    formatted_trades.append(formatted_trade)
+
+                logger.info(f"获取到 {len(formatted_trades)} 条历史成交")
+                return {
+                    "success": True,
+                    "message": f"历史成交获取成功，共{len(formatted_trades)}条记录",
+                    "data": {"trades": formatted_trades}
+                }
+
+            except HTTPException:
+                raise
+            except Exception as e:
+                logger.error(f"获取历史成交失败: {e}")
+                raise HTTPException(status_code=500, detail=f"获取历史成交失败: {str(e)}")
+
+        @self.app.get("/api/trading/summary")
+        async def get_trading_summary():
+            """获取交易汇总统计"""
+            if not self._services_ready():
+                raise HTTPException(status_code=503, detail="服务未就绪")
+
+            try:
+                # 获取历史数据
+                history_orders_response = await get_history_orders()
+                history_trades_response = await get_history_trades()
+
+                if not history_orders_response.get('success') or not history_trades_response.get('success'):
+                    # 如果历史查询失败，返回空汇总
+                    return {
+                        "success": True,
+                        "message": "历史数据查询失败，返回空汇总",
+                        "data": {
+                            'total_orders': 0,
+                            'successful_orders': 0,
+                            'rejected_orders': 0,
+                            'success_rate': 0,
+                            'total_trades': 0,
+                            'total_trade_amount': 0,
+                            'today_orders': 0,
+                            'today_trades': 0,
+                            'today_trade_amount': 0,
+                            'last_update': datetime.now().isoformat()
+                        }
+                    }
+
+                history_orders = history_orders_response['data']['orders']
+                history_trades = history_trades_response['data']['trades']
+
+                # 统计订单状态
+                total_orders = len(history_orders)
+                successful_orders = len([o for o in history_orders if o.get('order_status') == '0'])  # 全部成交
+                rejected_orders = len([o for o in history_orders if o.get('order_status') == '5'])   # 已撤单
+
+                # 统计成交金额
+                total_trade_amount = sum(t.get('amount', 0) for t in history_trades)
+
+                # 计算今日数据
+                today = datetime.now().strftime('%Y%m%d')
+                today_orders = [o for o in history_orders if o.get('insert_date') == today]
+                today_trades = [t for t in history_trades if t.get('trade_date') == today]
+
+                today_trade_amount = sum(t.get('amount', 0) for t in today_trades)
+
+                summary = {
+                    'total_orders': total_orders,
+                    'successful_orders': successful_orders,
+                    'rejected_orders': rejected_orders,
+                    'success_rate': (successful_orders / total_orders * 100) if total_orders > 0 else 0,
+                    'total_trades': len(history_trades),
+                    'total_trade_amount': total_trade_amount,
+                    'today_orders': len(today_orders),
+                    'today_trades': len(today_trades),
+                    'today_trade_amount': today_trade_amount,
+                    'last_update': datetime.now().isoformat()
+                }
+
+                return {
+                    "success": True,
+                    "message": "交易汇总获取成功",
+                    "data": summary
+                }
+
+            except Exception as e:
+                logger.error(f"获取交易汇总失败: {e}")
+                raise HTTPException(status_code=500, detail=f"获取交易汇总失败: {str(e)}")
         
         @self.app.websocket("/ws")
         async def websocket_endpoint(websocket: WebSocket):
@@ -423,8 +672,59 @@ class ARBIGWebApp:
         
         logger.info("Web服务已连接到核心交易系统")
     
+    def auto_connect_ctp(self):
+        """自动连接CTP（用于测试）"""
+        try:
+            import json
+            from vnpy_ctp import CtpGateway
+            from vnpy.event import EventEngine
+
+            # 加载CTP配置
+            config_path = Path(__file__).parent.parent / "config" / "ctp_sim.json"
+            if not config_path.exists():
+                logger.warning("CTP配置文件不存在，跳过自动连接")
+                return
+
+            with open(config_path, 'r') as f:
+                config = json.load(f)
+
+            # 创建事件引擎和CTP网关
+            self.event_engine = EventEngine()
+            self.ctp_gateway = CtpGateway(self.event_engine, 'CTP')
+
+            # 连接配置
+            vnpy_config = {
+                '用户名': config['用户名'],
+                '密码': config['密码'],
+                '经纪商代码': config['经纪商代码'],
+                '交易服务器': config['交易服务器'],
+                '行情服务器': config['行情服务器'],
+                '产品名称': config['产品名称'],
+                '授权编码': config['授权编码']
+            }
+
+            logger.info("正在连接CTP...")
+            self.ctp_gateway.connect(vnpy_config)
+
+            # 等待连接建立
+            import time
+            time.sleep(8)
+
+            if hasattr(self.ctp_gateway, 'td_api') and self.ctp_gateway.td_api:
+                logger.info("CTP连接成功，历史查询功能可用")
+            else:
+                logger.warning("CTP连接失败，历史查询功能不可用")
+
+        except Exception as e:
+            logger.error(f"自动连接CTP失败: {e}")
+
     def _services_ready(self) -> bool:
         """检查服务是否就绪"""
+        # 对于历史查询，只需要CTP网关连接即可
+        if hasattr(self, 'ctp_gateway') and self.ctp_gateway:
+            return hasattr(self.ctp_gateway, 'td_api') and self.ctp_gateway.td_api
+
+        # 完整服务检查
         return all([
             self.event_engine,
             self.ctp_gateway,

@@ -1,0 +1,51 @@
+ctp:
+  market:
+    md_address: 180.168.146.187:10131
+  trading:
+    appid: ''
+    auth_code: ''
+    brokerid: '9999'
+    password: 1234%^&*QWE
+    product_info: ''
+    td_address: 180.168.146.187:10130
+    userid: '242407'
+database:
+  mongodb:
+    database: arbig
+    host: localhost
+    port: 27017
+  redis:
+    db: 0
+    host: localhost
+    port: 6379
+logging:
+  backup_count: 5
+  file: logs/arbig.log
+  level: INFO
+  max_size: 10MB
+services:
+  account:
+    enabled: true
+    position_sync: true
+    update_interval: 30
+  market_data:
+    cache_size: 1000
+    enabled: true
+    symbols:
+    - AU2509
+    - AU2512
+  risk:
+    enabled: true
+    max_daily_loss: 50000
+    max_position_ratio: 0.8
+    stop_loss_ratio: 0.02
+  trading:
+    enabled: true
+    max_orders_per_second: 10
+    order_timeout: 30
+strategies:
+  shfe_quant:
+    bollinger_period: 20
+    enabled: true
+    max_position: 1000
+    rsi_period: 14

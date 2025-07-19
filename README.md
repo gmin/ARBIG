@@ -75,12 +75,17 @@ pip install -r requirements.txt
 ### 3. 启动系统
 
 ```bash
-# 使用统一启动脚本
+# 推荐方式：使用统一启动脚本
 python start_arbig.py
+# 然后选择选项1: 启动ARBIG Web管理系统
 
-# 或者分别启动服务
-python -m web_admin.app      # Web管理系统 (端口8000)
-python -m trading_api.app    # 交易API服务 (端口8001)
+# 其他启动方式
+python main.py --auto-start --demo-mode  # 演示模式
+python main.py --auto-start              # 完整交易模式
+python main.py --api-only               # 仅API服务
+
+# 快速帮助
+python help.py
 ```
 
 ### 4. 访问Web管理界面
@@ -142,6 +147,26 @@ python test_signal_monitoring.py
 - ✅ **性能监控** - 延时、CPU、内存监控
 - ✅ **交易信号** - 信号触发原因跟踪
 - ✅ **历史记录** - 完整的操作审计日志
+
+## 📁 项目文件说明
+
+### 🚀 核心脚本 (4个)
+- **`start_arbig.py`** - 主要启动脚本，推荐使用 ⭐
+- **`main.py`** - 核心主程序 ⭐
+- **`help.py`** - 快速帮助和诊断工具
+- **`setup.py`** - 包安装脚本
+
+### 🧪 测试目录 (`tests/`)
+- **核心测试**: CTP连接、下单、历史查询、账户查询
+- **Web测试**: API测试、前端测试
+- **测试工具**: 完整测试套件和专项测试
+
+### 📂 主要目录
+- **`core/`** - 核心交易引擎和服务
+- **`web_admin/`** - Web管理界面
+- **`trading_api/`** - 交易API服务
+- **`config/`** - 配置文件
+- **`docs/`** - 项目文档
 
 ## 🤝 贡献指南
 
