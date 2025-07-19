@@ -118,7 +118,8 @@ class TradingServiceBase(ABC):
                 price=order_req.price,
                 status=Status.SUBMITTING,
                 datetime=datetime.now(),
-                reference=order_req.reference
+                reference=order_req.reference,
+                gateway_name="CTP"
             )
             
             # 缓存订单

@@ -267,24 +267,29 @@ class OrderTester:
         return positions
 
     def calculate_order_price(self, tick, direction, order_type):
-        """计算下单价格"""
+        """计算下单价格 - 使用最新价，更容易成交"""
         if order_type == OrderType.MARKET:
             return 0.0  # 市价单不需要价格
 
         current_price = tick.last_price
 
+        # 使用最新价作为基准，稍微调整以提高成交概率
         if direction == Direction.LONG:
-            # 买入：使用卖一价或当前价
+            # 买入：使用最新价 + 0.02（稍高一点，更容易成交）
             if hasattr(tick, 'ask_price_1') and tick.ask_price_1 > 0:
+                # 如果有卖一价，使用卖一价（更容易成交）
                 price = tick.ask_price_1
             else:
-                price = current_price
+                # 否则使用最新价 + 0.02
+                price = current_price + 0.02
         else:
-            # 卖出：使用买一价或当前价
+            # 卖出：使用最新价 - 0.02（稍低一点，更容易成交）
             if hasattr(tick, 'bid_price_1') and tick.bid_price_1 > 0:
+                # 如果有买一价，使用买一价（更容易成交）
                 price = tick.bid_price_1
             else:
-                price = current_price
+                # 否则使用最新价 - 0.02
+                price = current_price - 0.02
 
         # 调整价格到最小变动价位（0.02的倍数）
         return round(price / 0.02) * 0.02

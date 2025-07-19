@@ -5,6 +5,8 @@
 
 from datetime import datetime
 from typing import Dict, List, Optional, Any
+import time
+import json
 
 from .models import (
     SystemStatus, PositionInfo, OrderInfo, TradeInfo,
@@ -100,12 +102,12 @@ class DataProvider:
         """获取成交信息"""
         try:
             trades = self.trading_system.trading_service.get_trades()
-            
+
             # 按时间倒序排列，取最近的记录
             trades.sort(key=lambda x: x.datetime, reverse=True)
             if limit > 0:
                 trades = trades[:limit]
-            
+
             return [
                 TradeInfo(
                     tradeid=trade.tradeid,
@@ -121,6 +123,158 @@ class DataProvider:
         except Exception as e:
             logger.error(f"获取成交信息失败: {e}")
             return []
+
+    async def get_history_orders(self) -> List[Dict[str, Any]]:
+        """获取CTP历史订单"""
+        try:
+            if not hasattr(self.trading_system, 'ctp_gateway') or not self.trading_system.ctp_gateway:
+                logger.warning("CTP网关未连接，无法查询历史订单")
+                return []
+
+            ctp_gateway = self.trading_system.ctp_gateway
+            if not hasattr(ctp_gateway, 'td_api') or not ctp_gateway.td_api:
+                logger.warning("CTP交易API未连接，无法查询历史订单")
+                return []
+
+            td_api = ctp_gateway.td_api
+            received_orders = []
+
+            def order_callback(data, error, reqid, last):
+                if error and error.ErrorID != 0:
+                    logger.error(f"历史订单查询错误: {error.ErrorID} - {error.ErrorMsg}")
+                elif data:
+                    received_orders.append(data)
+
+            # 设置回调
+            original_callback = getattr(td_api, 'onRspQryOrder', None)
+            td_api.onRspQryOrder = order_callback
+
+            # 发送查询请求
+            result = td_api.reqQryOrder({}, int(time.time() * 1000) % 1000000)
+            if result != 0:
+                logger.error(f"历史订单查询请求失败: {result}")
+                return []
+
+            # 等待响应
+            for i in range(10):
+                time.sleep(0.5)
+                if len(received_orders) > 0:
+                    break
+
+            # 恢复原始回调
+            if original_callback:
+                td_api.onRspQryOrder = original_callback
+
+            logger.info(f"获取到 {len(received_orders)} 条历史订单")
+            return received_orders
+
+        except Exception as e:
+            logger.error(f"获取历史订单失败: {e}")
+            return []
+
+    async def get_history_trades(self) -> List[Dict[str, Any]]:
+        """获取CTP历史成交"""
+        try:
+            if not hasattr(self.trading_system, 'ctp_gateway') or not self.trading_system.ctp_gateway:
+                logger.warning("CTP网关未连接，无法查询历史成交")
+                return []
+
+            ctp_gateway = self.trading_system.ctp_gateway
+            if not hasattr(ctp_gateway, 'td_api') or not ctp_gateway.td_api:
+                logger.warning("CTP交易API未连接，无法查询历史成交")
+                return []
+
+            td_api = ctp_gateway.td_api
+            received_trades = []
+
+            def trade_callback(data, error, reqid, last):
+                if error and error.ErrorID != 0:
+                    logger.error(f"历史成交查询错误: {error.ErrorID} - {error.ErrorMsg}")
+                elif data:
+                    received_trades.append(data)
+
+            # 设置回调
+            original_callback = getattr(td_api, 'onRspQryTrade', None)
+            td_api.onRspQryTrade = trade_callback
+
+            # 发送查询请求
+            result = td_api.reqQryTrade({}, int(time.time() * 1000) % 1000000)
+            if result != 0:
+                logger.error(f"历史成交查询请求失败: {result}")
+                return []
+
+            # 等待响应
+            for i in range(10):
+                time.sleep(0.5)
+                if len(received_trades) > 0:
+                    break
+
+            # 恢复原始回调
+            if original_callback:
+                td_api.onRspQryTrade = original_callback
+
+            logger.info(f"获取到 {len(received_trades)} 条历史成交")
+            return received_trades
+
+        except Exception as e:
+            logger.error(f"获取历史成交失败: {e}")
+            return []
+
+    async def get_trading_summary(self) -> Dict[str, Any]:
+        """获取交易汇总统计"""
+        try:
+            # 获取历史数据
+            history_orders = await self.get_history_orders()
+            history_trades = await self.get_history_trades()
+
+            # 统计订单状态
+            total_orders = len(history_orders)
+            successful_orders = len([o for o in history_orders if o.get('OrderStatus') == '0'])  # 全部成交
+            rejected_orders = len([o for o in history_orders if o.get('OrderStatus') == '5'])   # 已撤单
+
+            # 统计成交金额
+            total_trade_amount = sum(
+                float(t.get('Price', 0)) * int(t.get('Volume', 0)) * 1000  # 黄金每手1000克
+                for t in history_trades
+            )
+
+            # 计算今日数据
+            today = datetime.now().strftime('%Y%m%d')
+            today_orders = [o for o in history_orders if o.get('InsertDate') == today]
+            today_trades = [t for t in history_trades if t.get('TradeDate') == today]
+
+            today_trade_amount = sum(
+                float(t.get('Price', 0)) * int(t.get('Volume', 0)) * 1000
+                for t in today_trades
+            )
+
+            return {
+                'total_orders': total_orders,
+                'successful_orders': successful_orders,
+                'rejected_orders': rejected_orders,
+                'success_rate': (successful_orders / total_orders * 100) if total_orders > 0 else 0,
+                'total_trades': len(history_trades),
+                'total_trade_amount': total_trade_amount,
+                'today_orders': len(today_orders),
+                'today_trades': len(today_trades),
+                'today_trade_amount': today_trade_amount,
+                'last_update': datetime.now().isoformat()
+            }
+
+        except Exception as e:
+            logger.error(f"获取交易汇总失败: {e}")
+            return {
+                'total_orders': 0,
+                'successful_orders': 0,
+                'rejected_orders': 0,
+                'success_rate': 0,
+                'total_trades': 0,
+                'total_trade_amount': 0,
+                'today_orders': 0,
+                'today_trades': 0,
+                'today_trade_amount': 0,
+                'last_update': datetime.now().isoformat()
+            }
     
     async def get_market_data(self) -> List[MarketDataInfo]:
         """获取行情数据"""

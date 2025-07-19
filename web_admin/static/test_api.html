@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API测试页面</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .api-test {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .api-test h3 {
+            margin-top: 0;
+            color: #333;
+        }
+        .result {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+            white-space: pre-wrap;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        .success {
+            background: #d4edda;
+            color: #155724;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>ARBIG API测试页面</h1>
+        
+        <div class="api-test">
+            <h3>系统状态</h3>
+            <button onclick="testSystemStatus()">测试系统状态API</button>
+            <div id="system-status-result" class="result"></div>
+        </div>
+        
+        <div class="api-test">
+            <h3>账户信息</h3>
+            <button onclick="testAccountInfo()">测试账户信息API</button>
+            <div id="account-info-result" class="result"></div>
+        </div>
+        
+        <div class="api-test">
+            <h3>风险指标</h3>
+            <button onclick="testRiskMetrics()">测试风险指标API</button>
+            <div id="risk-metrics-result" class="result"></div>
+        </div>
+        
+        <div class="api-test">
+            <h3>策略列表</h3>
+            <button onclick="testStrategies()">测试策略列表API</button>
+            <div id="strategies-result" class="result"></div>
+        </div>
+        
+        <div class="api-test">
+            <h3>持仓信息</h3>
+            <button onclick="testPositions()">测试持仓信息API</button>
+            <div id="positions-result" class="result"></div>
+        </div>
+    </div>
+
+    <script>
+        async function testAPI(url, resultElementId) {
+            const resultElement = document.getElementById(resultElementId);
+            resultElement.textContent = '正在请求...';
+            resultElement.className = 'result';
+            
+            try {
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                if (response.ok) {
+                    resultElement.textContent = JSON.stringify(data, null, 2);
+                    resultElement.className = 'result success';
+                } else {
+                    resultElement.textContent = `错误: ${response.status} - ${JSON.stringify(data, null, 2)}`;
+                    resultElement.className = 'result error';
+                }
+            } catch (error) {
+                resultElement.textContent = `网络错误: ${error.message}`;
+                resultElement.className = 'result error';
+            }
+        }
+        
+        function testSystemStatus() {
+            testAPI('/api/v1/system/status', 'system-status-result');
+        }
+        
+        function testAccountInfo() {
+            testAPI('/api/v1/data/account/info', 'account-info-result');
+        }
+        
+        function testRiskMetrics() {
+            testAPI('/api/v1/data/risk/metrics', 'risk-metrics-result');
+        }
+        
+        function testStrategies() {
+            testAPI('/api/v1/strategies/list', 'strategies-result');
+        }
+        
+        function testPositions() {
+            testAPI('/api/v1/data/account/positions', 'positions-result');
+        }
+        
+        // 页面加载时自动测试系统状态
+        window.onload = function() {
+            testSystemStatus();
+        };
+    </script>
+</body>
+</html>

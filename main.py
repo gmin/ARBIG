@@ -22,6 +22,7 @@ from core.services.risk_service import RiskService
 from core.services.strategy_service import StrategyService
 from core.types import ServiceConfig
 from gateways.ctp_gateway import CtpGatewayWrapper
+from core.market_data_client import init_market_data_client
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -135,7 +136,12 @@ class ARBIGServiceContainer:
                 if not self._start_event_engine():
                     return ServiceResult(False, "事件引擎启动失败")
 
-                # 4. 系统启动完成
+                # 4. 启动核心服务
+                logger.info(f"准备启动核心服务，CTP状态: {ctp_result}")
+                if not self._start_core_services(ctp_result):
+                    return ServiceResult(False, "核心服务启动失败")
+
+                # 5. 系统启动完成
                 self.running = True
                 self.start_time = datetime.now()
 
@@ -651,13 +657,29 @@ class ARBIGServiceContainer:
                 }
             )
 
+            # 获取Redis配置
+            redis_config = self.config_manager.get_redis_config()
+            redis_dict = {
+                'host': redis_config.host,
+                'port': redis_config.port,
+                'db': redis_config.db
+            }
+            if redis_config.password:
+                redis_dict['password'] = redis_config.password
+
+            # 初始化全局市场数据客户端
+            if init_market_data_client(redis_dict):
+                logger.info("✓ 全局市场数据客户端初始化成功")
+            else:
+                logger.warning("⚠ 全局市场数据客户端初始化失败")
+
             market_data_service = MarketDataService(
-                self.event_engine, service_config, self.ctp_gateway
+                self.event_engine, service_config, self.ctp_gateway, redis_dict
             )
 
             if market_data_service.start():
                 self.services['MarketDataService'] = market_data_service
-                logger.info("✓ 行情服务启动成功")
+                logger.info("✓ 行情服务启动成功（已连接Redis）")
                 return True
             else:
                 logger.error("✗ 行情服务启动失败")

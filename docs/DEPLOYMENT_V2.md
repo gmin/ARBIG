@@ -69,20 +69,14 @@ python start_arbig.py
 # 选择: 3. 启动完整系统
 ```
 
-**方式二: 分别启动**
+**方式二: 启动Web管理系统**
 ```bash
-# 终端1: 启动交易API服务
-python -m trading_api.app
-
-# 终端2: 启动Web管理系统  
+# 启动Web管理系统（包含所有功能）
 python -m web_admin.app
 ```
 
 **方式三: 后台启动**
 ```bash
-# 后台启动交易API
-nohup python -m trading_api.app > logs/trading_api.log 2>&1 &
-
 # 后台启动Web管理系统
 nohup python -m web_admin.app > logs/web_admin.log 2>&1 &
 ```
@@ -92,7 +86,6 @@ nohup python -m web_admin.app > logs/web_admin.log 2>&1 &
 ```bash
 # 检查服务状态
 curl http://localhost:8000/health    # Web管理系统
-curl http://localhost:8001/health    # 交易API服务
 
 # 检查Web界面
 # 浏览器访问: http://localhost:8000

@@ -7,6 +7,7 @@ from abc import ABC, abstractmethod
 from typing import Dict, List, Optional, Set, Callable
 from datetime import datetime
 from collections import defaultdict
+import json
 
 from ..event_engine import EventEngine, Event
 from ..types import (
@@ -14,6 +15,7 @@ from ..types import (
     TickEventData
 )
 from ..constants import TICK_EVENT, SERVICE_EVENT
+from ..storage import RedisStorage
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -21,29 +23,36 @@ logger = get_logger(__name__)
 class MarketDataServiceBase(ABC):
     """行情服务基类"""
     
-    def __init__(self, event_engine: EventEngine, config: ServiceConfig):
+    def __init__(self, event_engine: EventEngine, config: ServiceConfig, redis_config: Optional[Dict] = None):
         """
         初始化行情服务
-        
+
         Args:
             event_engine: 事件引擎
             config: 服务配置
+            redis_config: Redis配置
         """
         self.event_engine = event_engine
         self.config = config
         self.status = ServiceStatus.STOPPED
-        
+
         # 订阅管理
         self.subscriptions: Dict[str, Set[str]] = defaultdict(set)  # symbol -> subscriber_ids
         self.subscribers: Dict[str, Set[str]] = defaultdict(set)    # subscriber_id -> symbols
-        
+
         # 数据缓存
         self.tick_cache: Dict[str, TickData] = {}
         self.last_update_time: Optional[datetime] = None
-        
+
         # 回调函数
         self.tick_callbacks: List[Callable[[TickData], None]] = []
-        
+
+        # Redis存储
+        self.redis_storage: Optional[RedisStorage] = None
+        if redis_config:
+            self.redis_storage = RedisStorage(redis_config)
+            self.redis_storage.connect()
+
         logger.info(f"行情服务初始化完成: {self.config.name}")
     
     @abstractmethod
@@ -160,15 +169,57 @@ class MarketDataServiceBase(ABC):
     def get_latest_tick(self, symbol: str) -> Optional[TickData]:
         """
         获取最新Tick数据
-        
+
         Args:
             symbol: 合约代码
-            
+
         Returns:
             Optional[TickData]: 最新Tick数据
         """
-        return self.tick_cache.get(symbol)
-    
+        # 优先从内存缓存获取
+        tick = self.tick_cache.get(symbol)
+        if tick:
+            return tick
+
+        # 如果内存中没有，尝试从Redis获取
+        if self.redis_storage:
+            tick_dict = self.redis_storage.get_tick(symbol)
+            if tick_dict:
+                # 将Redis中的字符串数据转换回TickData对象
+                try:
+                    tick = TickData(
+                        symbol=tick_dict.get('symbol', symbol),
+                        last_price=float(tick_dict.get('last_price', 0)),
+                        volume=float(tick_dict.get('volume', 0)),
+                        turnover=float(tick_dict.get('turnover', 0)),
+                        open_interest=float(tick_dict.get('open_interest', 0)),
+                        time=datetime.fromisoformat(tick_dict.get('time', datetime.now().isoformat())),
+                        bid_price_1=float(tick_dict.get('bid_price_1', 0)),
+                        ask_price_1=float(tick_dict.get('ask_price_1', 0)),
+                        bid_volume_1=float(tick_dict.get('bid_volume_1', 0)),
+                        ask_volume_1=float(tick_dict.get('ask_volume_1', 0))
+                    )
+                    # 更新内存缓存
+                    self.tick_cache[symbol] = tick
+                    return tick
+                except (ValueError, TypeError) as e:
+                    logger.error(f"从Redis恢复Tick数据失败: {symbol}, 错误: {e}")
+
+        return None
+
+    def get_latest_price(self, symbol: str) -> Optional[float]:
+        """
+        获取最新价格
+
+        Args:
+            symbol: 合约代码
+
+        Returns:
+            Optional[float]: 最新价格
+        """
+        tick = self.get_latest_tick(symbol)
+        return tick.last_price if tick else None
+
     def get_market_snapshot(self) -> MarketSnapshot:
         """
         获取市场快照
@@ -223,29 +274,47 @@ class MarketDataServiceBase(ABC):
     def on_tick(self, tick: TickData) -> None:
         """
         处理Tick数据
-        
+
         Args:
             tick: Tick数据
         """
         try:
-            # 更新缓存
+            # 更新内存缓存
             self.tick_cache[tick.symbol] = tick
             self.last_update_time = datetime.now()
-            
+
+            # 保存到Redis
+            if self.redis_storage:
+                tick_dict = {
+                    'symbol': tick.symbol,
+                    'last_price': str(tick.last_price),
+                    'volume': str(tick.volume),
+                    'turnover': str(tick.turnover),
+                    'open_interest': str(tick.open_interest),
+                    'time': tick.time.isoformat() if tick.time else datetime.now().isoformat(),
+                    'bid_price_1': str(getattr(tick, 'bid_price_1', 0)),
+                    'ask_price_1': str(getattr(tick, 'ask_price_1', 0)),
+                    'bid_volume_1': str(getattr(tick, 'bid_volume_1', 0)),
+                    'ask_volume_1': str(getattr(tick, 'ask_volume_1', 0)),
+                    'timestamp': datetime.now().isoformat()
+                }
+                self.redis_storage.save_tick(tick.symbol, tick_dict)
+                logger.debug(f"Tick数据已保存到Redis: {tick.symbol} @ {tick.last_price}")
+
             # 调用回调函数
             for callback in self.tick_callbacks:
                 try:
                     callback(tick)
                 except Exception as e:
                     logger.error(f"Tick回调函数执行失败: {e}")
-            
+
             # 发送事件
             event_data = TickEventData(tick=tick, source="market_data")
             event = Event(TICK_EVENT, event_data)
             self.event_engine.put(event)
-            
+
             logger.debug(f"处理Tick数据: {tick.symbol} @ {tick.last_price}")
-            
+
         except Exception as e:
             logger.error(f"处理Tick数据失败: {e}")
     
@@ -272,7 +341,7 @@ class MarketDataServiceBase(ABC):
 class MarketDataService(MarketDataServiceBase):
     """行情订阅服务实现"""
 
-    def __init__(self, event_engine: EventEngine, config: ServiceConfig, gateway=None):
+    def __init__(self, event_engine: EventEngine, config: ServiceConfig, gateway=None, redis_config: Optional[Dict] = None):
         """
         初始化行情服务
 
@@ -280,8 +349,9 @@ class MarketDataService(MarketDataServiceBase):
             event_engine: 事件引擎
             config: 服务配置
             gateway: CTP网关实例
+            redis_config: Redis配置
         """
-        super().__init__(event_engine, config)
+        super().__init__(event_engine, config, redis_config)
         self.gateway = gateway
 
         # 如果有网关，注册Tick回调

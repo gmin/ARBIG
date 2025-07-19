@@ -110,23 +110,28 @@ class StrategyManager:
 
 class DataManager:
     """数据管理器接口"""
-    
+
     def __init__(self):
         self.market_data = {}
         self.account_data = {}
-        
+        self.data_provider = None
+
+    def set_data_provider(self, data_provider):
+        """设置数据提供器"""
+        self.data_provider = data_provider
+
     def get_market_data(self, symbols: list, data_type: str = "tick"):
         """获取行情数据"""
         return {"symbols": symbols, "data_type": data_type, "data": []}
-    
+
     def get_account_info(self):
         """获取账户信息"""
         return self.account_data
-    
+
     def get_positions(self):
         """获取持仓信息"""
         return []
-    
+
     def get_orders(self):
         """获取订单信息"""
         return []
@@ -169,8 +174,12 @@ def get_strategy_manager() -> StrategyManager:
     init_managers()
     return _strategy_manager
 
-def get_data_manager() -> DataManager:
+def get_data_manager():
     """获取数据管理器"""
+    # 如果有真实的服务容器，返回服务容器，否则返回模拟的管理器
+    if _service_container:
+        return _service_container
+
     init_managers()
     return _data_manager
 
@@ -225,3 +234,10 @@ def set_data_manager(manager):
     """设置数据管理器引用"""
     global _data_manager
     _data_manager = manager
+
+def set_data_provider(data_provider):
+    """设置数据提供器引用"""
+    global _data_manager
+    if _data_manager is None:
+        init_managers()
+    _data_manager.set_data_provider(data_provider)

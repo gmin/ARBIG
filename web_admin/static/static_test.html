@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ARBIG 静态测试页面</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f0f0f0;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2c3e50;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #34495e;
+            margin-top: 30px;
+        }
+        .status-box {
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        .success {
+            background: #d4edda;
+            color: #155724;
+            border-left: 5px solid #28a745;
+        }
+        .info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border-left: 5px solid #17a2b8;
+        }
+        .warning {
+            background: #fff3cd;
+            color: #856404;
+            border-left: 5px solid #ffc107;
+        }
+        .feature-list {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 5px;
+            margin: 15px 0;
+        }
+        .feature-list ul {
+            margin: 0;
+            padding-left: 20px;
+        }
+        .feature-list li {
+            margin: 8px 0;
+        }
+        .link-box {
+            background: #e9ecef;
+            padding: 20px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        .link-box a {
+            display: inline-block;
+            margin: 5px 10px 5px 0;
+            padding: 8px 15px;
+            background: #007bff;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            transition: background 0.3s;
+        }
+        .link-box a:hover {
+            background: #0056b3;
+        }
+        .system-info {
+            background: #f1f3f4;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 14px;
+            white-space: pre-line;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 ARBIG 量化交易系统</h1>
+        <p><strong>欢迎使用 ARBIG 量化交易系统！</strong></p>
+        <p>这是一个静态测试页面，用于验证Web服务器是否正常工作。</p>
+        
+        <div class="status-box success">
+            ✅ Web服务器运行正常
+        </div>
+        
+        <div class="status-box success">
+            ✅ HTML页面加载成功
+        </div>
+        
+        <div class="status-box success">
+            ✅ CSS样式应用正常
+        </div>
+        
+        <h2>📊 系统功能</h2>
+        <div class="feature-list">
+            <ul>
+                <li><strong>实时交易监控</strong> - 监控交易状态和持仓信息</li>
+                <li><strong>策略管理</strong> - 管理和监控量化交易策略</li>
+                <li><strong>风险控制</strong> - 实时风险监控和控制</li>
+                <li><strong>市场数据</strong> - 实时行情数据推送</li>
+                <li><strong>CTP连接</strong> - 连接上海期货交易所</li>
+                <li><strong>Web API</strong> - RESTful API接口</li>
+                <li><strong>WebSocket</strong> - 实时数据推送</li>
+            </ul>
+        </div>
+        
+        <h2>🔗 快速链接</h2>
+        <div class="link-box">
+            <a href="/">主页面</a>
+            <a href="/simple_test.html">JavaScript测试</a>
+            <a href="/debug.html">调试页面</a>
+            <a href="/docs">API文档</a>
+            <a href="/api/v1/system/status" target="_blank">系统状态API</a>
+        </div>
+        
+        <h2>📋 系统信息</h2>
+        <div class="system-info">服务器地址: http://localhost:8000
+当前页面: /static_test.html
+系统时间: <script>document.write(new Date().toLocaleString());</script>
+页面编码: UTF-8
+        </div>
+        
+        <div class="status-box info">
+            ℹ️ 如果您能看到这个页面，说明ARBIG Web服务器正在正常运行
+        </div>
+        
+        <div class="status-box warning">
+            ⚠️ 如果主页面无法显示，可能是JavaScript执行问题
+        </div>
+        
+        <h2>🔧 故障排除</h2>
+        <div class="feature-list">
+            <p><strong>如果页面显示空白：</strong></p>
+            <ul>
+                <li>检查浏览器控制台是否有JavaScript错误</li>
+                <li>确认浏览器支持现代JavaScript特性</li>
+                <li>尝试刷新页面或清除浏览器缓存</li>
+                <li>检查网络连接是否正常</li>
+                <li>确认防火墙没有阻止8000端口</li>
+            </ul>
+        </div>
+        
+        <h2>📞 技术支持</h2>
+        <div class="feature-list">
+            <p>如果遇到问题，请检查：</p>
+            <ul>
+                <li>系统日志: <code>logs/gold_arbitrage_*.log</code></li>
+                <li>API状态: <a href="/api/v1/system/status" target="_blank">点击查看</a></li>
+                <li>服务器控制台输出</li>
+            </ul>
+        </div>
+    </div>
+</body>
+</html>

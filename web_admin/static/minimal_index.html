@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ARBIG Web管理系统 - 简化版</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f5f5f5;
+            color: #333;
+            line-height: 1.6;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px 0;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 0 20px;
+        }
+        
+        .dashboard {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        
+        .card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            transition: transform 0.2s;
+        }
+        
+        .card:hover {
+            transform: translateY(-2px);
+        }
+        
+        .card h3 {
+            color: #2c3e50;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 10px;
+        }
+        
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .status-item:last-child {
+            border-bottom: none;
+        }
+        
+        .status-value {
+            font-weight: bold;
+            color: #27ae60;
+        }
+        
+        .status-error {
+            color: #e74c3c;
+        }
+        
+        .loading {
+            text-align: center;
+            color: #7f8c8d;
+            font-style: italic;
+        }
+        
+        .btn {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+            transition: background 0.3s;
+        }
+        
+        .btn:hover {
+            background: #2980b9;
+        }
+        
+        .btn-success {
+            background: #27ae60;
+        }
+        
+        .btn-success:hover {
+            background: #229954;
+        }
+        
+        .btn-danger {
+            background: #e74c3c;
+        }
+        
+        .btn-danger:hover {
+            background: #c0392b;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🚀 ARBIG 量化交易系统</h1>
+        <p>Algorithmic Trading Management System</p>
+    </div>
+    
+    <div class="container">
+        <div class="dashboard">
+            <!-- 系统状态卡片 -->
+            <div class="card">
+                <h3>📊 系统状态</h3>
+                <div id="system-status">
+                    <div class="loading">正在加载系统状态...</div>
+                </div>
+                <div style="margin-top: 15px;">
+                    <button class="btn" onclick="refreshSystemStatus()">刷新状态</button>
+                </div>
+            </div>
+            
+            <!-- 账户信息卡片 -->
+            <div class="card">
+                <h3>💰 账户信息</h3>
+                <div id="account-info">
+                    <div class="loading">正在加载账户信息...</div>
+                </div>
+                <div style="margin-top: 15px;">
+                    <button class="btn" onclick="refreshAccountInfo()">刷新账户</button>
+                </div>
+            </div>
+            
+            <!-- 策略状态卡片 -->
+            <div class="card">
+                <h3>🎯 策略状态</h3>
+                <div id="strategy-status">
+                    <div class="loading">正在加载策略信息...</div>
+                </div>
+                <div style="margin-top: 15px;">
+                    <button class="btn btn-success" onclick="startStrategy()">启动策略</button>
+                    <button class="btn btn-danger" onclick="stopStrategy()">停止策略</button>
+                </div>
+            </div>
+            
+            <!-- 快速操作卡片 -->
+            <div class="card">
+                <h3>⚡ 快速操作</h3>
+                <div style="margin: 10px 0;">
+                    <button class="btn" onclick="openPage('/docs')">API文档</button>
+                    <button class="btn" onclick="openPage('/debug.html')">调试页面</button>
+                    <button class="btn" onclick="openPage('/simple_test.html')">测试页面</button>
+                </div>
+                <div style="margin: 10px 0;">
+                    <button class="btn btn-success" onclick="testAPI()">测试API</button>
+                    <button class="btn" onclick="refreshAll()">刷新全部</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        console.log('ARBIG 简化版页面加载开始');
+        
+        // 页面加载完成后执行
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('DOM 加载完成，开始初始化');
+            initializePage();
+        });
+        
+        function initializePage() {
+            console.log('初始化页面');
+            refreshAll();
+        }
+        
+        async function refreshSystemStatus() {
+            const statusDiv = document.getElementById('system-status');
+            statusDiv.innerHTML = '<div class="loading">正在加载...</div>';
+            
+            try {
+                const response = await fetch('/api/v1/system/status');
+                const data = await response.json();
+                
+                if (data.success) {
+                    const status = data.data;
+                    statusDiv.innerHTML = `
+                        <div class="status-item">
+                            <span>系统状态:</span>
+                            <span class="status-value">${status.system_status}</span>
+                        </div>
+                        <div class="status-item">
+                            <span>运行模式:</span>
+                            <span class="status-value">${status.running_mode}</span>
+                        </div>
+                        <div class="status-item">
+                            <span>运行时长:</span>
+                            <span class="status-value">${status.uptime}</span>
+                        </div>
+                        <div class="status-item">
+                            <span>CTP连接:</span>
+                            <span class="status-value">${status.ctp_status.market_data.connected && status.ctp_status.trading.connected ? '已连接' : '未连接'}</span>
+                        </div>
+                    `;
+                } else {
+                    statusDiv.innerHTML = '<div class="status-error">加载失败: ' + data.message + '</div>';
+                }
+            } catch (error) {
+                console.error('获取系统状态失败:', error);
+                statusDiv.innerHTML = '<div class="status-error">网络错误: ' + error.message + '</div>';
+            }
+        }
+        
+        async function refreshAccountInfo() {
+            const accountDiv = document.getElementById('account-info');
+            accountDiv.innerHTML = '<div class="loading">正在加载...</div>';
+            
+            try {
+                const response = await fetch('/api/v1/data/account/info');
+                const data = await response.json();
+                
+                if (data.success) {
+                    const account = data.data;
+                    accountDiv.innerHTML = `
+                        <div class="status-item">
+                            <span>账户ID:</span>
+                            <span class="status-value">${account.account_id}</span>
+                        </div>
+                        <div class="status-item">
+                            <span>总资产:</span>
+                            <span class="status-value">¥${account.total_assets.toLocaleString()}</span>
+                        </div>
+                        <div class="status-item">
+                            <span>可用资金:</span>
+                            <span class="status-value">¥${account.available.toLocaleString()}</span>
+                        </div>
+                        <div class="status-item">
+                            <span>保证金:</span>
+                            <span class="status-value">¥${account.margin.toLocaleString()}</span>
+                        </div>
+                    `;
+                } else {
+                    accountDiv.innerHTML = '<div class="status-error">加载失败: ' + data.message + '</div>';
+                }
+            } catch (error) {
+                console.error('获取账户信息失败:', error);
+                accountDiv.innerHTML = '<div class="status-error">网络错误: ' + error.message + '</div>';
+            }
+        }
+        
+        async function refreshStrategyStatus() {
+            const strategyDiv = document.getElementById('strategy-status');
+            strategyDiv.innerHTML = '<div class="loading">正在加载...</div>';
+            
+            try {
+                const response = await fetch('/api/v1/strategies/list');
+                const data = await response.json();
+                
+                if (data.success) {
+                    const strategies = data.data.strategies;
+                    if (strategies.length > 0) {
+                        const strategy = strategies[0];
+                        strategyDiv.innerHTML = `
+                            <div class="status-item">
+                                <span>策略名称:</span>
+                                <span class="status-value">${strategy.display_name}</span>
+                            </div>
+                            <div class="status-item">
+                                <span>状态:</span>
+                                <span class="status-value">${strategy.status}</span>
+                            </div>
+                            <div class="status-item">
+                                <span>风险等级:</span>
+                                <span class="status-value">${strategy.risk_level}</span>
+                            </div>
+                            <div class="status-item">
+                                <span>版本:</span>
+                                <span class="status-value">${strategy.version}</span>
+                            </div>
+                        `;
+                    } else {
+                        strategyDiv.innerHTML = '<div class="status-error">没有可用策略</div>';
+                    }
+                } else {
+                    strategyDiv.innerHTML = '<div class="status-error">加载失败: ' + data.message + '</div>';
+                }
+            } catch (error) {
+                console.error('获取策略状态失败:', error);
+                strategyDiv.innerHTML = '<div class="status-error">网络错误: ' + error.message + '</div>';
+            }
+        }
+        
+        function refreshAll() {
+            console.log('刷新所有数据');
+            refreshSystemStatus();
+            refreshAccountInfo();
+            refreshStrategyStatus();
+        }
+        
+        function openPage(url) {
+            window.open(url, '_blank');
+        }
+        
+        async function testAPI() {
+            try {
+                const response = await fetch('/api/v1/system/status');
+                const data = await response.json();
+                alert('API测试成功！\n系统状态: ' + data.data.system_status);
+            } catch (error) {
+                alert('API测试失败: ' + error.message);
+            }
+        }
+        
+        function startStrategy() {
+            alert('策略启动功能开发中...');
+        }
+        
+        function stopStrategy() {
+            alert('策略停止功能开发中...');
+        }
+        
+        // 全局错误处理
+        window.addEventListener('error', function(event) {
+            console.error('JavaScript错误:', event.error);
+        });
+        
+        console.log('ARBIG 简化版脚本加载完成');
+    </script>
+</body>
+</html>

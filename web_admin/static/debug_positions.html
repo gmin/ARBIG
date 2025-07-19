@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>持仓调试页面</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .debug-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .debug-section h3 {
+            margin-top: 0;
+            color: #333;
+        }
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+        .data-table th,
+        .data-table td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        .data-table th {
+            background-color: #f2f2f2;
+            font-weight: bold;
+        }
+        .badge {
+            display: inline-block;
+            padding: 0.25em 0.6em;
+            font-size: 0.75em;
+            font-weight: 700;
+            line-height: 1;
+            text-align: center;
+            white-space: nowrap;
+            vertical-align: baseline;
+            border-radius: 0.25rem;
+        }
+        .badge-success {
+            color: #fff;
+            background-color: #28a745;
+        }
+        .badge-danger {
+            color: #fff;
+            background-color: #dc3545;
+        }
+        .success {
+            color: #28a745;
+            font-weight: bold;
+        }
+        .error {
+            color: #dc3545;
+            font-weight: bold;
+        }
+        .btn {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        .btn:hover {
+            background-color: #0056b3;
+        }
+        pre {
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 持仓调试页面</h1>
+        
+        <div class="debug-section">
+            <h3>API测试</h3>
+            <button class="btn" onclick="testPositionsAPI()">测试持仓API</button>
+            <button class="btn" onclick="clearResults()">清除结果</button>
+            <div id="api-result"></div>
+        </div>
+        
+        <div class="debug-section">
+            <h3>持仓数据显示</h3>
+            <div id="positions-display">
+                <div>点击"测试持仓API"按钮获取数据</div>
+            </div>
+        </div>
+        
+        <div class="debug-section">
+            <h3>原始JSON数据</h3>
+            <pre id="raw-data">暂无数据</pre>
+        </div>
+    </div>
+
+    <script>
+        async function testPositionsAPI() {
+            const resultDiv = document.getElementById('api-result');
+            const positionsDiv = document.getElementById('positions-display');
+            const rawDataDiv = document.getElementById('raw-data');
+            
+            resultDiv.innerHTML = '<div>正在获取数据...</div>';
+            
+            try {
+                console.log('开始获取持仓数据...');
+                const response = await fetch('/api/v1/data/account/positions');
+                console.log('API响应状态:', response.status);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                console.log('获取到的数据:', data);
+                
+                // 显示原始JSON
+                rawDataDiv.textContent = JSON.stringify(data, null, 2);
+                
+                if (data.success) {
+                    resultDiv.innerHTML = `
+                        <div style="color: green;">✅ API调用成功</div>
+                        <div>消息: ${data.message}</div>
+                        <div>持仓数量: ${data.data.positions.length}</div>
+                    `;
+                    
+                    // 显示持仓表格
+                    displayPositions(data.data.positions);
+                } else {
+                    resultDiv.innerHTML = `
+                        <div style="color: red;">❌ API返回错误</div>
+                        <div>错误消息: ${data.message}</div>
+                    `;
+                }
+                
+            } catch (error) {
+                console.error('获取持仓数据失败:', error);
+                resultDiv.innerHTML = `
+                    <div style="color: red;">❌ 请求失败</div>
+                    <div>错误: ${error.message}</div>
+                `;
+                rawDataDiv.textContent = `错误: ${error.message}`;
+            }
+        }
+        
+        function displayPositions(positions) {
+            const positionsDiv = document.getElementById('positions-display');
+            
+            if (!positions || positions.length === 0) {
+                positionsDiv.innerHTML = '<div>暂无持仓</div>';
+                return;
+            }
+
+            const html = `
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>合约</th>
+                            <th>方向</th>
+                            <th>数量</th>
+                            <th>开仓均价</th>
+                            <th>当前价格</th>
+                            <th>浮动盈亏</th>
+                            <th>保证金</th>
+                            <th>开仓时间</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${positions.map(pos => `
+                            <tr>
+                                <td><strong>${pos.symbol}</strong></td>
+                                <td>
+                                    <span class="badge ${pos.direction === 'long' ? 'badge-success' : 'badge-danger'}">
+                                        ${pos.direction === 'long' ? '多头' : '空头'}
+                                    </span>
+                                </td>
+                                <td>${pos.volume}</td>
+                                <td>¥${pos.avg_price.toFixed(2)}</td>
+                                <td>¥${pos.current_price > 0 ? pos.current_price.toFixed(2) : '待更新'}</td>
+                                <td class="${pos.profit >= 0 ? 'success' : 'error'}">
+                                    ¥${pos.profit.toFixed(2)}
+                                </td>
+                                <td>¥${pos.margin > 0 ? pos.margin.toFixed(2) : '待计算'}</td>
+                                <td>${new Date(pos.open_time).toLocaleString()}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+
+            positionsDiv.innerHTML = html;
+        }
+        
+        function clearResults() {
+            document.getElementById('api-result').innerHTML = '';
+            document.getElementById('positions-display').innerHTML = '<div>点击"测试持仓API"按钮获取数据</div>';
+            document.getElementById('raw-data').textContent = '暂无数据';
+        }
+        
+        // 页面加载时自动测试
+        window.addEventListener('load', function() {
+            console.log('页面加载完成，自动测试API...');
+            testPositionsAPI();
+        });
+    </script>
+</body>
+</html>

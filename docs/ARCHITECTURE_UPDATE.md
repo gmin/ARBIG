@@ -199,7 +199,7 @@ docs/
 
 1. **Web界面访问**:
    - Web管理系统: http://localhost:8000
-   - 交易API文档: http://localhost:8001/docs
+   - API文档: http://localhost:8000/docs
 
 2. **新功能使用**:
    - 在Web界面中查看交易信号监控

@@ -27,6 +27,12 @@ from .risk_controller import WebRiskController
 from .data_provider import DataProvider
 from utils.logger import get_logger
 
+# 导入API路由
+from .api.routers.system import router as system_router
+from .api.routers.services import router as services_router
+from .api.routers.strategies import router as strategies_router
+from .api.routers.data import router as data_router
+
 logger = get_logger(__name__)
 
 class ARBIGWebApp:
@@ -229,6 +235,20 @@ class ARBIGWebApp:
                 </body>
                 </html>
                 """)
+
+        @self.app.get("/{filename}.html", response_class=HTMLResponse)
+        async def serve_html_files(filename: str):
+            """服务HTML文件"""
+            try:
+                html_file = self.static_dir / f"{filename}.html"
+                if html_file.exists():
+                    with open(html_file, "r", encoding="utf-8") as f:
+                        return f.read()
+                else:
+                    raise HTTPException(status_code=404, detail=f"HTML文件 {filename}.html 未找到")
+            except Exception as e:
+                logger.error(f"服务HTML文件失败: {e}")
+                raise HTTPException(status_code=500, detail="服务器内部错误")
 
         @self.app.get("/api/info")
         async def api_info():
@@ -638,10 +658,14 @@ class ARBIGWebApp:
         try:
             self.data_provider = DataProvider(trading_system)
             self.risk_controller = WebRiskController(trading_system)
-            
+
+            # 设置数据提供器到依赖注入系统
+            from .api.dependencies import set_data_provider
+            set_data_provider(self.data_provider)
+
             logger.info("Web监控系统已连接到核心交易系统")
             return True
-            
+
         except Exception as e:
             logger.error(f"连接核心交易系统失败: {e}")
             return False
