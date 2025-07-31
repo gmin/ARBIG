@@ -1,82 +1,94 @@
 <template>
   <div class="dashboard">
-    <!-- 系统概览卡片 -->
+    <!-- 顶部状态栏 - 固定显示关键状态 -->
+    <div class="status-bar">
     <a-row :gutter="[16, 16]">
-      <!-- 系统状态卡片 -->
-      <a-col :xs="24" :sm="12" :md="6">
-        <a-card class="status-card">
-          <div class="card-content">
-            <div class="card-icon system-status" :class="systemStatusClass">
+        <a-col :xs="12" :sm="6" :md="4" :lg="3">
+          <div class="status-item" :class="systemStatusClass">
+            <div class="status-icon">
               <RocketOutlined />
             </div>
-            <div class="card-info">
-              <div class="card-title">系统状态</div>
-              <div class="card-value">{{ systemStatusText }}</div>
-              <div class="card-extra">运行时长: {{ uptime }}</div>
+            <div class="status-info">
+              <div class="status-label">系统状态</div>
+              <div class="status-value">{{ systemStatusText }}</div>
             </div>
           </div>
-        </a-card>
       </a-col>
 
-      <!-- 运行模式卡片 -->
-      <a-col :xs="24" :sm="12" :md="6">
-        <a-card class="status-card">
-          <div class="card-content">
-            <div class="card-icon mode-status">
+        <a-col :xs="12" :sm="6" :md="4" :lg="3">
+          <div class="status-item">
+            <div class="status-icon mode-status">
               <SettingOutlined />
             </div>
-            <div class="card-info">
-              <div class="card-title">运行模式</div>
-              <div class="card-value">{{ currentModeText }}</div>
-              <div class="card-extra">
-                <a-button type="link" size="small" @click="showModeModal = true">
-                  切换模式
-                </a-button>
+            <div class="status-info">
+              <div class="status-label">运行模式</div>
+              <div class="status-value">{{ currentModeText }}</div>
               </div>
             </div>
-          </div>
-        </a-card>
       </a-col>
 
-      <!-- 服务状态卡片 -->
-      <a-col :xs="24" :sm="12" :md="6">
-        <a-card class="status-card">
-          <div class="card-content">
-            <div class="card-icon services-status">
+        <a-col :xs="12" :sm="6" :md="4" :lg="3">
+          <div class="status-item">
+            <div class="status-icon services-status">
               <AppstoreOutlined />
             </div>
-            <div class="card-info">
-              <div class="card-title">服务状态</div>
-              <div class="card-value">{{ runningServicesCount }}/{{ totalServicesCount }}</div>
-              <div class="card-extra">{{ stoppedServicesCount }}个已停止</div>
+            <div class="status-info">
+              <div class="status-label">服务状态</div>
+              <div class="status-value">{{ runningServicesCount }}/{{ totalServicesCount }}</div>
             </div>
           </div>
-        </a-card>
       </a-col>
 
-      <!-- CTP连接状态卡片 -->
-      <a-col :xs="24" :sm="12" :md="6">
-        <a-card class="status-card">
-          <div class="card-content">
-            <div class="card-icon ctp-status" :class="ctpStatusClass">
+        <a-col :xs="12" :sm="6" :md="4" :lg="3">
+          <div class="status-item" :class="ctpStatusClass">
+            <div class="status-icon">
               <ApiOutlined />
             </div>
-            <div class="card-info">
-              <div class="card-title">CTP连接</div>
-              <div class="card-value">{{ ctpStatusText }}</div>
-              <div class="card-extra">延迟: {{ ctpLatency }}</div>
+            <div class="status-info">
+              <div class="status-label">CTP连接</div>
+              <div class="status-value">{{ ctpStatusText }}</div>
             </div>
           </div>
-        </a-card>
+        </a-col>
+        
+        <a-col :xs="12" :sm="6" :md="4" :lg="3">
+          <div class="status-item" :class="commStatusClass">
+            <div class="status-icon">
+              <ApiOutlined />
+            </div>
+            <div class="status-info">
+              <div class="status-label">主系统通信</div>
+              <div class="status-value">{{ commStatusText }}</div>
+            </div>
+          </div>
+        </a-col>
+        
+        <a-col :xs="12" :sm="6" :md="4" :lg="3">
+          <div class="status-item">
+            <div class="status-icon uptime-status">
+              <ClockCircleOutlined />
+            </div>
+            <div class="status-info">
+              <div class="status-label">运行时长</div>
+              <div class="status-value">{{ uptime }}</div>
+            </div>
+          </div>
       </a-col>
     </a-row>
+    </div>
 
-    <!-- 主要功能区域 -->
-    <a-row :gutter="[16, 16]" style="margin-top: 16px">
-      <!-- 系统控制面板 -->
-      <a-col :xs="24" :lg="12">
-        <a-card title="系统控制" class="control-panel">
-          <div class="control-buttons">
+    <!-- 控制面板区域 -->
+    <div class="control-section">
+      <a-row :gutter="[16, 16]">
+        <!-- 系统控制卡片 -->
+        <a-col :xs="24" :lg="8">
+          <a-card title="系统控制" class="control-card">
+            <template #extra>
+              <a-tag :color="systemStore.isSystemRunning ? 'green' : 'red'">
+                {{ systemStore.isSystemRunning ? '运行中' : '已停止' }}
+              </a-tag>
+            </template>
+            
             <a-space direction="vertical" style="width: 100%">
               <a-button 
                 type="primary" 
@@ -111,14 +123,29 @@
                 <StopOutlined />
                 紧急停止
               </a-button>
+              
+              <a-button 
+                type="dashed" 
+                size="large" 
+                block
+                @click="showModeModal = true"
+              >
+                <SettingOutlined />
+                切换模式
+              </a-button>
             </a-space>
-          </div>
         </a-card>
       </a-col>
 
-      <!-- 服务管理面板 -->
-      <a-col :xs="24" :lg="12">
-        <a-card title="服务管理" class="services-panel">
+        <!-- 服务管理卡片 -->
+        <a-col :xs="24" :lg="8">
+          <a-card title="服务管理" class="control-card">
+            <template #extra>
+              <a-button type="link" size="small" @click="refreshServices">
+                <ReloadOutlined />
+              </a-button>
+            </template>
+            
           <div class="services-list">
             <div 
               v-for="service in systemStore.services" 
@@ -157,12 +184,264 @@
           </div>
         </a-card>
       </a-col>
-    </a-row>
 
-    <!-- 快速导航 -->
-    <a-row :gutter="[16, 16]" style="margin-top: 16px">
-      <a-col :span="24">
-        <a-card title="快速导航" class="quick-nav">
+        <!-- 快速操作卡片 -->
+        <a-col :xs="24" :lg="8">
+          <a-card title="快速操作" class="control-card">
+            <template #extra>
+              <a-tag color="blue">快捷入口</a-tag>
+            </template>
+            
+            <a-space direction="vertical" style="width: 100%">
+              <a-button 
+                type="primary" 
+                ghost
+                size="large" 
+                block
+                @click="$router.push('/trading')"
+              >
+                <ShoppingCartOutlined />
+                交易操作
+              </a-button>
+              
+              <a-button 
+                type="primary" 
+                ghost
+                size="large" 
+                block
+                @click="$router.push('/strategies')"
+              >
+                <RocketOutlined />
+                策略管理
+              </a-button>
+              
+              <a-button 
+                type="primary" 
+                ghost
+                size="large" 
+                block
+                @click="$router.push('/risk')"
+              >
+                <SafetyOutlined />
+                风险控制
+              </a-button>
+              
+              <a-button 
+                type="primary" 
+                ghost
+                size="large" 
+                block
+                @click="$router.push('/logs')"
+              >
+                <FileTextOutlined />
+                系统日志
+              </a-button>
+            </a-space>
+          </a-card>
+        </a-col>
+    </a-row>
+    </div>
+
+    <!-- 数据概览区域 -->
+    <div class="data-section">
+      <a-row :gutter="[16, 16]">
+        <!-- 账户概览卡片 -->
+        <a-col :xs="24" :lg="8">
+          <a-card title="账户概览" class="data-card">
+            <template #extra>
+              <a-button type="link" size="small" @click="$router.push('/account')">
+                详情
+              </a-button>
+            </template>
+            
+            <div class="account-overview">
+              <div class="overview-item">
+                <div class="overview-label">总资金</div>
+                <div class="overview-value">¥{{ accountInfo.balance?.toLocaleString() || '--' }}</div>
+              </div>
+              <div class="overview-item">
+                <div class="overview-label">可用资金</div>
+                <div class="overview-value">¥{{ accountInfo.available?.toLocaleString() || '--' }}</div>
+              </div>
+              <div class="overview-item">
+                <div class="overview-label">冻结资金</div>
+                <div class="overview-value">¥{{ accountInfo.frozen?.toLocaleString() || '--' }}</div>
+              </div>
+              <div class="overview-item">
+                <div class="overview-label">保证金</div>
+                <div class="overview-value">¥{{ accountInfo.margin?.toLocaleString() || '--' }}</div>
+              </div>
+            </div>
+          </a-card>
+        </a-col>
+
+        <!-- 风险监控卡片 -->
+        <a-col :xs="24" :lg="8">
+          <a-card title="风险监控" class="data-card">
+            <template #extra>
+              <a-button type="link" size="small" @click="$router.push('/risk')">
+                详情
+              </a-button>
+            </template>
+            
+            <div class="risk-overview">
+              <div class="overview-item">
+                <div class="overview-label">总盈亏</div>
+                <div class="overview-value" :class="getPnLClass(riskMetrics.total_pnl)">
+                  {{ riskMetrics.total_pnl > 0 ? '+' : '' }}¥{{ riskMetrics.total_pnl?.toLocaleString() || '--' }}
+                </div>
+              </div>
+              <div class="overview-item">
+                <div class="overview-label">今日盈亏</div>
+                <div class="overview-value" :class="getPnLClass(riskMetrics.today_pnl)">
+                  {{ riskMetrics.today_pnl > 0 ? '+' : '' }}¥{{ riskMetrics.today_pnl?.toLocaleString() || '--' }}
+                </div>
+              </div>
+              <div class="overview-item">
+                <div class="overview-label">最大回撤</div>
+                <div class="overview-value risk-warning">
+                  ¥{{ riskMetrics.max_drawdown?.toLocaleString() || '--' }}
+                </div>
+              </div>
+              <div class="overview-item">
+                <div class="overview-label">风险等级</div>
+                <div class="overview-value">
+                  <a-tag :color="getRiskLevelColor(riskMetrics.risk_level)">
+                    {{ riskMetrics.risk_level || '--' }}
+                  </a-tag>
+                </div>
+              </div>
+            </div>
+          </a-card>
+        </a-col>
+
+        <!-- 交易统计卡片 -->
+        <a-col :xs="24" :lg="8">
+          <a-card title="交易统计" class="data-card">
+            <template #extra>
+              <a-button type="link" size="small" @click="$router.push('/trading')">
+                详情
+              </a-button>
+            </template>
+            
+            <div class="trading-overview">
+              <div class="overview-item">
+                <div class="overview-label">总交易次数</div>
+                <div class="overview-value">{{ tradingSummary.total_trades || '--' }}</div>
+              </div>
+              <div class="overview-item">
+                <div class="overview-label">胜率</div>
+                <div class="overview-value">{{ tradingSummary.win_rate || '--' }}%</div>
+              </div>
+              <div class="overview-item">
+                <div class="overview-label">平均盈亏</div>
+                <div class="overview-value" :class="getPnLClass(tradingSummary.avg_trade_pnl)">
+                  {{ tradingSummary.avg_trade_pnl > 0 ? '+' : '' }}¥{{ tradingSummary.avg_trade_pnl?.toLocaleString() || '--' }}
+                </div>
+              </div>
+              <div class="overview-item">
+                <div class="overview-label">持仓数量</div>
+                <div class="overview-value">{{ positions.length || '--' }}</div>
+              </div>
+            </div>
+          </a-card>
+        </a-col>
+      </a-row>
+    </div>
+
+    <!-- 实时行情区域 - 可折叠 -->
+    <div class="market-section">
+      <a-card 
+        title="实时行情 - 黄金主力合约" 
+        class="market-card"
+        :bordered="false"
+      >
+        <template #extra>
+          <a-space>
+            <a-tag :color="marketDataLoading ? 'blue' : 'green'">
+              {{ marketDataLoading ? '更新中...' : '实时' }}
+            </a-tag>
+            <a-button 
+              type="link" 
+              size="small" 
+              @click="fetchMarketData"
+              :loading="marketDataLoading"
+            >
+              刷新
+            </a-button>
+            <a-button 
+              type="link" 
+              size="small" 
+              @click="toggleMarketSection"
+            >
+              {{ marketSectionCollapsed ? '展开' : '收起' }}
+            </a-button>
+          </a-space>
+        </template>
+        
+        <a-collapse :activeKey="marketSectionCollapsed ? [] : ['market']">
+          <a-collapse-panel key="market" :show-arrow="false">
+            <a-table 
+              :columns="marketColumns" 
+              :data-source="marketData" 
+              :pagination="false"
+              size="small"
+              :loading="marketDataLoading"
+              row-key="symbol"
+            >
+              <template #bodyCell="{ column, record }">
+                <template v-if="column.key === 'symbol'">
+                  <a-tag color="gold">{{ record.symbol }}</a-tag>
+                </template>
+                <template v-else-if="column.key === 'last_price'">
+                  <span class="price" :class="getPriceClass(record.change)">
+                    {{ record.last_price }}
+                  </span>
+                </template>
+                <template v-else-if="column.key === 'change'">
+                  <span :class="getPriceClass(record.change)">
+                    {{ record.change > 0 ? '+' : '' }}{{ record.change }}
+                  </span>
+                </template>
+                <template v-else-if="column.key === 'change_percent'">
+                  <span :class="getPriceClass(record.change)">
+                    {{ record.change > 0 ? '+' : '' }}{{ record.change_percent }}%
+                  </span>
+                </template>
+                <template v-else-if="column.key === 'bid_ask'">
+                  <div class="bid-ask">
+                    <div class="bid">{{ record.bid_price }}</div>
+                    <div class="ask">{{ record.ask_price }}</div>
+                  </div>
+                </template>
+                <template v-else-if="column.key === 'volume'">
+                  <span class="volume">{{ record.volume }}</span>
+                </template>
+                <template v-else-if="column.key === 'timestamp'">
+                  <span class="timestamp">{{ record.timestamp }}</span>
+                </template>
+              </template>
+            </a-table>
+          </a-collapse-panel>
+        </a-collapse>
+      </a-card>
+    </div>
+
+    <!-- 快速导航区域 - 可折叠 -->
+    <div class="nav-section">
+      <a-card title="快速导航" class="nav-card" :bordered="false">
+        <template #extra>
+          <a-button 
+            type="link" 
+            size="small" 
+            @click="toggleNavSection"
+          >
+            {{ navSectionCollapsed ? '展开' : '收起' }}
+          </a-button>
+        </template>
+        
+        <a-collapse :activeKey="navSectionCollapsed ? [] : ['nav']">
+          <a-collapse-panel key="nav" :show-arrow="false">
           <a-row :gutter="[16, 16]">
             <a-col :xs="12" :sm="8" :md="6" :lg="4">
               <div class="nav-item" @click="$router.push('/market')">
@@ -201,9 +480,10 @@
               </div>
             </a-col>
           </a-row>
+          </a-collapse-panel>
+        </a-collapse>
         </a-card>
-      </a-col>
-    </a-row>
+    </div>
 
     <!-- 模式切换弹窗 -->
     <a-modal
@@ -268,7 +548,10 @@ import {
   WalletOutlined,
   PieChartOutlined,
   SafetyOutlined,
-  FileTextOutlined
+  FileTextOutlined,
+  ClockCircleOutlined,
+  ReloadOutlined,
+  ShoppingCartOutlined
 } from '@ant-design/icons-vue'
 import { useSystemStore } from '@/stores/system'
 
@@ -281,6 +564,118 @@ const selectedMode = ref('')
 const modeReason = ref('')
 const emergencyReason = ref('')
 const emergencyLoading = ref(false)
+
+// 行情数据相关
+const marketData = ref([])
+const marketDataLoading = ref(false)
+const marketTimer = ref(null)
+
+// 通信状态相关
+const commStats = ref({
+  connection_status: 'disconnected',
+  total_requests: 0,
+  successful_requests: 0,
+  failed_requests: 0,
+  current_endpoint: null
+})
+const commTimer = ref(null)
+
+// 可折叠区域控制
+const marketSectionCollapsed = ref(false)
+const navSectionCollapsed = ref(false)
+
+// 账户和风险数据
+const accountInfo = ref({
+  balance: 0,
+  available: 0,
+  frozen: 0,
+  margin: 0
+})
+
+const riskMetrics = ref({
+  total_pnl: 0,
+  today_pnl: 0,
+  max_drawdown: 0,
+  risk_level: 'LOW'
+})
+
+const tradingSummary = ref({
+  total_trades: 0,
+  win_rate: 0,
+  avg_trade_pnl: 0
+})
+
+const positions = ref([])
+
+// 行情表格列定义
+const marketColumns = [
+  {
+    title: '合约',
+    key: 'symbol',
+    width: 100,
+    fixed: 'left'
+  },
+  {
+    title: '最新价',
+    key: 'last_price',
+    width: 100,
+    align: 'right'
+  },
+  {
+    title: '涨跌',
+    key: 'change',
+    width: 80,
+    align: 'right'
+  },
+  {
+    title: '涨跌幅',
+    key: 'change_percent',
+    width: 80,
+    align: 'right'
+  },
+  {
+    title: '买一/卖一',
+    key: 'bid_ask',
+    width: 120,
+    align: 'right'
+  },
+  {
+    title: '成交量',
+    key: 'volume',
+    width: 100,
+    align: 'right'
+  },
+  {
+    title: '持仓量',
+    key: 'open_interest',
+    width: 100,
+    align: 'right'
+  },
+  {
+    title: '最高',
+    key: 'high',
+    width: 80,
+    align: 'right'
+  },
+  {
+    title: '最低',
+    key: 'low',
+    width: 80,
+    align: 'right'
+  },
+  {
+    title: '开盘',
+    key: 'open',
+    width: 80,
+    align: 'right'
+  },
+  {
+    title: '时间',
+    key: 'timestamp',
+    width: 80,
+    align: 'center'
+  }
+]
 
 // 计算属性
 const systemStatusClass = computed(() => {
@@ -329,6 +724,29 @@ const ctpStatusText = computed(() => {
 const ctpLatency = computed(() => {
   const { marketData, trading } = systemStore.ctpStatus
   return marketData.latency || trading.latency || '--'
+})
+
+// 通信状态计算属性
+const commStatusClass = computed(() => {
+  const status = commStats.value.connection_status
+  if (status === 'connected') return 'running'
+  if (status === 'connecting') return 'warning'
+  return 'stopped'
+})
+
+const commStatusText = computed(() => {
+  const status = commStats.value.connection_status
+  if (status === 'connected') return '已连接'
+  if (status === 'connecting') return '连接中'
+  if (status === 'error') return '连接错误'
+  return '未连接'
+})
+
+const commSuccessRate = computed(() => {
+  const { total_requests, successful_requests } = commStats.value
+  if (total_requests === 0) return '0%'
+  const rate = (successful_requests / total_requests) * 100
+  return `${rate.toFixed(1)}%`
 })
 
 // 方法
@@ -394,6 +812,163 @@ const handleEmergencyStop = async () => {
   }
 }
 
+// 行情数据相关方法
+const fetchMarketData = async () => {
+  try {
+    marketDataLoading.value = true
+    const response = await fetch('/api/v1/data/market/ticks?symbols=au2507')
+    const result = await response.json()
+    
+    if (result.success) {
+      marketData.value = result.data.ticks || []
+    } else {
+      message.error('获取行情数据失败')
+    }
+  } catch (error) {
+    console.error('获取行情数据错误:', error)
+    message.error('获取行情数据失败')
+  } finally {
+    marketDataLoading.value = false
+  }
+}
+
+const getPriceClass = (change: number) => {
+  if (change > 0) return 'price-up'
+  if (change < 0) return 'price-down'
+  return 'price-unchanged'
+}
+
+const startMarketTimer = () => {
+  // 立即获取一次数据
+  fetchMarketData()
+  
+  // 每2秒更新一次行情
+  marketTimer.value = setInterval(() => {
+    fetchMarketData()
+  }, 2000)
+}
+
+const stopMarketTimer = () => {
+  if (marketTimer.value) {
+    clearInterval(marketTimer.value)
+    marketTimer.value = null
+  }
+}
+
+// 通信状态相关方法
+const fetchCommStats = async () => {
+  try {
+    const response = await fetch('/api/communication/stats')
+    const result = await response.json()
+    
+    if (result.success) {
+      commStats.value = result.data
+    }
+  } catch (error) {
+    console.error('获取通信统计信息失败:', error)
+  }
+}
+
+const startCommTimer = () => {
+  // 立即获取一次数据
+  fetchCommStats()
+  
+  // 每10秒更新一次通信状态
+  commTimer.value = setInterval(() => {
+    fetchCommStats()
+  }, 10000)
+}
+
+const stopCommTimer = () => {
+  if (commTimer.value) {
+    clearInterval(commTimer.value)
+    commTimer.value = null
+  }
+}
+
+// 可折叠区域控制方法
+const toggleMarketSection = () => {
+  marketSectionCollapsed.value = !marketSectionCollapsed.value
+}
+
+const toggleNavSection = () => {
+  navSectionCollapsed.value = !navSectionCollapsed.value
+}
+
+// 数据获取方法
+const fetchAccountInfo = async () => {
+  try {
+    const response = await fetch('/api/v1/data/account/info')
+    const result = await response.json()
+    
+    if (result.success) {
+      accountInfo.value = result.data
+    }
+  } catch (error) {
+    console.error('获取账户信息失败:', error)
+  }
+}
+
+const fetchRiskMetrics = async () => {
+  try {
+    const response = await fetch('/api/v1/data/risk/metrics')
+    const result = await response.json()
+    
+    if (result.success) {
+      riskMetrics.value = result.data
+    }
+  } catch (error) {
+    console.error('获取风险指标失败:', error)
+  }
+}
+
+const fetchTradingSummary = async () => {
+  try {
+    const response = await fetch('/api/trading/summary')
+    const result = await response.json()
+    
+    if (result.success) {
+      tradingSummary.value = result.data
+    }
+  } catch (error) {
+    console.error('获取交易统计失败:', error)
+  }
+}
+
+const fetchPositions = async () => {
+  try {
+    const response = await fetch('/api/v1/data/account/positions')
+    const result = await response.json()
+    
+    if (result.success) {
+      positions.value = result.data || []
+    }
+  } catch (error) {
+    console.error('获取持仓信息失败:', error)
+  }
+}
+
+// 工具方法
+const getPnLClass = (pnl: number) => {
+  if (pnl > 0) return 'pnl-positive'
+  if (pnl < 0) return 'pnl-negative'
+  return 'pnl-neutral'
+}
+
+const getRiskLevelColor = (level: string) => {
+  const colorMap: Record<string, string> = {
+    'LOW': 'green',
+    'MEDIUM': 'orange',
+    'HIGH': 'red',
+    'CRITICAL': 'red'
+  }
+  return colorMap[level] || 'default'
+}
+
+const refreshServices = () => {
+  systemStore.fetchServices()
+}
+
 // 定时刷新
 let refreshTimer: number | null = null
 
@@ -406,12 +981,46 @@ onMounted(() => {
     systemStore.fetchSystemStatus()
     systemStore.fetchServices()
   }, 3000)
+  
+  // 启动行情定时器
+  startMarketTimer()
+  
+  // 启动通信状态定时器
+  startCommTimer()
+  
+  // 获取初始数据
+  fetchAccountInfo()
+  fetchRiskMetrics()
+  fetchTradingSummary()
+  fetchPositions()
+  
+  // 启动数据定时刷新
+  const dataRefreshTimer = window.setInterval(() => {
+    fetchAccountInfo()
+    fetchRiskMetrics()
+    fetchTradingSummary()
+    fetchPositions()
+  }, 10000)
+  
+  // 保存定时器引用以便清理
+  ;(window as any).dataRefreshTimer = dataRefreshTimer
 })
 
 onUnmounted(() => {
   if (refreshTimer) {
     clearInterval(refreshTimer)
   }
+  
+  // 清理数据刷新定时器
+  if ((window as any).dataRefreshTimer) {
+    clearInterval((window as any).dataRefreshTimer)
+  }
+  
+  // 停止行情定时器
+  stopMarketTimer()
+  
+  // 停止通信状态定时器
+  stopCommTimer()
 })
 </script>
 
@@ -463,6 +1072,21 @@ onUnmounted(() => {
       }
       
       &.ctp-status {
+        &.running {
+          background: #f6ffed;
+          color: #52c41a;
+        }
+        &.warning {
+          background: #fffbe6;
+          color: #faad14;
+        }
+        &.stopped {
+          background: #fff2f0;
+          color: #f5222d;
+        }
+      }
+      
+      &.comm-status {
         &.running {
           background: #f6ffed;
           color: #52c41a;
@@ -555,6 +1179,189 @@ onUnmounted(() => {
   }
 }
 
+// 新的Dashboard布局样式
+.status-bar {
+  background: #fff;
+  padding: 16px;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  margin-bottom: 16px;
+  
+  .status-item {
+    display: flex;
+    align-items: center;
+    padding: 12px;
+    border-radius: 6px;
+    background: #fafafa;
+    transition: all 0.3s;
+    
+    &:hover {
+      background: #f0f0f0;
+    }
+    
+    .status-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-right: 12px;
+      font-size: 18px;
+      
+      &.running {
+        background: #f6ffed;
+        color: #52c41a;
+      }
+      
+      &.stopped {
+        background: #f5f5f5;
+        color: #8c8c8c;
+      }
+      
+      &.error {
+        background: #fff2f0;
+        color: #f5222d;
+      }
+      
+      &.mode-status {
+        background: #e6f7ff;
+        color: #1890ff;
+      }
+      
+      &.services-status {
+        background: #f9f0ff;
+        color: #722ed1;
+      }
+      
+      &.uptime-status {
+        background: #fff7e6;
+        color: #fa8c16;
+      }
+    }
+    
+    .status-info {
+      flex: 1;
+      
+      .status-label {
+        font-size: 12px;
+        color: #8c8c8c;
+        margin-bottom: 2px;
+      }
+      
+      .status-value {
+        font-size: 16px;
+        font-weight: 600;
+        color: #262626;
+      }
+    }
+  }
+}
+
+.control-section {
+  margin-bottom: 16px;
+  
+  .control-card {
+    height: 100%;
+    
+    .ant-card-head {
+      border-bottom: 1px solid #f0f0f0;
+    }
+    
+    .ant-card-body {
+      padding: 16px;
+    }
+  }
+}
+
+.market-section {
+  margin-bottom: 16px;
+  
+  .market-card {
+    .ant-card-head {
+      background: #fafafa;
+    }
+  }
+}
+
+.data-section {
+  margin-bottom: 16px;
+  
+  .data-card {
+    height: 100%;
+    
+    .overview-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 0;
+      border-bottom: 1px solid #f0f0f0;
+      
+      &:last-child {
+        border-bottom: none;
+      }
+      
+      .overview-label {
+        font-size: 14px;
+        color: #8c8c8c;
+      }
+      
+      .overview-value {
+        font-size: 16px;
+        font-weight: 600;
+        color: #262626;
+        
+        &.pnl-positive {
+          color: #52c41a;
+        }
+        
+        &.pnl-negative {
+          color: #f5222d;
+        }
+        
+        &.pnl-neutral {
+          color: #8c8c8c;
+        }
+        
+        &.risk-warning {
+          color: #fa8c16;
+        }
+      }
+    }
+  }
+}
+
+.nav-section {
+  .nav-card {
+    .nav-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 16px;
+      border: 1px solid #f0f0f0;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.3s;
+      
+      &:hover {
+        border-color: #1890ff;
+        background: #f6ffed;
+      }
+      
+      .nav-icon {
+        font-size: 24px;
+        color: #1890ff;
+        margin-bottom: 8px;
+      }
+      
+      .nav-text {
+        font-size: 14px;
+        color: #262626;
+      }
+    }
+  }
+}
+
 .quick-nav {
   .nav-item {
     display: flex;
@@ -583,6 +1390,58 @@ onUnmounted(() => {
   }
 }
 
+// 行情面板样式
+.market-panel {
+  .ant-table {
+    .ant-table-tbody > tr > td {
+      padding: 8px 12px;
+    }
+  }
+  
+  .price {
+    font-weight: 600;
+    font-size: 14px;
+    
+    &.price-up {
+      color: #f5222d;
+    }
+    
+    &.price-down {
+      color: #52c41a;
+    }
+    
+    &.price-unchanged {
+      color: #262626;
+    }
+  }
+  
+  .bid-ask {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    
+    .bid {
+      color: #52c41a;
+      font-size: 12px;
+    }
+    
+    .ask {
+      color: #f5222d;
+      font-size: 12px;
+    }
+  }
+  
+  .volume {
+    color: #1890ff;
+    font-weight: 500;
+  }
+  
+  .timestamp {
+    color: #8c8c8c;
+    font-size: 12px;
+  }
+}
+
 @media (max-width: 768px) {
   .dashboard {
     padding: 16px;
@@ -602,3 +1461,4 @@ onUnmounted(() => {
   }
 }
 </style>
+

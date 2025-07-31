@@ -713,11 +713,11 @@ class ARBIGServiceContainer:
             else:
                 logger.warning("⚠ 账户服务启动失败")
                 return False
-
+                
         except Exception as e:
             logger.warning(f"⚠ 账户服务启动异常: {e}")
             return False
-
+            
     def _start_risk_service(self, config: Dict[str, Any] = None) -> bool:
         """启动风控服务"""
         try:
@@ -752,7 +752,7 @@ class ARBIGServiceContainer:
         except Exception as e:
             logger.warning(f"⚠ 风控服务启动异常: {e}")
             return False
-
+            
     def _start_trading_service(self, config: Dict[str, Any] = None) -> bool:
         """启动交易服务"""
         try:
@@ -786,14 +786,14 @@ class ARBIGServiceContainer:
                 self.services['TradingService'] = trading_service
                 logger.info("✓ 交易服务启动成功")
                 return True
-            else:
+        else:
                 logger.warning("⚠ 交易服务启动失败")
                 return False
 
         except Exception as e:
             logger.warning(f"⚠ 交易服务启动异常: {e}")
             return False
-
+            
     def _start_strategy_service(self, config: Dict[str, Any] = None) -> bool:
         """启动策略服务"""
         try:
@@ -827,7 +827,7 @@ class ARBIGServiceContainer:
         except Exception as e:
             logger.warning(f"⚠ 策略服务启动异常: {e}")
             return False
-
+            
     def _start_services_demo_mode(self):
         """启动演示模式的服务"""
         logger.info("启动演示模式服务...")
@@ -853,7 +853,7 @@ class ARBIGServiceContainer:
 
         except Exception as e:
             logger.error(f"演示模式服务启动失败: {e}")
-
+        
     def run(self):
         """运行系统主循环（保持兼容性）"""
         try:
@@ -862,7 +862,7 @@ class ARBIGServiceContainer:
             logger.info("访问 http://localhost:8000/api/docs 查看API文档")
 
             while self.running:
-                time.sleep(1)
+                    time.sleep(1)
 
                 # 可以在这里添加定期检查逻辑
                 # 比如检查服务状态、内存使用等
@@ -896,15 +896,15 @@ def init_service_container():
 def main():
     """主函数 - 现在作为服务容器运行"""
     import argparse
-
+    
     parser = argparse.ArgumentParser(description='ARBIG服务容器')
     parser.add_argument('--daemon', '-d', action='store_true', help='后台运行模式')
     parser.add_argument('--api-only', action='store_true', help='仅启动API服务')
     parser.add_argument('--auto-start', action='store_true', help='自动启动系统')
     parser.add_argument('--demo-mode', action='store_true', help='演示模式（不需要CTP连接）')
-
+    
     args = parser.parse_args()
-
+    
     print("🚀 ARBIG服务容器")
     print("=" * 50)
     print("系统现在通过Web API进行控制")
@@ -965,7 +965,7 @@ def main():
 
     except KeyboardInterrupt:
         logger.info("收到停止信号")
-    except Exception as e:
+        except Exception as e:
         logger.error(f"服务容器运行异常: {e}")
         sys.exit(1)
     finally:

@@ -290,6 +290,10 @@ class StandaloneWebApp:
         static_dir = Path(__file__).parent / "static"
         if static_dir.exists():
             self.app.mount("/static", StaticFiles(directory=static_dir), name="static")
+            # 新增：挂载/assets路由，解决前端资源404
+            assets_dir = static_dir / "assets"
+            if assets_dir.exists():
+                self.app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
     
     def setup_routes(self):
         """设置路由"""
@@ -640,48 +644,311 @@ class StandaloneWebApp:
             """获取服务日志"""
             return self.service_manager.get_service_logs(service_id, lines)
 
+        # 数据查询API路由
+        @self.app.get("/api/v1/data/orders")
+        async def get_orders(active_only: bool = False):
+            """获取订单列表"""
+            try:
+                # 模拟订单数据
+                orders = [
+                    {
+                        "order_id": "ORD001",
+                        "symbol": "au2507",
+                        "direction": "LONG",
+                        "order_type": "limit",
+                        "volume": 1,
+                        "price": 485.50,
+                        "status": "active",
+                        "create_time": "2024-01-15 10:30:00"
+                    }
+                ]
+                
+                if active_only:
+                    orders = [o for o in orders if o["status"] == "active"]
+                
+                return {"success": True, "data": {"orders": orders}}
+            except Exception as e:
+                logger.error(f"获取订单列表失败: {e}")
+                return {"success": False, "message": str(e)}
+
+        @self.app.get("/api/v1/data/account/info")
+        async def get_account_info():
+            """获取账户信息"""
+            try:
+                # 模拟账户数据
+                account_info = {
+                    "account_id": "123456",
+                    "balance": 1000000.00,
+                    "available": 950000.00,
+                    "frozen": 50000.00,
+                    "margin": 25000.00,
+                    "risk_ratio": 0.25
+                }
+                return {"success": True, "data": account_info}
+            except Exception as e:
+                logger.error(f"获取账户信息失败: {e}")
+                return {"success": False, "message": str(e)}
+
+        @self.app.get("/api/v1/data/account/positions")
+        async def get_positions():
+            """获取持仓信息"""
+            try:
+                # 模拟持仓数据
+                positions = [
+                    {
+                        "symbol": "au2507",
+                        "direction": "LONG",
+                        "volume": 1,
+                        "open_price": 485.50,
+                        "current_price": 486.20,
+                        "pnl": 700,
+                        "margin": 25000
+                    }
+                ]
+                return {"success": True, "data": {"positions": positions}}
+            except Exception as e:
+                logger.error(f"获取持仓信息失败: {e}")
+                return {"success": False, "message": str(e)}
+
+        @self.app.get("/api/v1/data/risk/metrics")
+        async def get_risk_metrics():
+            """获取风险指标"""
+            try:
+                # 模拟风险数据
+                risk_metrics = {
+                    "total_pnl": 1800,
+                    "today_pnl": 500,
+                    "max_drawdown": -2000,
+                    "sharpe_ratio": 1.2,
+                    "position_count": 2,
+                    "risk_level": "LOW"
+                }
+                return {"success": True, "data": risk_metrics}
+            except Exception as e:
+                logger.error(f"获取风险指标失败: {e}")
+                return {"success": False, "message": str(e)}
+
+        @self.app.get("/api/v1/strategies/list")
+        async def get_strategies():
+            """获取策略列表"""
+            try:
+                # 模拟策略数据
+                strategies = [
+                    {
+                        "id": "1",
+                        "name": "黄金套利策略",
+                        "type": "arbitrage",
+                        "status": "running",
+                        "symbols": ["au2507", "au2508"],
+                        "total_return": 15.6,
+                        "create_time": "2024-01-15 10:30:00"
+                    }
+                ]
+                return {"success": True, "data": {"strategies": strategies}}
+            except Exception as e:
+                logger.error(f"获取策略列表失败: {e}")
+                return {"success": False, "message": str(e)}
+
+        @self.app.get("/api/trading/summary")
+        async def get_trading_summary():
+            """获取交易汇总"""
+            try:
+                # 模拟交易汇总数据
+                summary = {
+                    "today_trades": 5,
+                    "today_volume": 10,
+                    "today_turnover": 4855000,
+                    "total_trades": 150,
+                    "total_volume": 300,
+                    "total_turnover": 145650000
+                }
+                return {"success": True, "data": summary}
+            except Exception as e:
+                logger.error(f"获取交易汇总失败: {e}")
+                return {"success": False, "message": str(e)}
+
+        @self.app.get("/api/v1/data/market/ticks")
+        async def get_market_ticks(symbols: str = "au2507"):
+            """获取市场行情数据"""
+            try:
+                import random
+                import time
+                
+                # 模拟黄金主力合约行情数据
+                base_price = 485.50
+                # 添加一些随机波动，模拟真实行情
+                price_change = random.uniform(-2.0, 2.0)
+                current_price = base_price + price_change
+                
+                # 计算涨跌幅
+                change_percent = (price_change / base_price) * 100
+                
+                # 模拟买卖盘数据
+                bid_price = current_price - random.uniform(0.1, 0.5)
+                ask_price = current_price + random.uniform(0.1, 0.5)
+                
+                ticks = []
+                for symbol in symbols.split(','):
+                    tick = {
+                        "symbol": symbol.strip(),
+                        "last_price": round(current_price, 2),
+                        "bid_price": round(bid_price, 2),
+                        "ask_price": round(ask_price, 2),
+                        "bid_volume": random.randint(1, 10),
+                        "ask_volume": random.randint(1, 10),
+                        "volume": random.randint(100, 1000),
+                        "open_interest": random.randint(5000, 15000),
+                        "change": round(price_change, 2),
+                        "change_percent": round(change_percent, 2),
+                        "high": round(current_price + random.uniform(1, 3), 2),
+                        "low": round(current_price - random.uniform(1, 3), 2),
+                        "open": round(base_price, 2),
+                        "timestamp": time.strftime("%H:%M:%S"),
+                        "update_time": time.strftime("%Y-%m-%d %H:%M:%S")
+                    }
+                    ticks.append(tick)
+                
+                return {"success": True, "data": {"ticks": ticks}}
+            except Exception as e:
+                logger.error(f"获取市场行情失败: {e}")
+                return {"success": False, "message": str(e)}
+
+        # 导入通信管理器
+        try:
+            from web_admin.core.communication_manager import get_communication_manager
+        except ImportError:
+            # 如果导入失败，使用简单的代理方式
+            logger.warning("通信管理器导入失败，使用简单代理模式")
+            get_communication_manager = None
+        
         # 代理到主系统API的路由
         @self.app.get("/api/v1/system/status")
         async def proxy_system_status():
             """代理系统状态API"""
-            import httpx
             try:
-                async with httpx.AsyncClient() as client:
-                    # 尝试连接主系统API（通常在8001端口）
-                    for port in [8001, 8002, 8003]:
-                        try:
-                            response = await client.get(f"http://localhost:{port}/api/v1/system/status", timeout=5.0)
-                            if response.status_code == 200:
-                                return response.json()
-                        except:
-                            continue
-
-                    return {"success": False, "message": "主系统API不可用"}
+                if get_communication_manager:
+                    comm_manager = get_communication_manager()
+                    result = await comm_manager.get_system_status()
+                    return result
+                else:
+                    # 回退到原来的方式
+                    import httpx
+                    async with httpx.AsyncClient() as client:
+                        for port in [8001, 8002, 8003]:
+                            try:
+                                response = await client.get(f"http://localhost:{port}/api/v1/system/status", timeout=5.0)
+                                if response.status_code == 200:
+                                    return response.json()
+                            except:
+                                continue
+                        return {"success": False, "message": "主系统API不可用"}
             except Exception as e:
+                logger.error(f"代理系统状态API失败: {e}")
                 return {"success": False, "message": f"连接主系统失败: {str(e)}"}
 
         @self.app.post("/api/v1/data/orders/send")
         async def proxy_send_order(request: dict):
             """代理发送订单API"""
-            import httpx
             try:
-                async with httpx.AsyncClient() as client:
-                    # 尝试连接主系统API
-                    for port in [8001, 8002, 8003]:
-                        try:
-                            response = await client.post(
-                                f"http://localhost:{port}/api/v1/data/orders/send",
-                                json=request,
-                                timeout=10.0
-                            )
-                            if response.status_code == 200:
-                                return response.json()
-                        except:
-                            continue
-
-                    return {"success": False, "message": "主系统API不可用"}
+                comm_manager = get_communication_manager()
+                result = await comm_manager.send_order(request)
+                return result
             except Exception as e:
+                logger.error(f"代理发送订单API失败: {e}")
                 return {"success": False, "message": f"发送订单失败: {str(e)}"}
+
+        # 更多代理API
+        @self.app.get("/api/v1/data/orders")
+        async def proxy_get_orders(active_only: bool = False):
+            """代理获取订单列表API"""
+            try:
+                comm_manager = get_communication_manager()
+                result = await comm_manager.get_orders(active_only)
+                return result
+            except Exception as e:
+                logger.error(f"代理获取订单列表API失败: {e}")
+                return {"success": False, "message": f"获取订单列表失败: {str(e)}", "data": {"orders": []}}
+
+        @self.app.get("/api/v1/data/account/info")
+        async def proxy_get_account_info():
+            """代理获取账户信息API"""
+            try:
+                comm_manager = get_communication_manager()
+                result = await comm_manager.get_account_info()
+                return result
+            except Exception as e:
+                logger.error(f"代理获取账户信息API失败: {e}")
+                return {"success": False, "message": f"获取账户信息失败: {str(e)}", "data": {}}
+
+        @self.app.get("/api/v1/data/account/positions")
+        async def proxy_get_positions():
+            """代理获取持仓信息API"""
+            try:
+                comm_manager = get_communication_manager()
+                result = await comm_manager.get_positions()
+                return result
+            except Exception as e:
+                logger.error(f"代理获取持仓信息API失败: {e}")
+                return {"success": False, "message": f"获取持仓信息失败: {str(e)}", "data": {"positions": []}}
+
+        @self.app.get("/api/v1/data/risk/metrics")
+        async def proxy_get_risk_metrics():
+            """代理获取风险指标API"""
+            try:
+                comm_manager = get_communication_manager()
+                result = await comm_manager.get_risk_metrics()
+                return result
+            except Exception as e:
+                logger.error(f"代理获取风险指标API失败: {e}")
+                return {"success": False, "message": f"获取风险指标失败: {str(e)}", "data": {}}
+
+        @self.app.get("/api/v1/strategies/list")
+        async def proxy_get_strategies():
+            """代理获取策略列表API"""
+            try:
+                comm_manager = get_communication_manager()
+                result = await comm_manager.get_strategies_list()
+                return result
+            except Exception as e:
+                logger.error(f"代理获取策略列表API失败: {e}")
+                return {"success": False, "message": f"获取策略列表失败: {str(e)}", "data": {"strategies": []}}
+
+        @self.app.get("/api/v1/data/market/ticks")
+        async def proxy_get_market_ticks(symbols: str = "au2507"):
+            """代理获取市场行情API"""
+            try:
+                comm_manager = get_communication_manager()
+                result = await comm_manager.get_market_ticks(symbols)
+                return result
+            except Exception as e:
+                logger.error(f"代理获取市场行情API失败: {e}")
+                # 如果主系统不可用，返回模拟数据
+                return await get_market_ticks(symbols)
+
+        @self.app.get("/api/communication/stats")
+        async def get_communication_stats():
+            """获取通信统计信息"""
+            try:
+                if get_communication_manager:
+                    comm_manager = get_communication_manager()
+                    stats = comm_manager.get_connection_stats()
+                    return {"success": True, "data": stats}
+                else:
+                    # 返回默认统计信息
+                    return {
+                        "success": True, 
+                        "data": {
+                            "connection_status": "disconnected",
+                            "total_requests": 0,
+                            "successful_requests": 0,
+                            "failed_requests": 0,
+                            "current_endpoint": None,
+                            "total_endpoints": 0
+                        }
+                    }
+            except Exception as e:
+                logger.error(f"获取通信统计信息失败: {e}")
+                return {"success": False, "message": f"获取通信统计信息失败: {str(e)}"}
 
 
 def run_standalone_web_service(host: str = "0.0.0.0", port: int = 8000):

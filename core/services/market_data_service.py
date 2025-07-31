@@ -8,6 +8,8 @@ from typing import Dict, List, Optional, Set, Callable
 from datetime import datetime
 from collections import defaultdict
 import json
+import threading
+import time
 
 from ..event_engine import EventEngine, Event
 from ..types import (
@@ -51,7 +53,15 @@ class MarketDataServiceBase(ABC):
         self.redis_storage: Optional[RedisStorage] = None
         if redis_config:
             self.redis_storage = RedisStorage(redis_config)
-            self.redis_storage.connect()
+            if not self.redis_storage.connect():
+                logger.error("Redis连接失败")
+            else:
+                logger.info("Redis连接成功")
+
+        # 推送线程
+        self.push_thread = None
+        self.push_running = False
+        self.push_interval = config.get('push_interval', 1.0)  # 推送间隔，默认1秒
 
         logger.info(f"行情服务初始化完成: {self.config.name}")
     
@@ -335,8 +345,74 @@ class MarketDataServiceBase(ABC):
             'total_subscribers': sum(len(subs) for subs in self.subscriptions.values()),
             'cached_ticks': len(self.tick_cache),
             'last_update_time': self.last_update_time.isoformat() if self.last_update_time else None,
-            'symbols': list(self.subscriptions.keys())
+            'symbols': list(self.subscriptions.keys()),
+            'push_thread_alive': self.push_thread.is_alive() if self.push_thread else False
         }
+    
+    def _start_push_thread(self) -> None:
+        """启动推送线程"""
+        if self.push_thread and self.push_thread.is_alive():
+            return
+        
+        self.push_running = True
+        self.push_thread = threading.Thread(target=self._push_loop, daemon=True)
+        self.push_thread.start()
+        logger.info("行情推送线程启动")
+    
+    def _stop_push_thread(self) -> None:
+        """停止推送线程"""
+        self.push_running = False
+        if self.push_thread:
+            self.push_thread.join(timeout=5)
+        logger.info("行情推送线程停止")
+    
+    def _push_loop(self) -> None:
+        """推送循环"""
+        while self.push_running:
+            try:
+                # 推送所有缓存的Tick数据
+                for symbol, tick in self.tick_cache.items():
+                    self._push_to_redis(tick)
+                
+                time.sleep(self.push_interval)
+                
+            except Exception as e:
+                logger.error(f"推送循环异常: {str(e)}")
+                time.sleep(1)
+    
+    def _push_to_redis(self, tick: TickData) -> None:
+        """
+        推送Tick数据到Redis
+        
+        Args:
+            tick: Tick数据
+        """
+        if not self.redis_storage:
+            return
+        
+        try:
+            # 转换为字典格式
+            tick_dict = {
+                'symbol': tick.symbol,
+                'last_price': tick.last_price,
+                'bid_price': tick.bid_price,
+                'ask_price': tick.ask_price,
+                'bid_volume': tick.bid_volume,
+                'ask_volume': tick.ask_volume,
+                'volume': tick.volume,
+                'open_interest': tick.open_interest,
+                'timestamp': tick.datetime.isoformat(),
+                'update_time': datetime.now().isoformat()
+            }
+            
+            # 保存到Redis
+            if self.redis_storage.save_tick(tick.symbol, tick_dict):
+                logger.debug(f"推送Tick数据到Redis成功: {tick.symbol}")
+            else:
+                logger.error(f"推送Tick数据到Redis失败: {tick.symbol}")
+                
+        except Exception as e:
+            logger.error(f"推送Tick数据到Redis异常: {str(e)}")
 
 class MarketDataService(MarketDataServiceBase):
     """行情订阅服务实现"""
@@ -367,6 +443,9 @@ class MarketDataService(MarketDataServiceBase):
             
             self.status = ServiceStatus.STARTING
             
+            # 启动推送线程
+            self._start_push_thread()
+            
             # 检查网关连接
             if not self.gateway:
                 logger.error("CTP网关未设置")
@@ -394,6 +473,9 @@ class MarketDataService(MarketDataServiceBase):
                 return
             
             self.status = ServiceStatus.STOPPING
+            
+            # 停止推送线程
+            self._stop_push_thread()
             
             # 取消所有订阅
             symbols_to_unsubscribe = list(self.subscriptions.keys())
