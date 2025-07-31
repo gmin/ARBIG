@@ -22,11 +22,11 @@ def main():
     print("🚀 启动ARBIG Web管理系统")
     print("=" * 50)
     print("通过Web界面管理ARBIG系统各个服务")
-    print("访问地址: http://localhost:8000")
+    print("访问地址: http://localhost:80")
     print("=" * 50)
     
     try:
-        run_standalone_web_service(host="0.0.0.0", port=8080)
+        run_standalone_web_service(host="0.0.0.0", port=80)
     except KeyboardInterrupt:
         print("\n👋 Web管理系统已关闭")
     except Exception as e:

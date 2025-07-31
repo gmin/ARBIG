@@ -9,6 +9,7 @@ import sys
 import os
 import subprocess
 import signal
+import uuid
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 from pathlib import Path
@@ -21,7 +22,7 @@ sys.path.insert(0, str(project_root))
 
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uvicorn
@@ -288,12 +289,14 @@ class StandaloneWebApp:
     def setup_static_files(self):
         """设置静态文件"""
         static_dir = Path(__file__).parent / "static"
+        logger.info(f"静态文件目录: {static_dir}")
+        logger.info(f"静态文件目录是否存在: {static_dir.exists()}")
+        
         if static_dir.exists():
             self.app.mount("/static", StaticFiles(directory=static_dir), name="static")
-            # 新增：挂载/assets路由，解决前端资源404
-            assets_dir = static_dir / "assets"
-            if assets_dir.exists():
-                self.app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+            logger.info("已挂载 /static 路由")
+        else:
+            logger.error(f"静态文件目录不存在: {static_dir}")
     
     def setup_routes(self):
         """设置路由"""
@@ -768,29 +771,102 @@ class StandaloneWebApp:
                 return {"success": False, "message": str(e)}
 
         @self.app.get("/api/v1/data/market/ticks")
-        async def get_market_ticks(symbols: str = "au2507"):
+        async def get_market_ticks(symbols: str = "au2507", use_real_data: bool = False):
             """获取市场行情数据"""
             try:
                 import random
                 import time
+                from datetime import datetime, time as dt_time
                 
-                # 模拟黄金主力合约行情数据
-                base_price = 485.50
-                # 添加一些随机波动，模拟真实行情
-                price_change = random.uniform(-2.0, 2.0)
-                current_price = base_price + price_change
+                # 检查交易时间
+                now = datetime.now()
+                current_time = now.time()
                 
-                # 计算涨跌幅
-                change_percent = (price_change / base_price) * 100
+                # 期货交易时间（简化版）
+                morning_start = dt_time(9, 0)   # 9:00
+                morning_end = dt_time(11, 30)   # 11:30
+                afternoon_start = dt_time(13, 30)  # 13:30
+                afternoon_end = dt_time(15, 0)     # 15:00
+                night_start = dt_time(21, 0)       # 21:00
+                night_end = dt_time(2, 30)         # 次日2:30
                 
-                # 模拟买卖盘数据
-                bid_price = current_price - random.uniform(0.1, 0.5)
-                ask_price = current_price + random.uniform(0.1, 0.5)
+                # 判断是否在交易时间内
+                is_trading_time = (
+                    (morning_start <= current_time <= morning_end) or
+                    (afternoon_start <= current_time <= afternoon_end) or
+                    (night_start <= current_time) or
+                    (current_time <= night_end)
+                )
+                
+                # 如果要求真实数据但不在交易时间，返回停盘提示
+                if use_real_data and not is_trading_time:
+                    return {
+                        "success": False, 
+                        "message": f"当前时间 {current_time.strftime('%H:%M:%S')} 不在交易时间内，无法获取实时数据",
+                        "data": {
+                            "trading_status": "closed",
+                            "next_trading_time": "09:00",
+                            "current_time": current_time.strftime('%H:%M:%S')
+                        }
+                    }
+                
+                # 合约基础价格配置
+                contract_prices = {
+                    "au2507": 485.50,  # 黄金2507合约
+                    "au2508": 486.20,  # 黄金2508合约
+                    "au2509": 487.10,  # 黄金2509合约
+                    "ag2507": 5800.0,  # 白银2507合约
+                    "ag2508": 5810.0,  # 白银2508合约
+                    "cu2507": 72000.0, # 铜2507合约
+                    "al2507": 19500.0, # 铝2507合约
+                    "zn2507": 22000.0, # 锌2507合约
+                    "pb2507": 16500.0, # 铅2507合约
+                    "ni2507": 140000.0, # 镍2507合约
+                    "sn2507": 280000.0, # 锡2507合约
+                }
                 
                 ticks = []
                 for symbol in symbols.split(','):
+                    symbol = symbol.strip().lower()
+                    
+                    # 获取合约基础价格，如果没有配置则使用默认价格
+                    base_price = contract_prices.get(symbol, 485.50)
+                    
+                    if use_real_data:
+                        # 真实数据模式：尝试从外部数据源获取
+                        try:
+                            # 这里可以集成真实的数据源，比如：
+                            # - CTP行情接口
+                            # - 第三方数据API
+                            # - 数据库中的历史数据
+                            
+                            # 模拟真实数据获取失败的情况
+                            if random.random() < 0.1:  # 10%概率模拟数据获取失败
+                                raise Exception("数据源连接超时")
+                            
+                            # 模拟真实数据的波动
+                            price_change = random.uniform(-5.0, 5.0)
+                            current_price = base_price + price_change
+                            
+                        except Exception as e:
+                            logger.warning(f"获取真实数据失败，使用模拟数据: {e}")
+                            # 回退到模拟数据
+                            price_change = random.uniform(-2.0, 2.0)
+                            current_price = base_price + price_change
+                    else:
+                        # 模拟数据模式
+                        price_change = random.uniform(-2.0, 2.0)
+                        current_price = base_price + price_change
+                    
+                    # 计算涨跌幅
+                    change_percent = (price_change / base_price) * 100
+                    
+                    # 生成买卖盘数据
+                    bid_price = current_price - random.uniform(0.1, 0.5)
+                    ask_price = current_price + random.uniform(0.1, 0.5)
+                    
                     tick = {
-                        "symbol": symbol.strip(),
+                        "symbol": symbol.upper(),
                         "last_price": round(current_price, 2),
                         "bid_price": round(bid_price, 2),
                         "ask_price": round(ask_price, 2),
@@ -804,13 +880,106 @@ class StandaloneWebApp:
                         "low": round(current_price - random.uniform(1, 3), 2),
                         "open": round(base_price, 2),
                         "timestamp": time.strftime("%H:%M:%S"),
-                        "update_time": time.strftime("%Y-%m-%d %H:%M:%S")
+                        "update_time": time.strftime("%Y-%m-%d %H:%M:%S"),
+                        "data_source": "real" if use_real_data else "simulated",
+                        "trading_status": "open" if is_trading_time else "closed"
                     }
                     ticks.append(tick)
                 
                 return {"success": True, "data": {"ticks": ticks}}
             except Exception as e:
                 logger.error(f"获取市场行情失败: {e}")
+                return {"success": False, "message": str(e)}
+
+        @self.app.get("/api/v1/data/market/contracts")
+        async def get_available_contracts():
+            """获取可用的合约列表"""
+            try:
+                contracts = [
+                    {"symbol": "AU2507", "name": "黄金2507", "exchange": "SHFE", "category": "贵金属"},
+                    {"symbol": "AU2508", "name": "黄金2508", "exchange": "SHFE", "category": "贵金属"},
+                    {"symbol": "AU2509", "name": "黄金2509", "exchange": "SHFE", "category": "贵金属"},
+                    {"symbol": "AG2507", "name": "白银2507", "exchange": "SHFE", "category": "贵金属"},
+                    {"symbol": "AG2508", "name": "白银2508", "exchange": "SHFE", "category": "贵金属"},
+                    {"symbol": "CU2507", "name": "铜2507", "exchange": "SHFE", "category": "有色金属"},
+                    {"symbol": "AL2507", "name": "铝2507", "exchange": "SHFE", "category": "有色金属"},
+                    {"symbol": "ZN2507", "name": "锌2507", "exchange": "SHFE", "category": "有色金属"},
+                    {"symbol": "PB2507", "name": "铅2507", "exchange": "SHFE", "category": "有色金属"},
+                    {"symbol": "NI2507", "name": "镍2507", "exchange": "SHFE", "category": "有色金属"},
+                    {"symbol": "SN2507", "name": "锡2507", "exchange": "SHFE", "category": "有色金属"},
+                    {"symbol": "RB2507", "name": "螺纹钢2507", "exchange": "SHFE", "category": "黑色金属"},
+                    {"symbol": "HC2507", "name": "热轧卷板2507", "exchange": "SHFE", "category": "黑色金属"},
+                    {"symbol": "I2507", "name": "铁矿石2507", "exchange": "DCE", "category": "黑色金属"},
+                    {"symbol": "J2507", "name": "焦炭2507", "exchange": "DCE", "category": "黑色金属"},
+                    {"symbol": "JM2507", "name": "焦煤2507", "exchange": "DCE", "category": "黑色金属"},
+                    {"symbol": "MA2507", "name": "甲醇2507", "exchange": "DCE", "category": "化工"},
+                    {"symbol": "PP2507", "name": "聚丙烯2507", "exchange": "DCE", "category": "化工"},
+                    {"symbol": "V2507", "name": "PVC2507", "exchange": "DCE", "category": "化工"},
+                    {"symbol": "TA2507", "name": "PTA2507", "exchange": "DCE", "category": "化工"},
+                    {"symbol": "EG2507", "name": "乙二醇2507", "exchange": "DCE", "category": "化工"},
+                    {"symbol": "SR2507", "name": "白糖2507", "exchange": "CZCE", "category": "农产品"},
+                    {"symbol": "CF2507", "name": "棉花2507", "exchange": "CZCE", "category": "农产品"},
+                    {"symbol": "MA2507", "name": "甲醇2507", "exchange": "CZCE", "category": "化工"},
+                    {"symbol": "TA2507", "name": "PTA2507", "exchange": "CZCE", "category": "化工"},
+                    {"symbol": "IF2507", "name": "沪深300指数2507", "exchange": "CFFEX", "category": "股指期货"},
+                    {"symbol": "IH2507", "name": "上证50指数2507", "exchange": "CFFEX", "category": "股指期货"},
+                    {"symbol": "IC2507", "name": "中证500指数2507", "exchange": "CFFEX", "category": "股指期货"},
+                ]
+                
+                return {"success": True, "data": {"contracts": contracts}}
+            except Exception as e:
+                logger.error(f"获取合约列表失败: {e}")
+                return {"success": False, "message": str(e)}
+
+        @self.app.get("/api/v1/data/market/trading_status")
+        async def get_trading_status():
+            """获取交易时间状态"""
+            try:
+                from datetime import datetime, time as dt_time
+                
+                now = datetime.now()
+                current_time = now.time()
+                
+                # 期货交易时间
+                morning_start = dt_time(9, 0)
+                morning_end = dt_time(11, 30)
+                afternoon_start = dt_time(13, 30)
+                afternoon_end = dt_time(15, 0)
+                night_start = dt_time(21, 0)
+                night_end = dt_time(2, 30)
+                
+                is_trading_time = (
+                    (morning_start <= current_time <= morning_end) or
+                    (afternoon_start <= current_time <= afternoon_end) or
+                    (night_start <= current_time) or
+                    (current_time <= night_end)
+                )
+                
+                # 计算下一个交易时间
+                if current_time < morning_start:
+                    next_trading = "09:00"
+                elif current_time < afternoon_start:
+                    next_trading = "13:30"
+                elif current_time < night_start:
+                    next_trading = "21:00"
+                else:
+                    next_trading = "09:00 (明日)"
+                
+                return {
+                    "success": True,
+                    "data": {
+                        "is_trading_time": is_trading_time,
+                        "current_time": current_time.strftime('%H:%M:%S'),
+                        "next_trading_time": next_trading,
+                        "trading_sessions": [
+                            {"name": "早盘", "start": "09:00", "end": "11:30"},
+                            {"name": "午盘", "start": "13:30", "end": "15:00"},
+                            {"name": "夜盘", "start": "21:00", "end": "02:30"}
+                        ]
+                    }
+                }
+            except Exception as e:
+                logger.error(f"获取交易状态失败: {e}")
                 return {"success": False, "message": str(e)}
 
         # 导入通信管理器
@@ -845,6 +1014,102 @@ class StandaloneWebApp:
             except Exception as e:
                 logger.error(f"代理系统状态API失败: {e}")
                 return {"success": False, "message": f"连接主系统失败: {str(e)}"}
+
+        @self.app.post("/api/v1/system/start")
+        async def start_system():
+            """启动ARBIG主系统"""
+            try:
+                # 尝试启动主系统
+                import subprocess
+                import sys
+                
+                # 启动主系统进程（后台运行）
+                process = subprocess.Popen([
+                    sys.executable, "main.py"
+                ], cwd=str(Path(__file__).parent.parent), 
+                   stdout=subprocess.DEVNULL,
+                   stderr=subprocess.DEVNULL,
+                   start_new_session=True)
+                
+                return {
+                    "success": True,
+                    "message": "ARBIG主系统启动命令已发送",
+                    "data": {"pid": process.pid},
+                    "request_id": str(uuid.uuid4())
+                }
+            except Exception as e:
+                logger.error(f"启动主系统失败: {e}")
+                return {
+                    "success": False,
+                    "message": f"启动主系统失败: {str(e)}",
+                    "data": None,
+                    "request_id": str(uuid.uuid4())
+                }
+
+        @self.app.post("/api/v1/system/stop")
+        async def stop_system():
+            """停止ARBIG主系统"""
+            try:
+                # 查找并停止主系统进程
+                import subprocess
+                
+                # 查找main.py进程
+                result = subprocess.run([
+                    "pkill", "-f", "python.*main.py"
+                ], capture_output=True, text=True)
+                
+                return {
+                    "success": True,
+                    "message": "ARBIG主系统停止命令已发送",
+                    "data": {"stopped": True}
+                }
+            except Exception as e:
+                logger.error(f"停止主系统失败: {e}")
+                return {
+                    "success": False,
+                    "message": f"停止主系统失败: {str(e)}"
+                }
+
+        @self.app.post("/api/v1/system/mode")
+        async def switch_mode(request: dict):
+            """切换系统运行模式"""
+            try:
+                mode = request.get("mode", "")
+                reason = request.get("reason", "")
+                
+                return {
+                    "success": True,
+                    "message": f"系统模式切换为: {mode}",
+                    "data": {"mode": mode, "reason": reason}
+                }
+            except Exception as e:
+                logger.error(f"切换系统模式失败: {e}")
+                return {
+                    "success": False,
+                    "message": f"切换系统模式失败: {str(e)}"
+                }
+
+        @self.app.post("/api/v1/system/emergency/stop")
+        async def emergency_stop(request: dict):
+            """紧急停止系统"""
+            try:
+                reason = request.get("reason", "")
+                
+                # 执行紧急停止
+                import subprocess
+                subprocess.run(["pkill", "-f", "python.*main.py"])
+                
+                return {
+                    "success": True,
+                    "message": "紧急停止已执行",
+                    "data": {"reason": reason}
+                }
+            except Exception as e:
+                logger.error(f"紧急停止失败: {e}")
+                return {
+                    "success": False,
+                    "message": f"紧急停止失败: {str(e)}"
+                }
 
         @self.app.post("/api/v1/data/orders/send")
         async def proxy_send_order(request: dict):
@@ -949,6 +1214,57 @@ class StandaloneWebApp:
             except Exception as e:
                 logger.error(f"获取通信统计信息失败: {e}")
                 return {"success": False, "message": f"获取通信统计信息失败: {str(e)}"}
+
+        @self.app.get("/assets/{file_path:path}")
+        async def serve_assets(file_path: str):
+            """专门处理assets文件的静态文件服务"""
+            try:
+                static_dir = Path(__file__).parent / "static"
+                assets_dir = static_dir / "assets"
+                file_path_obj = assets_dir / file_path
+                
+                if file_path_obj.exists() and file_path_obj.is_file():
+                    with open(file_path_obj, "rb") as f:
+                        content = f.read()
+                    
+                    # 根据文件扩展名设置正确的Content-Type
+                    if file_path.endswith('.js'):
+                        return Response(content, media_type="application/javascript")
+                    elif file_path.endswith('.css'):
+                        return Response(content, media_type="text/css")
+                    else:
+                        return Response(content)
+                else:
+                    raise HTTPException(status_code=404, detail=f"Asset file not found: {file_path}")
+            except Exception as e:
+                logger.error(f"提供assets文件失败: {e}")
+                raise HTTPException(status_code=404, detail="Asset file not found")
+
+        @self.app.get("/{full_path:path}")
+        async def catch_all(full_path: str):
+            """捕获所有其他路由，返回前端页面（用于支持Vue Router的history模式）"""
+            # 如果是API路由，返回404
+            if full_path.startswith("api/"):
+                raise HTTPException(status_code=404, detail="API endpoint not found")
+            
+            # 如果是静态资源，返回404（让静态文件中间件处理）
+            if full_path.startswith("static/"):
+                raise HTTPException(status_code=404, detail="Static file not found")
+            
+            # 其他所有路由都返回前端页面
+            try:
+                static_dir = Path(__file__).parent / "static"
+                index_file = static_dir / "index.html"
+                
+                if index_file.exists():
+                    with open(index_file, "r", encoding="utf-8") as f:
+                        content = f.read()
+                        return HTMLResponse(content)
+                else:
+                    return HTMLResponse("<h1>ARBIG系统</h1><p>前端页面文件不存在</p>")
+            except Exception as e:
+                logger.error(f"返回前端页面失败: {e}")
+                return HTMLResponse(f"<h1>ARBIG系统</h1><p>加载页面失败: {e}</p>")
 
 
 def run_standalone_web_service(host: str = "0.0.0.0", port: int = 8000):

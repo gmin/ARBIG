@@ -15,7 +15,11 @@ export const useSystemStore = defineStore('system', () => {
   const error = ref<string | null>(null)
 
   // 计算属性
-  const isSystemRunning = computed(() => systemStatus.value?.system_status === 'running')
+  const isSystemRunning = computed(() => {
+    // 如果系统状态为null或API失败，认为系统没有运行
+    if (!systemStatus.value) return false
+    return systemStatus.value.system_status === 'running'
+  })
   const currentMode = computed(() => systemStatus.value?.running_mode || 'UNKNOWN')
   const uptime = computed(() => systemStatus.value?.uptime || '0h 0m 0s')
   

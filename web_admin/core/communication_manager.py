@@ -138,6 +138,20 @@ class CommunicationManager:
     def get_stats(self) -> Dict[str, Any]:
         """获取通信统计信息"""
         return self.client.get_stats()
+    
+    def get_connection_stats(self) -> Dict[str, Any]:
+        """获取连接统计信息（兼容性方法）"""
+        stats = self.client.get_stats()
+        return {
+            "connection_status": "connected" if stats["success"] > 0 else "disconnected",
+            "total_requests": stats["requests"],
+            "successful_requests": stats["success"],
+            "failed_requests": stats["errors"],
+            "current_endpoint": self.client.base_urls[0] if self.client.base_urls else None,
+            "total_endpoints": len(self.client.base_urls),
+            "last_success": stats["last_success"],
+            "last_error": stats["last_error"]
+        }
 
 # 全局通信管理器实例
 _communication_manager = None

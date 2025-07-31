@@ -82,7 +82,7 @@
       <a-row :gutter="[16, 16]">
         <!-- 系统控制卡片 -->
         <a-col :xs="24" :lg="8">
-          <a-card title="系统控制" class="control-card">
+          <a-card title="ARBIG主系统控制" class="control-card">
             <template #extra>
               <a-tag :color="systemStore.isSystemRunning ? 'green' : 'red'">
                 {{ systemStore.isSystemRunning ? '运行中' : '已停止' }}
@@ -147,7 +147,28 @@
             </template>
             
           <div class="services-list">
+            <div v-if="systemStore.services.length === 0" class="empty-services">
+              <a-empty 
+                description="暂无服务信息" 
+                :image="Empty.PRESENTED_IMAGE_SIMPLE"
+              >
+                <template #description>
+                  <span>ARBIG主系统未运行</span>
+                  <br>
+                  <span style="font-size: 12px; color: #999;">启动主系统后可管理以下服务：</span>
+                  <br>
+                  <span style="font-size: 11px; color: #666; margin-top: 8px; display: block;">
+                    • CTP网关服务<br>
+                    • 行情数据服务<br>
+                    • 交易执行服务<br>
+                    • 风险控制服务<br>
+                    • 策略管理服务
+                  </span>
+                </template>
+              </a-empty>
+            </div>
             <div 
+              v-else
               v-for="service in systemStore.services" 
               :key="service.name"
               class="service-item"
@@ -352,12 +373,46 @@
     <!-- 实时行情区域 - 可折叠 -->
     <div class="market-section">
       <a-card 
-        title="实时行情 - 黄金主力合约" 
+        title="实时行情" 
         class="market-card"
         :bordered="false"
       >
         <template #extra>
           <a-space>
+            <!-- 合约输入和订阅 -->
+            <a-space>
+              <a-select
+                v-model:value="selectedContract"
+                placeholder="选择合约"
+                style="width: 150px"
+                :loading="contractsLoading"
+                @change="handleContractChange"
+                show-search
+                filter-option
+              >
+                <a-select-option 
+                  v-for="contract in availableContracts" 
+                  :key="contract.symbol" 
+                  :value="contract.symbol"
+                >
+                  {{ contract.symbol }} - {{ contract.name }}
+                </a-select-option>
+              </a-select>
+              <a-input
+                v-model:value="customContract"
+                placeholder="或输入合约代码"
+                style="width: 120px"
+                @pressEnter="handleCustomContract"
+              />
+              <a-button 
+                type="primary" 
+                @click="subscribeContract"
+                :loading="subscribeLoading"
+              >
+                订阅
+              </a-button>
+            </a-space>
+            
             <a-tag :color="marketDataLoading ? 'blue' : 'green'">
               {{ marketDataLoading ? '更新中...' : '实时' }}
             </a-tag>
@@ -535,7 +590,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { message } from 'ant-design-vue'
+import { message, Empty } from 'ant-design-vue'
 import {
   RocketOutlined,
   SettingOutlined,
@@ -568,7 +623,22 @@ const emergencyLoading = ref(false)
 // 行情数据相关
 const marketData = ref([])
 const marketDataLoading = ref(false)
-const marketTimer = ref(null)
+const marketTimer = ref<number | null>(null)
+
+// 合约订阅相关
+interface Contract {
+  symbol: string
+  name: string
+  exchange: string
+  category: string
+}
+
+const availableContracts = ref<Contract[]>([])
+const contractsLoading = ref(false)
+const selectedContract = ref('au2507')
+const customContract = ref('')
+const subscribedContracts = ref(['au2507']) // 当前订阅的合约列表
+const subscribeLoading = ref(false)
 
 // 通信状态相关
 const commStats = ref({
@@ -578,7 +648,7 @@ const commStats = ref({
   failed_requests: 0,
   current_endpoint: null
 })
-const commTimer = ref(null)
+const commTimer = ref<number | null>(null)
 
 // 可折叠区域控制
 const marketSectionCollapsed = ref(false)
@@ -687,13 +757,16 @@ const systemStatusClass = computed(() => {
 const systemStatusText = computed(() => {
   if (systemStore.loading) return '检查中...'
   if (systemStore.isSystemRunning) return '运行中'
-  if (systemStore.error) return '异常'
-  return '已停止'
+  if (systemStore.error) return '主系统未连接'
+  return '主系统已停止'
 })
 
 const uptime = computed(() => systemStore.uptime)
 
 const currentModeText = computed(() => {
+  if (systemStore.error || systemStore.currentMode === 'UNKNOWN') {
+    return 'Web管理模式'
+  }
   const modeMap: Record<string, string> = {
     'FULL_TRADING': '完整交易',
     'MONITOR_ONLY': '仅监控',
@@ -751,9 +824,18 @@ const commSuccessRate = computed(() => {
 
 // 方法
 const handleStartSystem = async () => {
-  const success = await systemStore.startSystem()
-  if (success) {
-    message.success('系统启动成功')
+  console.log('点击启动系统按钮')
+  try {
+    const success = await systemStore.startSystem()
+    console.log('启动系统结果:', success)
+    if (success) {
+      message.success('系统启动成功')
+    } else {
+      message.error('系统启动失败')
+    }
+  } catch (error) {
+    console.error('启动系统错误:', error)
+    message.error('启动系统时发生错误')
   }
 }
 
@@ -812,11 +894,85 @@ const handleEmergencyStop = async () => {
   }
 }
 
+// 合约相关方法
+const fetchAvailableContracts = async () => {
+  try {
+    console.log('开始获取合约列表...')
+    contractsLoading.value = true
+    const response = await fetch('/api/v1/data/market/contracts')
+    const result = await response.json()
+    
+    console.log('合约列表API响应:', result)
+    
+    if (result.success) {
+      availableContracts.value = result.data.contracts || []
+      console.log('成功加载合约列表，数量:', availableContracts.value.length)
+    } else {
+      console.error('获取合约列表失败:', result.message)
+      message.error('获取合约列表失败')
+    }
+  } catch (error) {
+    console.error('获取合约列表错误:', error)
+    message.error('获取合约列表失败')
+  } finally {
+    contractsLoading.value = false
+  }
+}
+
+const handleContractChange = (value: string) => {
+  selectedContract.value = value
+  customContract.value = '' // 清空自定义输入
+}
+
+const handleCustomContract = () => {
+  if (customContract.value.trim()) {
+    selectedContract.value = customContract.value.trim().toUpperCase()
+  }
+}
+
+const subscribeContract = async () => {
+  if (!selectedContract.value) {
+    message.warning('请选择或输入合约代码')
+    return
+  }
+  
+  try {
+    subscribeLoading.value = true
+    
+    // 检查合约是否已经在订阅列表中
+    if (subscribedContracts.value.includes(selectedContract.value)) {
+      message.info('该合约已在订阅列表中')
+      return
+    }
+    
+    // 添加到订阅列表
+    subscribedContracts.value.push(selectedContract.value)
+    
+    // 立即获取该合约的行情数据
+    await fetchMarketData()
+    
+    message.success(`成功订阅合约: ${selectedContract.value}`)
+    
+    // 清空选择
+    selectedContract.value = ''
+    customContract.value = ''
+    
+  } catch (error) {
+    console.error('订阅合约错误:', error)
+    message.error('订阅合约失败')
+  } finally {
+    subscribeLoading.value = false
+  }
+}
+
 // 行情数据相关方法
 const fetchMarketData = async () => {
   try {
     marketDataLoading.value = true
-    const response = await fetch('/api/v1/data/market/ticks?symbols=au2507')
+    
+    // 使用当前订阅的合约列表
+    const symbols = subscribedContracts.value.join(',')
+    const response = await fetch(`/api/v1/data/market/ticks?symbols=${symbols}`)
     const result = await response.json()
     
     if (result.success) {
@@ -981,6 +1137,9 @@ onMounted(() => {
     systemStore.fetchSystemStatus()
     systemStore.fetchServices()
   }, 3000)
+  
+  // 获取可用合约列表
+  fetchAvailableContracts()
   
   // 启动行情定时器
   startMarketTimer()

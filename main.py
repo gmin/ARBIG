@@ -786,7 +786,7 @@ class ARBIGServiceContainer:
                 self.services['TradingService'] = trading_service
                 logger.info("✓ 交易服务启动成功")
                 return True
-        else:
+            else:
                 logger.warning("⚠ 交易服务启动失败")
                 return False
 
@@ -965,7 +965,7 @@ def main():
 
     except KeyboardInterrupt:
         logger.info("收到停止信号")
-        except Exception as e:
+    except Exception as e:
         logger.error(f"服务容器运行异常: {e}")
         sys.exit(1)
     finally:

@@ -46,6 +46,7 @@ class APIClient {
           return Promise.reject(new Error(errorData.error?.message || '请求失败'))
         }
         
+        // 如果成功，返回整个response
         return response
       },
       (error) => {
