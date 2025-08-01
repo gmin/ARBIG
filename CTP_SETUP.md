@@ -4,6 +4,10 @@
 
 本文档说明如何在ARBIG项目中配置和使用CTP环境。
 
+## ⚠️ 重要提醒
+
+**vnpy-ctp安装问题**：由于NumPy版本兼容性问题，预编译的vnpy-ctp包通常无法正常工作。**强烈建议直接跳转到文档末尾的"vnpy-ctp 安装问题解决方案"部分，使用从源码编译的方法安装vnpy-ctp**。
+
 ## 文件结构
 
 ```
@@ -46,8 +50,8 @@ cp thostmduserapi_se.so libs/ctp/
     "用户名": "242407",
     "密码": "1234%^&*QWE",
     "经纪商代码": "9999",
-    "交易服务器": "180.168.146.187:10101",
-    "行情服务器": "180.168.146.187:10102",
+    "交易服务器": "182.254.243.31:30001",
+    "行情服务器": "182.254.243.31:30011",
     "产品名称": "simnow_client_test",
     "授权编码": "0000000000000000",
     "产品信息": "simnow_client_test"
@@ -146,8 +150,10 @@ chmod +x libs/ctp/*.so
 ### 2. 网络连接
 
 确保服务器能够访问CTP服务器：
-- 交易服务器：180.168.146.187:10101
-- 行情服务器：180.168.146.187:10102
+- 交易服务器：182.254.243.31:30001
+- 行情服务器：182.254.243.31:30011
+
+注意：CTP SimNow环境的服务器地址会定期更新，请以最新的官方地址为准。
 
 ### 3. 账户信息
 
@@ -207,80 +213,169 @@ ImportError: /tmp/pip-install-xxxx/vnpy_ctp/api/libthostmduserapi_se.so: cannot 
 
 ### 根本原因
 
-`vnpy-ctp` 的 wheel 包在编译时，将临时目录的路径硬编码到了 Python 扩展模块中，导致运行时找不到依赖的 CTP 动态库文件。
+`vnpy-ctp` 的预编译 wheel 包与当前环境的 NumPy 版本不兼容，导致运行时找不到依赖的 CTP 动态库文件。这是因为：
+
+1. **NumPy版本冲突**：vnpy 4.x 要求 numpy>=2.2.3，但 CTP 库通常需要较老的 NumPy 版本
+2. **预编译包问题**：wheel 包在编译时硬编码了临时目录路径
+3. **环境兼容性**：不同 Python 环境（Anaconda vs 标准虚拟环境）的兼容性问题
 
 ### 解决方案
 
-#### 方法1：软链接法（推荐）
+#### 方法1：从源码重新编译（强烈推荐）⭐
 
-1. **查找依赖路径**：
+这是经过实际验证的最有效解决方案：
+
+1. **卸载现有版本**：
    ```bash
-   ldd /path/to/venv/lib/python3.x/site-packages/vnpy_ctp/api/vnctpmd.cpython-xxx.so
+   pip uninstall vnpy-ctp -y
+   ```
+
+2. **克隆源码**：
+   ```bash
+   cd /root  # 或其他合适的目录
+   git clone https://github.com/vnpy/vnpy_ctp.git
+   cd vnpy_ctp
+   ```
+
+3. **安装构建依赖**：
+   ```bash
+   pip install meson-python ninja pybind11
+   ```
+
+4. **从源码编译安装**：
+   ```bash
+   pip install .
+   ```
+
+5. **验证安装**：
+   ```bash
+   python -c "from vnpy_ctp import CtpGateway; print('vnpy-ctp 安装成功！')"
+   ```
+
+#### 方法2：软链接法（临时解决）
+
+如果方法1不可行，可以尝试软链接：
+
+1. **查找vnpy-ctp安装目录**：
+   ```bash
+   python -c "import vnpy_ctp; print(vnpy_ctp.__file__)"
    ```
 
 2. **创建软链接**：
    ```bash
-   # 创建临时目录
-   mkdir -p /tmp/pip-install-xxxx/vnpy_ctp/api/
-   
-   # 创建软链接
-   ln -sf /path/to/venv/lib/python3.x/site-packages/vnpy_ctp/api/libthostmduserapi_se.so /tmp/pip-install-xxxx/vnpy_ctp/api/libthostmduserapi_se.so
-   ln -sf /path/to/venv/lib/python3.x/site-packages/vnpy_ctp/api/libthosttraderapi_se.so /tmp/pip-install-xxxx/vnpy_ctp/api/libthosttraderapi_se.so
+   # 找到实际的库文件路径，然后创建软链接到错误信息中的路径
+   ln -sf /path/to/actual/libthostmduserapi_se.so /tmp/pip-install-xxxx/vnpy_ctp/api/libthostmduserapi_se.so
+   ln -sf /path/to/actual/libthosttraderapi_se.so /tmp/pip-install-xxxx/vnpy_ctp/api/libthosttraderapi_se.so
    ```
 
-#### 方法2：重新编译安装
-
-1. **清理缓存**：
-   ```bash
-   pip uninstall vnpy-ctp -y
-   pip cache purge
-   ```
-
-2. **重新安装**：
-   ```bash
-   pip install vnpy-ctp --no-cache-dir
-   ```
-
-#### 方法3：设置环境变量
+#### 方法3：环境变量法（不推荐）
 
 ```bash
-export LD_LIBRARY_PATH=/path/to/venv/lib/python3.x/site-packages/vnpy_ctp/api:$LD_LIBRARY_PATH
+export LD_LIBRARY_PATH=/path/to/vnpy_ctp/api:$LD_LIBRARY_PATH
 ```
 
-### 验证安装
+### 完整测试流程
 
-```python
-from vnpy_ctp import CtpGateway
-from vnpy.event import EventEngine
+安装完成后，运行完整的CTP连接测试：
 
-# 创建测试实例
-event_engine = EventEngine()
-gateway = CtpGateway(event_engine, "test")
-print("vnpy-ctp 安装成功！")
+```bash
+# 在ARBIG项目根目录下
+python tests/ctp_connection_test.py
 ```
 
-### 注意事项
+成功的输出应该包括：
+- ✅ 交易服务器连接成功
+- ✅ 交易服务器登录成功
+- ✅ 行情服务器连接成功
+- ✅ 行情服务器登录成功
+- ✅ 成功接收行情数据
 
-1. **路径问题**：每次重新安装时，临时目录路径可能不同，需要重新创建软链接
-2. **权限问题**：确保 CTP 动态库文件有执行权限
-3. **版本兼容**：确保 `vnpy-ctp` 版本与 Python 版本兼容
+### 故障排除指南
+
+#### 1. 编译错误
+
+如果遇到编译错误，检查以下依赖：
+
+```bash
+# 安装系统依赖（Ubuntu/Debian）
+sudo apt-get update
+sudo apt-get install build-essential python3-dev
+
+# 安装系统依赖（CentOS/RHEL）
+sudo yum groupinstall "Development Tools"
+sudo yum install python3-devel
+
+# 确保pip是最新版本
+pip install --upgrade pip setuptools wheel
+```
+
+#### 2. 运行时错误
+
+如果仍然出现库文件加载错误：
+
+```bash
+# 检查库文件是否存在
+find /path/to/python/site-packages -name "*thostmduserapi*"
+
+# 检查库文件依赖
+ldd /path/to/vnpy_ctp/api/vnctpmd*.so
+```
+
+#### 3. 权限问题
+
+确保库文件有正确的权限：
+
+```bash
+chmod +x /path/to/vnpy_ctp/api/*.so
+```
 
 ### 环境要求
 
-- **Python**: 3.8+
-- **操作系统**: Linux (推荐 Ubuntu/CentOS)
-- **依赖包**: vnpy, numpy, pandas
+- **Python**: 3.8+ (推荐 3.11)
+- **操作系统**: Linux (推荐 Ubuntu 20.04+/CentOS 8+)
+- **内存**: 至少 4GB RAM
+- **网络**: 能够访问CTP服务器
 
-### 推荐环境
+### 推荐环境配置
 
-建议使用标准的 Python 虚拟环境，而不是 Anaconda 环境：
+#### Anaconda环境（推荐）
+
 ```bash
-# 创建虚拟环境
-python -m venv venv
-source venv/bin/activate
+# 创建专用环境
+conda create -n vnpy python=3.11 -y
+conda activate vnpy
 
-# 安装依赖
-pip install vnpy vnpy-ctp ta-lib
+# 安装基础依赖
+pip install vnpy
+
+# 从源码安装vnpy-ctp（按照方法1）
 ```
 
-这样可以避免 Anaconda 环境的复杂性，提高系统的稳定性和性能。 
+#### 标准虚拟环境
+
+```bash
+# 创建虚拟环境
+python3 -m venv venv
+source venv/bin/activate
+
+# 升级pip
+pip install --upgrade pip
+
+# 安装依赖
+pip install vnpy
+
+# 从源码安装vnpy-ctp（按照方法1）
+```
+
+### 重要提醒
+
+1. **必须从源码编译**：预编译的wheel包在大多数环境下都会有兼容性问题
+2. **NumPy版本**：让pip自动处理NumPy版本依赖，不要手动指定版本
+3. **测试先行**：安装完成后务必运行完整的连接测试
+4. **环境隔离**：使用独立的Python环境避免依赖冲突
+
+### 参考链接
+
+- [vnpy官方论坛解决方案](https://www.vnpy.com/forum/topic/33714-qiu-zhu-ubuntuyun-xing-shi-diao-yong-ctp-apibao-cuo-wu-fa-zhao-dao-dong-tai-ku-libthostmduserapi-se-sowen-jian)
+- [vnpy-ctp GitHub仓库](https://github.com/vnpy/vnpy_ctp)
+- [CTP API官方文档](http://www.sfit.com.cn/)
