@@ -61,7 +61,7 @@ class MarketDataServiceBase(ABC):
         # 推送线程
         self.push_thread = None
         self.push_running = False
-        self.push_interval = config.get('push_interval', 1.0)  # 推送间隔，默认1秒
+        self.push_interval = config.config.get('push_interval', 1.0)  # 推送间隔，默认1秒
 
         logger.info(f"行情服务初始化完成: {self.config.name}")
     

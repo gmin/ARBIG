@@ -127,16 +127,21 @@ class ARBIGServiceContainer:
                 if not self._init_config_manager():
                     return ServiceResult(False, "配置管理器初始化失败")
 
-                # 2. 连接CTP网关
+                # 2. 检查主力合约有效性
+                if not self._check_main_contract():
+                    logger.warning("⚠ 主力合约无效或已过期，请通过Web界面设置有效的主力合约")
+                    logger.warning("⚠ 访问 http://localhost:80 -> 行情数据页面设置主力合约")
+
+                # 3. 连接CTP网关
                 ctp_result = self._connect_ctp_with_retry()
                 if ctp_result == "FAILED":
                     return ServiceResult(False, "CTP连接失败")
 
-                # 3. 启动事件引擎
+                # 4. 启动事件引擎
                 if not self._start_event_engine():
                     return ServiceResult(False, "事件引擎启动失败")
 
-                # 4. 启动核心服务
+                # 5. 启动核心服务
                 logger.info(f"准备启动核心服务，CTP状态: {ctp_result}")
                 if not self._start_core_services(ctp_result):
                     return ServiceResult(False, "核心服务启动失败")
@@ -491,6 +496,49 @@ class ARBIGServiceContainer:
             logger.error(f"✗ 配置管理器初始化失败: {e}")
             return False
 
+    def _check_main_contract(self) -> bool:
+        """检查主力合约有效性"""
+        try:
+            if not self.config_manager:
+                return False
+
+            # 获取配置的主力合约
+            market_data_config = self.config_manager.config.get('market_data', {})
+            main_contract = market_data_config.get('main_contract', '')
+
+            if not main_contract:
+                logger.warning("未配置主力合约")
+                return False
+
+            # 检查合约是否过期
+            import re
+            from datetime import datetime
+
+            # 提取合约年月，如 au2509 -> 2025年09月
+            match = re.match(r'(\w+)(\d{4})', main_contract.lower())
+            if not match:
+                logger.warning(f"主力合约格式无效: {main_contract}")
+                return False
+
+            symbol, year_month = match.groups()
+            year = int('20' + year_month[:2])
+            month = int(year_month[2:4])
+
+            # 检查是否过期（合约月份小于当前月份）
+            now = datetime.now()
+            contract_date = datetime(year, month, 1)
+
+            if contract_date < datetime(now.year, now.month, 1):
+                logger.warning(f"主力合约已过期: {main_contract} (到期: {year}年{month:02d}月)")
+                return False
+
+            logger.info(f"✓ 主力合约有效: {main_contract} (到期: {year}年{month:02d}月)")
+            return True
+
+        except Exception as e:
+            logger.error(f"检查主力合约失败: {e}")
+            return False
+
     def _check_service_dependencies(self, service_name: str) -> bool:
         """检查服务依赖关系"""
         try:
@@ -648,12 +696,20 @@ class ARBIGServiceContainer:
     def _start_market_data_service(self, config: Dict[str, Any] = None) -> bool:
         """启动行情服务"""
         try:
+            # 从配置文件读取行情订阅配置
+            market_data_config = self.config_manager.config.get('market_data', {})
+            main_contract = market_data_config.get('main_contract', 'au2509')
+            # 将单个主力合约转换为列表格式，以兼容现有的MarketDataService
+            main_contracts = [main_contract] if main_contract else ['au2509']
+            cache_size = market_data_config.get('cache_size', 1000)
+
             service_config = ServiceConfig(
                 name="market_data",
                 enabled=True,
                 config=config or {
-                    'symbols': ['au2509', 'au2512', 'au2601'],
-                    'cache_size': 1000
+                    'symbols': main_contracts,
+                    'cache_size': cache_size,
+                    'auto_subscribe': market_data_config.get('auto_subscribe', True)
                 }
             )
 
@@ -679,9 +735,11 @@ class ARBIGServiceContainer:
 
             if market_data_service.start():
                 self.services['MarketDataService'] = market_data_service
+                self.services_status['MarketDataService'] = ServiceStatus.RUNNING
                 logger.info("✓ 行情服务启动成功（已连接Redis）")
                 return True
             else:
+                self.services_status['MarketDataService'] = ServiceStatus.ERROR
                 logger.error("✗ 行情服务启动失败")
                 return False
 
@@ -708,9 +766,11 @@ class ARBIGServiceContainer:
 
             if account_service.start():
                 self.services['AccountService'] = account_service
+                self.services_status['AccountService'] = ServiceStatus.RUNNING
                 logger.info("✓ 账户服务启动成功")
                 return True
             else:
+                self.services_status['AccountService'] = ServiceStatus.ERROR
                 logger.warning("⚠ 账户服务启动失败")
                 return False
                 
@@ -743,9 +803,11 @@ class ARBIGServiceContainer:
 
             if risk_service.start():
                 self.services['RiskService'] = risk_service
+                self.services_status['RiskService'] = ServiceStatus.RUNNING
                 logger.info("✓ 风控服务启动成功")
                 return True
             else:
+                self.services_status['RiskService'] = ServiceStatus.ERROR
                 logger.warning("⚠ 风控服务启动失败")
                 return False
 
@@ -784,9 +846,11 @@ class ARBIGServiceContainer:
 
             if trading_service.start():
                 self.services['TradingService'] = trading_service
+                self.services_status['TradingService'] = ServiceStatus.RUNNING
                 logger.info("✓ 交易服务启动成功")
                 return True
             else:
+                self.services_status['TradingService'] = ServiceStatus.ERROR
                 logger.warning("⚠ 交易服务启动失败")
                 return False
 
@@ -859,11 +923,11 @@ class ARBIGServiceContainer:
         try:
             logger.info("ARBIG服务容器运行中...")
             logger.info("系统现在通过Web API进行控制")
-            logger.info("访问 http://localhost:8000/api/docs 查看API文档")
+            logger.info("访问 http://localhost:80/api/docs 查看API文档")
 
-            while self.running:
-                    time.sleep(1)
-
+            # 服务容器保持运行，等待Web API控制
+            while True:
+                time.sleep(1)
                 # 可以在这里添加定期检查逻辑
                 # 比如检查服务状态、内存使用等
 
@@ -878,6 +942,7 @@ class ARBIGServiceContainer:
 
 # 全局服务容器实例
 _service_container = None
+app_instance = None  # 为Web API提供的全局实例
 
 def get_service_container() -> ARBIGServiceContainer:
     """获取全局服务容器实例"""
@@ -888,8 +953,9 @@ def get_service_container() -> ARBIGServiceContainer:
 
 def init_service_container():
     """初始化服务容器"""
-    global _service_container
+    global _service_container, app_instance
     _service_container = ARBIGServiceContainer()
+    app_instance = _service_container  # 设置全局实例
     return _service_container
 
 
@@ -908,8 +974,8 @@ def main():
     print("🚀 ARBIG服务容器")
     print("=" * 50)
     print("系统现在通过Web API进行控制")
-    print("API文档: http://localhost:8000/api/docs")
-    print("系统状态: http://localhost:8000/api/v1/system/status")
+    print("API文档: http://localhost:80/api/docs")
+    print("系统状态: http://localhost:80/api/v1/system/status")
     print("=" * 50)
 
     # 创建服务容器
@@ -933,27 +999,31 @@ def main():
         # 连接服务容器到Web API
         try:
             from web_admin.api.dependencies import set_service_container
+            from web_admin.core.communication_manager import set_service_container_for_communication
+
             set_service_container(service_container)
-            logger.info("✓ 服务容器已连接到Web API")
+            set_service_container_for_communication(service_container)
+            logger.info("✓ 服务容器已连接到Web API和通信管理器")
         except ImportError:
             logger.warning("⚠ 无法导入Web API模块，API功能将不可用")
 
-        # 启动Web API服务
+        # 启动内部API服务（用于与web_admin通信）
         if not args.api_only:
-            logger.info("启动Web API服务...")
+            logger.info("启动内部API服务...")
 
-            # 在单独线程中启动API服务
+            # 在单独线程中启动API服务（使用8000端口，避免与web_admin冲突）
             import threading
             from web_admin.api.main import start_api_server
 
             api_thread = threading.Thread(
                 target=start_api_server,
-                kwargs={"host": "0.0.0.0", "port": 8000, "reload": False},
+                kwargs={"host": "127.0.0.1", "port": 8000, "reload": False},
                 daemon=True
             )
             api_thread.start()
 
-            logger.info("✓ Web API服务已启动")
+            logger.info("✓ 内部API服务已启动（端口8000）")
+            logger.info("Web管理界面由独立的web_admin模块提供（端口80）")
 
         # 运行主循环
         if args.daemon:

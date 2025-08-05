@@ -99,12 +99,34 @@ class MainSystemClient:
 
 class CommunicationManager:
     """通信管理器"""
-    
+
     def __init__(self):
         self.client = MainSystemClient()
-    
+        self._service_container = None
+
+    def set_service_container(self, container):
+        """设置服务容器引用"""
+        self._service_container = container
+
     async def get_system_status(self) -> Dict[str, Any]:
         """获取系统状态"""
+        # 优先使用直接的服务容器连接
+        if self._service_container:
+            try:
+                logger.info("使用直接服务容器连接获取系统状态")
+                status = self._service_container.get_system_status()
+                return {
+                    "success": True,
+                    "message": "系统状态获取成功（直接连接）",
+                    "data": status,
+                    "timestamp": datetime.now().isoformat()
+                }
+            except Exception as e:
+                logger.error(f"从服务容器获取状态失败: {e}")
+        else:
+            logger.warning("服务容器未设置，回退到HTTP请求")
+
+        # 回退到HTTP请求
         return await self.client.get_system_status()
     
     async def send_order(self, order_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -161,4 +183,9 @@ def get_communication_manager() -> CommunicationManager:
     global _communication_manager
     if _communication_manager is None:
         _communication_manager = CommunicationManager()
-    return _communication_manager 
+    return _communication_manager
+
+def set_service_container_for_communication(container):
+    """为通信管理器设置服务容器"""
+    comm_manager = get_communication_manager()
+    comm_manager.set_service_container(container)

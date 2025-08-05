@@ -16,41 +16,68 @@
           
           <template v-if="column.key === 'actions'">
             <a-space>
-              <a-button 
+              <a-button
                 v-if="record.status === 'stopped'"
-                type="primary" 
+                type="primary"
                 size="small"
                 @click="handleStartService(record.name)"
               >
                 启动
               </a-button>
-              <a-button 
+              <a-button
                 v-else-if="record.status === 'running'"
                 size="small"
                 @click="handleStopService(record.name)"
               >
                 停止
               </a-button>
-              <a-button 
+              <a-button
                 size="small"
                 @click="handleRestartService(record.name)"
                 :disabled="record.status !== 'running'"
               >
                 重启
               </a-button>
+              <a-button
+                size="small"
+                @click="handleViewLogs(record.name)"
+              >
+                <FileTextOutlined />
+                日志
+              </a-button>
             </a-space>
           </template>
         </template>
       </a-table>
     </a-card>
+
+    <!-- 日志查看模态框 -->
+    <a-modal
+      v-model:open="logModalVisible"
+      :title="`${currentServiceName} - 日志查看`"
+      width="90%"
+      :footer="null"
+      :destroy-on-close="true"
+    >
+      <div style="height: 600px;">
+        <LogViewer v-if="logModalVisible" :default-service="getServiceType(currentServiceName)" />
+      </div>
+    </a-modal>
   </div>
 </template>
 
 <script setup lang="ts">
+import { ref } from 'vue'
 import { message } from 'ant-design-vue'
+import { FileTextOutlined } from '@ant-design/icons-vue'
 import { useSystemStore } from '@/stores/system'
+import LogViewer from '@/components/LogViewer.vue'
 
 const systemStore = useSystemStore()
+
+// 日志查看相关
+const logModalVisible = ref(false)
+const currentServiceName = ref('')
 
 const columns = [
   {
@@ -121,6 +148,25 @@ const handleRestartService = async (serviceName: string) => {
   if (success) {
     message.success(`${serviceName}重启成功`)
   }
+}
+
+const handleViewLogs = (serviceName: string) => {
+  currentServiceName.value = serviceName
+  logModalVisible.value = true
+}
+
+// 根据服务名称获取服务类型（用于日志API）
+const getServiceType = (serviceName: string): string => {
+  // 将服务名称映射到日志服务类型
+  const serviceMap: Record<string, string> = {
+    'main_system': 'main',
+    'ctp_gateway': 'main',
+    'market_data': 'main',
+    'trading': 'main',
+    'risk': 'main',
+    'web_admin': 'web_admin'
+  }
+  return serviceMap[serviceName] || 'main'
 }
 </script>
 

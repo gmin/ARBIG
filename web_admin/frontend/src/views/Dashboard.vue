@@ -379,54 +379,27 @@
       >
         <template #extra>
           <a-space>
-            <!-- 合约输入和订阅 -->
+            <!-- 显示当前主力合约 -->
             <a-space>
-              <a-select
-                v-model:value="selectedContract"
-                placeholder="选择合约"
-                style="width: 150px"
-                :loading="contractsLoading"
-                @change="handleContractChange"
-                show-search
-                filter-option
-              >
-                <a-select-option 
-                  v-for="contract in availableContracts" 
-                  :key="contract.symbol" 
-                  :value="contract.symbol"
-                >
-                  {{ contract.symbol }} - {{ contract.name }}
-                </a-select-option>
-              </a-select>
-              <a-input
-                v-model:value="customContract"
-                placeholder="或输入合约代码"
-                style="width: 120px"
-                @pressEnter="handleCustomContract"
-              />
-              <a-button 
-                type="primary" 
-                @click="subscribeContract"
-                :loading="subscribeLoading"
-              >
-                订阅
-              </a-button>
+              <span>主力合约:</span>
+              <a-tag color="gold" v-if="mainContract">{{ mainContract }}</a-tag>
+              <a-tag color="red" v-else>未设置</a-tag>
             </a-space>
-            
+
             <a-tag :color="marketDataLoading ? 'blue' : 'green'">
               {{ marketDataLoading ? '更新中...' : '实时' }}
             </a-tag>
-            <a-button 
-              type="link" 
-              size="small" 
+            <a-button
+              type="link"
+              size="small"
               @click="fetchMarketData"
               :loading="marketDataLoading"
             >
               刷新
             </a-button>
-            <a-button 
-              type="link" 
-              size="small" 
+            <a-button
+              type="link"
+              size="small"
               @click="toggleMarketSection"
             >
               {{ marketSectionCollapsed ? '展开' : '收起' }}
@@ -633,12 +606,15 @@ interface Contract {
   category: string
 }
 
-const availableContracts = ref<Contract[]>([])
-const contractsLoading = ref(false)
-const selectedContract = ref('au2507')
-const customContract = ref('')
-const subscribedContracts = ref(['au2507']) // 当前订阅的合约列表
-const subscribeLoading = ref(false)
+// 以下变量已废弃，现在使用配置文件中的主力合约
+// const availableContracts = ref<Contract[]>([])
+// const contractsLoading = ref(false)
+// const selectedContract = ref('')
+// const customContract = ref('')
+// const subscribedContracts = ref([]) // 当前订阅的合约列表
+// const subscribeLoading = ref(false)
+const mainContract = ref('') // 主力合约
+const configLoaded = ref(false) // 配置是否已加载
 
 // 通信状态相关
 const commStats = ref({
@@ -894,87 +870,116 @@ const handleEmergencyStop = async () => {
   }
 }
 
-// 合约相关方法
-const fetchAvailableContracts = async () => {
+// 合约相关方法 - 已废弃，现在使用配置文件中的主力合约
+// const fetchAvailableContracts = async () => {
+//   try {
+//     console.log('开始获取合约列表...')
+//     contractsLoading.value = true
+//     const response = await fetch('/api/v1/data/market/contracts')
+//     const result = await response.json()
+//
+//     console.log('合约列表API响应:', result)
+//
+//     if (result.success) {
+//       availableContracts.value = result.data.contracts || []
+//       console.log('成功加载合约列表，数量:', availableContracts.value.length)
+//     } else {
+//       console.error('获取合约列表失败:', result.message)
+//       message.error('获取合约列表失败')
+//     }
+//   } catch (error) {
+//     console.error('获取合约列表错误:', error)
+//     message.error('获取合约列表失败')
+//   } finally {
+//     contractsLoading.value = false
+//   }
+// }
+
+// 以下函数已废弃，现在使用配置文件中的主力合约
+// const handleContractChange = (value: string) => {
+//   selectedContract.value = value
+//   customContract.value = '' // 清空自定义输入
+// }
+
+// const handleCustomContract = () => {
+//   if (customContract.value.trim()) {
+//     selectedContract.value = customContract.value.trim().toUpperCase()
+//   }
+// }
+
+// 以下函数已废弃，现在使用配置文件中的主力合约
+// const subscribeContract = async () => {
+//   if (!selectedContract.value) {
+//     message.warning('请选择或输入合约代码')
+//     return
+//   }
+//
+//   try {
+//     subscribeLoading.value = true
+//
+//     // 检查合约是否已经在订阅列表中
+//     if (subscribedContracts.value.includes(selectedContract.value)) {
+//       message.info('该合约已在订阅列表中')
+//       return
+//     }
+//
+//     // 添加到订阅列表
+//     subscribedContracts.value.push(selectedContract.value)
+//
+//     // 立即获取该合约的行情数据
+//     await fetchMarketData()
+//
+//     message.success(`成功订阅合约: ${selectedContract.value}`)
+//
+//     // 清空选择
+//     selectedContract.value = ''
+//     customContract.value = ''
+//
+//   } catch (error) {
+//     console.error('订阅合约错误:', error)
+//     message.error('订阅合约失败')
+//   } finally {
+//     subscribeLoading.value = false
+//   }
+// }
+
+// 获取系统配置
+const fetchSystemConfig = async () => {
   try {
-    console.log('开始获取合约列表...')
-    contractsLoading.value = true
-    const response = await fetch('/api/v1/data/market/contracts')
+    const response = await fetch('/api/v1/system/config')
     const result = await response.json()
-    
-    console.log('合约列表API响应:', result)
-    
-    if (result.success) {
-      availableContracts.value = result.data.contracts || []
-      console.log('成功加载合约列表，数量:', availableContracts.value.length)
+
+    if (result.success && result.data.main_contract) {
+      mainContract.value = result.data.main_contract
+      selectedContract.value = result.data.main_contract
+      subscribedContracts.value = [result.data.main_contract]
+      console.log('获取到主力合约:', result.data.main_contract)
     } else {
-      console.error('获取合约列表失败:', result.message)
-      message.error('获取合约列表失败')
+      console.log('未设置主力合约或获取失败')
+      // 不设置任何默认合约
     }
+    configLoaded.value = true
   } catch (error) {
-    console.error('获取合约列表错误:', error)
-    message.error('获取合约列表失败')
-  } finally {
-    contractsLoading.value = false
-  }
-}
-
-const handleContractChange = (value: string) => {
-  selectedContract.value = value
-  customContract.value = '' // 清空自定义输入
-}
-
-const handleCustomContract = () => {
-  if (customContract.value.trim()) {
-    selectedContract.value = customContract.value.trim().toUpperCase()
-  }
-}
-
-const subscribeContract = async () => {
-  if (!selectedContract.value) {
-    message.warning('请选择或输入合约代码')
-    return
-  }
-  
-  try {
-    subscribeLoading.value = true
-    
-    // 检查合约是否已经在订阅列表中
-    if (subscribedContracts.value.includes(selectedContract.value)) {
-      message.info('该合约已在订阅列表中')
-      return
-    }
-    
-    // 添加到订阅列表
-    subscribedContracts.value.push(selectedContract.value)
-    
-    // 立即获取该合约的行情数据
-    await fetchMarketData()
-    
-    message.success(`成功订阅合约: ${selectedContract.value}`)
-    
-    // 清空选择
-    selectedContract.value = ''
-    customContract.value = ''
-    
-  } catch (error) {
-    console.error('订阅合约错误:', error)
-    message.error('订阅合约失败')
-  } finally {
-    subscribeLoading.value = false
+    console.error('获取系统配置失败:', error)
+    configLoaded.value = true
   }
 }
 
 // 行情数据相关方法
 const fetchMarketData = async () => {
   try {
+    // 如果没有主力合约，不请求行情数据
+    if (!mainContract.value) {
+      console.log('没有设置主力合约，跳过行情数据请求')
+      return
+    }
+
     marketDataLoading.value = true
-    
-    // 使用当前订阅的合约列表
-    const symbols = subscribedContracts.value.join(',')
-    const response = await fetch(`/api/v1/data/market/ticks?symbols=${symbols}`)
+
+    // 使用主力合约
+    const response = await fetch(`/api/v1/data/market/ticks?symbols=${mainContract.value}`)
     const result = await response.json()
-    
+
     if (result.success) {
       marketData.value = result.data.ticks || []
     } else {
@@ -995,9 +1000,15 @@ const getPriceClass = (change: number) => {
 }
 
 const startMarketTimer = () => {
+  // 只有在有主力合约时才启动定时器
+  if (!mainContract.value) {
+    console.log('没有设置主力合约，不启动行情定时器')
+    return
+  }
+
   // 立即获取一次数据
   fetchMarketData()
-  
+
   // 每2秒更新一次行情
   marketTimer.value = setInterval(() => {
     fetchMarketData()
@@ -1128,25 +1139,33 @@ const refreshServices = () => {
 // 定时刷新
 let refreshTimer: number | null = null
 
-onMounted(() => {
+onMounted(async () => {
   // 初始化当前模式
   selectedMode.value = systemStore.currentMode
-  
+
+  // 首先获取系统配置
+  await fetchSystemConfig()
+
   // 启动定时刷新
   refreshTimer = window.setInterval(() => {
     systemStore.fetchSystemStatus()
     systemStore.fetchServices()
   }, 3000)
-  
-  // 获取可用合约列表
-  fetchAvailableContracts()
-  
-  // 启动行情定时器
-  startMarketTimer()
-  
+
+  // 不再需要获取合约列表，现在使用配置文件中的主力合约
+  // fetchAvailableContracts()
+
+  // 只有在有主力合约时才启动行情定时器
+  if (mainContract.value) {
+    console.log('检测到主力合约，启动行情定时器:', mainContract.value)
+    startMarketTimer()
+  } else {
+    console.log('未设置主力合约，不启动行情定时器')
+  }
+
   // 启动通信状态定时器
   startCommTimer()
-  
+
   // 获取初始数据
   fetchAccountInfo()
   fetchRiskMetrics()

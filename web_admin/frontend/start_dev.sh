@@ -33,7 +33,7 @@ npm install
 # 启动开发服务器
 echo "🚀 启动开发服务器..."
 echo "前端地址: http://localhost:3000"
-echo "API代理: http://localhost:8000"
+echo "API代理: http://localhost:80"
 echo "按 Ctrl+C 停止服务器"
 echo "================================"
 

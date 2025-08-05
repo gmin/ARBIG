@@ -1,75 +1,56 @@
-# 交易系统配置文件
-
-# 事件引擎配置
-event_persist_path: "events.jsonl"
-
-# 数据源配置
 data:
-  # 上期所配置
   shfe:
-    gateway: "CTP"
-    host: "180.168.146.187"
+    broker_id: '9999'
+    gateway: CTP
+    host: 180.168.146.187
+    password: your_password
     port: 10101
-    user: "your_username"
-    password: "your_password"
-    broker_id: "9999"
-    
-
-
-# 策略配置
-strategies:
-  # 基差套利策略
-  spread_arbitrage:
-    enabled: false               # 暂时禁用
-    type: "spread_arbitrage"
-    config:
-      spread_threshold: 0.5      # 基差阈值
-      max_position: 1000         # 最大持仓
-      shfe_symbol: "AU9999"      # 上期所合约
-      mt5_symbol: "XAUUSD"       # MT5合约
-
-  # 上海市场量化策略
-  shfe_quant:
-    enabled: true                # 启用此策略
-    type: "shfe_quant"
-    config:
-      strategy_type: "trend"     # 策略类型: trend, mean_reversion, breakout
-      symbol: "au2507"           # 交易合约 (使用实际的期货合约)
-      max_position: 5            # 最大持仓手数
-
-      # 技术指标参数
-      ma_short: 5                # 短期均线
-      ma_long: 20                # 长期均线
-      rsi_period: 14             # RSI周期
-      rsi_overbought: 70         # RSI超买阈值
-      rsi_oversold: 30           # RSI超卖阈值
-
-      # 风险控制参数
-      stop_loss: 0.05            # 止损比例
-      take_profit: 0.08          # 止盈比例
-
-      # 开仓参数
-      position_size: 1           # 基础开仓手数
-      risk_factor: 0.02          # 风险系数
-      add_interval: 50           # 加仓间隔(点)
-      position_mode: "fixed"     # 开仓模式: fixed, risk_based, kelly, martingale
-      position_multiplier: 1.0   # 仓位倍数
-
-      # 凯利公式参数
-      win_rate: 0.6              # 胜率
-      avg_win: 1.5               # 平均盈利比例
-      avg_loss: 1.0              # 平均亏损比例
-
-      # 马丁格尔参数
-      martingale_multiplier: 2.0 # 马丁格尔倍数
-
-# 风控配置
-risk:
-  max_daily_loss: 10000          # 最大日亏损
-  max_position_risk: 0.1         # 最大仓位风险
-  stop_loss_pct: 0.02            # 止损百分比
-
-# 日志配置
+    user: your_username
+event_persist_path: events.jsonl
 logging:
-  level: "INFO"
-  file: "trading.log" 
+  file: trading.log
+  level: INFO
+market_data:
+  auto_subscribe: true
+  cache_size: 1000
+  main_contract: au2512
+  redis:
+    db: 0
+    host: localhost
+    port: 6379
+risk:
+  max_daily_loss: 10000
+  max_position_risk: 0.1
+  stop_loss_pct: 0.02
+strategies:
+  shfe_quant:
+    config:
+      add_interval: 50
+      avg_loss: 1.0
+      avg_win: 1.5
+      ma_long: 20
+      ma_short: 5
+      martingale_multiplier: 2.0
+      max_position: 5
+      position_mode: fixed
+      position_multiplier: 1.0
+      position_size: 1
+      risk_factor: 0.02
+      rsi_overbought: 70
+      rsi_oversold: 30
+      rsi_period: 14
+      stop_loss: 0.05
+      strategy_type: trend
+      symbol: au2507
+      take_profit: 0.08
+      win_rate: 0.6
+    enabled: true
+    type: shfe_quant
+  spread_arbitrage:
+    config:
+      max_position: 1000
+      mt5_symbol: XAUUSD
+      shfe_symbol: AU9999
+      spread_threshold: 0.5
+    enabled: false
+    type: spread_arbitrage

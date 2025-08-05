@@ -723,7 +723,7 @@ class ARBIGWebApp:
 web_app = ARBIGWebApp()
 app = web_app.app
 
-def run_web_service(host: str = "0.0.0.0", port: int = 8000, **kwargs):
+def run_web_service(host: str = "0.0.0.0", port: int = 80, **kwargs):
     """运行Web监控服务"""
     logger.info(f"启动ARBIG Web监控服务: http://{host}:{port}")
     uvicorn.run(app, host=host, port=port, **kwargs)

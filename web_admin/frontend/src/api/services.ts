@@ -44,8 +44,13 @@ export const systemAPI = {
 
 // 服务管理API
 export const servicesAPI = {
-  // 获取服务列表
-  getList: () => get<{ services: ServiceInfo[] }>('/services/list'),
+  // 获取服务列表 - 临时使用test路径避免v1路径的信号错误
+  getList: () => {
+    // 直接使用fetch调用工作正常的API
+    return fetch('/api/test/services')
+      .then(response => response.json())
+      .then(data => ({ data }))
+  },
   
   // 获取服务状态
   getStatus: (serviceName: string) => get<ServiceInfo>(`/services/status?service_name=${serviceName}`),

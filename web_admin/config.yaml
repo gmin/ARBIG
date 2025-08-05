@@ -31,9 +31,7 @@ services:
   market_data:
     cache_size: 1000
     enabled: true
-    symbols:
-    - AU2509
-    - AU2512
+    main_contract: AU2509
   risk:
     enabled: true
     max_daily_loss: 50000

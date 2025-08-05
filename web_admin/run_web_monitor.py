@@ -217,12 +217,12 @@ def run_integrated_service():
         # 在单独线程中运行Web服务
         web_thread = threading.Thread(
             target=run_web_service,
-            kwargs={"host": "0.0.0.0", "port": 8000},
+            kwargs={"host": "0.0.0.0", "port": 80},
             daemon=True
         )
         web_thread.start()
-        
-        logger.info("🌐 Web监控服务已启动: http://localhost:8000")
+
+        logger.info("🌐 Web监控服务已启动: http://localhost:80")
         logger.info("按 Ctrl+C 退出")
         
         # 主线程保持运行
@@ -258,7 +258,7 @@ def main():
     parser.add_argument(
         "--port",
         type=int,
-        default=8000,
+        default=80,
         help="Web服务监听端口"
     )
     

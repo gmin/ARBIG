@@ -305,3 +305,126 @@ async def health_check():
         },
         request_id=str(uuid.uuid4())
     )
+
+
+# ==================== 配置管理API ====================
+
+import yaml
+import os
+from pydantic import BaseModel
+
+class RemoveMainContractRequest(BaseModel):
+    symbol: str
+
+class SaveMainContractRequest(BaseModel):
+    main_contract: str
+
+@router.get("/config/market_data", summary="获取行情配置")
+async def get_market_data_config():
+    """获取行情订阅配置"""
+    try:
+        config_path = "config.yaml"
+        if not os.path.exists(config_path):
+            return APIResponse(
+                success=False,
+                message="配置文件不存在",
+                data=None
+            )
+
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config = yaml.safe_load(f)
+
+        market_data_config = config.get('market_data', {})
+
+        return APIResponse(
+            success=True,
+            message="获取行情配置成功",
+            data=market_data_config
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"获取行情配置失败: {str(e)}"
+        )
+
+@router.post("/config/market_data/remove_main_contract", summary="从主力合约配置中移除")
+async def remove_main_contract(request: RemoveMainContractRequest):
+    """从主力合约配置中移除指定合约"""
+    try:
+        config_path = "config.yaml"
+        if not os.path.exists(config_path):
+            return APIResponse(
+                success=False,
+                message="配置文件不存在",
+                data=None
+            )
+
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config = yaml.safe_load(f)
+
+        if 'market_data' not in config:
+            config['market_data'] = {}
+
+        current_main_contract = config['market_data'].get('main_contract', '')
+
+        if request.symbol == current_main_contract:
+            # 移除主力合约（设置为空）
+            config['market_data']['main_contract'] = ''
+
+            with open(config_path, 'w', encoding='utf-8') as f:
+                yaml.dump(config, f, default_flow_style=False, allow_unicode=True)
+
+            return APIResponse(
+                success=True,
+                message=f"已清除主力合约配置 {request.symbol}",
+                data={"removed_symbol": request.symbol}
+            )
+        else:
+            return APIResponse(
+                success=False,
+                message=f"合约 {request.symbol} 不是当前主力合约（当前主力合约: {current_main_contract}）",
+                data=None
+            )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"移除主力合约失败: {str(e)}"
+        )
+
+@router.post("/config/market_data/save_main_contract", summary="保存主力合约")
+async def save_main_contract(request: SaveMainContractRequest):
+    """保存主力合约到配置文件"""
+    try:
+        config_path = "config.yaml"
+        if not os.path.exists(config_path):
+            return APIResponse(
+                success=False,
+                message="配置文件不存在",
+                data=None
+            )
+
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config = yaml.safe_load(f)
+
+        if 'market_data' not in config:
+            config['market_data'] = {}
+
+        # 保存主力合约
+        config['market_data']['main_contract'] = request.main_contract
+
+        with open(config_path, 'w', encoding='utf-8') as f:
+            yaml.dump(config, f, default_flow_style=False, allow_unicode=True)
+
+        return APIResponse(
+            success=True,
+            message=f"主力合约 {request.main_contract} 保存成功",
+            data={"main_contract": request.main_contract}
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"保存主力合约失败: {str(e)}"
+        )

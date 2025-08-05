@@ -236,7 +236,7 @@ Options:
 ```bash
 # Web服务配置
 export ARBIG_WEB_HOST=0.0.0.0
-export ARBIG_WEB_PORT=8000
+export ARBIG_WEB_PORT=80
 export ARBIG_WEB_DEBUG=false
 
 # 日志配置

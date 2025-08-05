@@ -176,12 +176,12 @@ def main():
                 process = start_service(
                     "Web管理系统",
                     "python -m web_admin.app",
-                    8000
+                    80
                 )
                 if process:
                     print("\n🔧 Web管理系统已启动")
                     print("   功能: Web界面、交易API、数据查询API")
-                    print("   访问: http://localhost:8000")
+                    print("   访问: http://localhost")
                     input("\n按Enter键停止服务...")
                     process.terminate()
                 break

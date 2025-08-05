@@ -569,7 +569,7 @@ async def api_info():
     )
 
 # 启动函数
-def start_api_server(host: str = "0.0.0.0", port: int = 8000, reload: bool = False):
+def start_api_server(host: str = "0.0.0.0", port: int = 80, reload: bool = False):
     """启动API服务器"""
     uvicorn.run(
         "web_admin.api.main:app",

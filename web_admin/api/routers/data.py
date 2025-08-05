@@ -65,14 +65,16 @@ async def get_market_ticks(
 ):
     """获取实时Tick行情数据"""
     try:
+        from web_admin.api.models.responses import TickData as APITickData
+
         symbol_list = symbols.split(",")
-        
-        # 模拟Tick数据
+
+        # 模拟Tick数据 - 使用正确的API模型
         ticks = []
         for symbol in symbol_list:
-            tick = TickData(
+            tick = APITickData(
                 symbol=symbol.strip(),
-                datetime=datetime.now(),
+                timestamp=datetime.now(),  # 使用timestamp而不是datetime
                 last_price=485.50,
                 bid_price=485.40,
                 ask_price=485.60,
@@ -82,14 +84,14 @@ async def get_market_ticks(
                 change_percent=0.48
             )
             ticks.append(tick)
-        
+
         return MarketDataResponse(
             success=True,
             message="实时行情获取成功",
             data={"ticks": ticks},
             request_id=str(uuid.uuid4())
         )
-        
+
     except Exception as e:
         raise HTTPException(
             status_code=500,
@@ -816,4 +818,328 @@ async def get_trading_summary(data_manager=Depends(get_data_manager)):
         raise HTTPException(
             status_code=500,
             detail=f"获取交易汇总失败: {str(e)}"
+        )
+
+
+# ==================== 行情订阅管理API ====================
+
+from pydantic import BaseModel
+import yaml
+import os
+
+class SubscribeRequest(BaseModel):
+    symbol: str
+    subscriber_id: str = "web_admin"
+    save_to_config: bool = False
+
+class UnsubscribeRequest(BaseModel):
+    symbol: str
+    subscriber_id: str = "web_admin"
+
+class RemoveMainContractRequest(BaseModel):
+    symbol: str
+
+@router.get("/market/subscriptions", summary="获取当前订阅列表")
+async def get_subscriptions():
+    """获取当前所有订阅的合约列表"""
+    try:
+        # 直接修改配置文件
+        import yaml
+        import os
+        from pathlib import Path
+
+        # 配置文件路径
+        config_path = Path("config.yaml")
+
+        if not config_path.exists():
+            return APIResponse(
+                success=False,
+                message="配置文件不存在",
+                data=None
+            )
+
+        # 读取配置文件
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config = yaml.safe_load(f)
+
+        # 确保market_data配置存在
+        if 'market_data' not in config:
+            config['market_data'] = {}
+
+        # 设置主力合约
+        config['market_data']['main_contract'] = request.symbol
+
+        # 保存配置文件
+        with open(config_path, 'w', encoding='utf-8') as f:
+            yaml.dump(config, f, default_flow_style=False, allow_unicode=True)
+
+        return APIResponse(
+            success=True,
+            message=f"主力合约已设置为: {request.symbol}",
+            data={"main_contract": request.symbol}
+        )
+
+        market_service = app_instance.services.get('MarketDataService')
+        if not market_service:
+            return APIResponse(
+                success=False,
+                message="行情服务未启动",
+                data=None
+            )
+
+        # 获取订阅列表
+        subscriptions = []
+        if hasattr(market_service, 'subscriptions'):
+            for symbol, subscribers in market_service.subscriptions.items():
+                subscriptions.append({
+                    'symbol': symbol,
+                    'subscribers': list(subscribers) if isinstance(subscribers, set) else [subscribers]
+                })
+
+        return APIResponse(
+            success=True,
+            message="获取订阅列表成功",
+            data={"subscriptions": subscriptions}
+        )
+
+    except Exception as e:
+        logger.error(f"获取订阅列表失败: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"获取订阅列表失败: {str(e)}"
+        )
+
+@router.post("/market/subscribe", summary="订阅合约行情")
+async def subscribe_contract(request: SubscribeRequest):
+    """订阅指定合约的行情数据"""
+    try:
+        logger.info(f"收到订阅请求: symbol={request.symbol}, save_to_config={request.save_to_config}")
+
+        # 如果只是保存配置，不需要连接主系统
+        if request.save_to_config:
+            logger.info("开始保存主力合约配置")
+            # 直接保存到配置文件
+            try:
+                config_path = "config.yaml"
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    config = yaml.safe_load(f)
+
+                if 'market_data' not in config:
+                    config['market_data'] = {}
+
+                # 设置单个主力合约（替换原有的）
+                config['market_data']['main_contract'] = request.symbol
+
+                with open(config_path, 'w', encoding='utf-8') as f:
+                    yaml.dump(config, f, default_flow_style=False, allow_unicode=True)
+
+                logger.info(f"已将合约 {request.symbol} 设置为主力合约")
+
+                return APIResponse(
+                    success=True,
+                    message=f"主力合约已设置为: {request.symbol}",
+                    data={"symbol": request.symbol, "main_contract": True}
+                )
+
+            except Exception as e:
+                logger.error(f"保存主力合约配置失败: {str(e)}")
+                return APIResponse(
+                    success=False,
+                    message=f"保存配置失败: {str(e)}",
+                    data=None
+                )
+
+        # 如果需要实际订阅，则需要连接主系统
+        import main
+        app_instance = getattr(main, 'app_instance', None) or main.get_service_container()
+        if not app_instance:
+            return APIResponse(
+                success=False,
+                message="系统未初始化",
+                data=None
+            )
+
+        market_service = app_instance.services.get('MarketDataService')
+        if not market_service:
+            return APIResponse(
+                success=False,
+                message="行情服务未启动",
+                data=None
+            )
+
+        # 订阅合约
+        success = market_service.subscribe_symbol(request.symbol, request.subscriber_id)
+
+        if not success:
+            return APIResponse(
+                success=False,
+                message=f"订阅合约 {request.symbol} 失败",
+                data=None
+            )
+
+        # 这里不再需要保存配置，因为上面已经处理了
+        if False:  # request.save_to_config:
+            try:
+                config_path = "config.yaml"
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    config = yaml.safe_load(f)
+
+                if 'market_data' not in config:
+                    config['market_data'] = {}
+
+                # 设置单个主力合约（替换原有的）
+                config['market_data']['main_contract'] = request.symbol
+
+                with open(config_path, 'w', encoding='utf-8') as f:
+                    yaml.dump(config, f, default_flow_style=False, allow_unicode=True)
+
+                logger.info(f"已将合约 {request.symbol} 添加到主力合约配置")
+
+            except Exception as e:
+                logger.warning(f"保存到配置文件失败: {str(e)}")
+
+        return APIResponse(
+            success=True,
+            message=f"订阅合约 {request.symbol} 成功",
+            data={"symbol": request.symbol, "subscriber_id": request.subscriber_id}
+        )
+
+    except Exception as e:
+        logger.error(f"订阅合约失败: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"订阅合约失败: {str(e)}"
+        )
+
+@router.post("/market/unsubscribe", summary="取消订阅合约")
+async def unsubscribe_contract(request: UnsubscribeRequest):
+    """取消订阅指定合约的行情数据"""
+    try:
+        import main
+        app_instance = getattr(main, 'app_instance', None) or main.get_service_container()
+        if not app_instance:
+            return APIResponse(
+                success=False,
+                message="系统未初始化",
+                data=None
+            )
+
+        market_service = app_instance.services.get('MarketDataService')
+        if not market_service:
+            return APIResponse(
+                success=False,
+                message="行情服务未启动",
+                data=None
+            )
+
+        # 取消订阅
+        success = market_service.unsubscribe_symbol(request.symbol, request.subscriber_id)
+
+        return APIResponse(
+            success=True,
+            message=f"取消订阅合约 {request.symbol} 成功",
+            data={"symbol": request.symbol, "subscriber_id": request.subscriber_id}
+        )
+
+    except Exception as e:
+        logger.error(f"取消订阅失败: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"取消订阅失败: {str(e)}"
+        )
+
+@router.get("/market/available_contracts", summary="获取可用合约列表")
+async def get_available_contracts():
+    """获取CTP发现的所有可用合约"""
+    try:
+        import main
+        app_instance = getattr(main, 'app_instance', None) or main.get_service_container()
+        if not app_instance:
+            return APIResponse(
+                success=False,
+                message="系统未初始化",
+                data=None
+            )
+
+        # 从CTP网关获取合约列表
+        ctp_gateway = getattr(app_instance, 'ctp_gateway', None)
+        if not ctp_gateway:
+            return APIResponse(
+                success=False,
+                message="CTP网关未连接",
+                data=None
+            )
+
+        # 获取黄金合约
+        contracts = []
+        if hasattr(ctp_gateway, 'contracts'):
+            for symbol, contract in ctp_gateway.contracts.items():
+                if symbol.startswith('au'):  # 只返回黄金合约
+                    contracts.append(symbol)
+
+        contracts.sort()  # 排序
+
+        return APIResponse(
+            success=True,
+            message="获取可用合约成功",
+            data={"contracts": contracts}
+        )
+
+    except Exception as e:
+        logger.error(f"获取可用合约失败: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"获取可用合约失败: {str(e)}"
+        )
+
+@router.get("/market/latest_prices", summary="获取最新价格")
+async def get_latest_prices():
+    """获取所有订阅合约的最新价格"""
+    try:
+        market_client = get_market_data_client()
+        if not market_client:
+            return APIResponse(
+                success=False,
+                message="市场数据客户端不可用",
+                data=None
+            )
+
+        import main
+        app_instance = getattr(main, 'app_instance', None) or main.get_service_container()
+        if not app_instance:
+            return APIResponse(
+                success=False,
+                message="系统未初始化",
+                data=None
+            )
+
+        market_service = app_instance.services.get('MarketDataService')
+        if not market_service:
+            return APIResponse(
+                success=False,
+                message="行情服务未启动",
+                data=None
+            )
+
+        prices = {}
+        if hasattr(market_service, 'subscriptions'):
+            for symbol in market_service.subscriptions.keys():
+                try:
+                    price_data = market_client.get_latest_price(symbol)
+                    if price_data:
+                        prices[symbol] = price_data
+                except Exception as e:
+                    logger.warning(f"获取 {symbol} 价格失败: {str(e)}")
+
+        return APIResponse(
+            success=True,
+            message="获取最新价格成功",
+            data={"prices": prices}
+        )
+
+    except Exception as e:
+        logger.error(f"获取最新价格失败: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"获取最新价格失败: {str(e)}"
         )
