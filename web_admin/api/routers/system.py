@@ -13,15 +13,16 @@ from ..models.responses import (
     APIResponse, SystemStatusResponse, SystemInfo, 
     CTPConnectionInfo, ErrorResponse
 )
-from ..dependencies import get_system_manager
+from ..dependencies import get_system_manager, get_system_connector_dep
+from ..system_connector import SystemConnector
 
 router = APIRouter(prefix="/api/v1/system", tags=["系统控制"])
 
 @router.get("/status", response_model=SystemStatusResponse, summary="获取系统状态")
-async def get_system_status(system_manager=Depends(get_system_manager)):
+async def get_system_status(connector: SystemConnector = Depends(get_system_connector_dep)):
     """
     获取系统整体状态信息
-    
+
     返回:
     - 系统运行状态
     - 运行模式
@@ -29,82 +30,76 @@ async def get_system_status(system_manager=Depends(get_system_manager)):
     - 服务统计信息
     """
     try:
-        # 从实际的系统管理器获取状态信息
-        if system_manager and system_manager.running:
-            # 获取实际的CTP配置
-            ctp_config = system_manager.config_manager.get_config('ctp') if system_manager.config_manager else {}
-            market_server = ctp_config.get('行情服务器', '182.254.243.31:30011')
-            trading_server = ctp_config.get('交易服务器', '182.254.243.31:30001')
+        # 使用新的系统连接器获取状态
+        result = await connector.get_system_status()
 
-            # 获取实际的CTP连接状态
-            md_connected = False
-            td_connected = False
-            if system_manager.ctp_gateway:
-                md_connected = system_manager.ctp_gateway.is_md_connected()
-                td_connected = system_manager.ctp_gateway.is_td_connected()
-
-            # 计算运行时长
-            uptime = "未知"
-            if system_manager.start_time:
-                delta = datetime.now() - system_manager.start_time
-                hours = delta.seconds // 3600
-                minutes = (delta.seconds % 3600) // 60
-                uptime = f"{hours}h {minutes}m"
+        if result["success"]:
+            data = result["data"]
 
             system_info = SystemInfo(
-                system_status="running" if system_manager.running else "stopped",
-                running_mode="FULL_TRADING",
-                start_time=system_manager.start_time or datetime.now(),
-                uptime=uptime,
-                ctp_status={
-                    "market_data": CTPConnectionInfo(
-                        connected=md_connected,
-                        server=market_server,
-                        latency="15ms" if md_connected else "N/A",
-                        last_connect_time=system_manager.start_time or datetime.now()
-                    ),
-                    "trading": CTPConnectionInfo(
-                        connected=td_connected,
-                        server=trading_server,
-                        latency="18ms" if td_connected else "N/A",
-                        last_connect_time=system_manager.start_time or datetime.now()
-                    )
-                },
-                services_summary={
-                    "total": len(system_manager.services_status),
-                    "running": sum(1 for status in system_manager.services_status.values() if status.name == "RUNNING"),
-                    "stopped": sum(1 for status in system_manager.services_status.values() if status.name == "STOPPED"),
-                    "error": sum(1 for status in system_manager.services_status.values() if status.name == "ERROR")
-                }
-            )
-        else:
-            # 系统未运行时的默认状态
-            system_info = SystemInfo(
-                system_status="stopped",
-                running_mode="UNKNOWN",
-                start_time=datetime.now(),
-                uptime="0h 0m",
-                ctp_status={
-                    "market_data": CTPConnectionInfo(
-                        connected=False,
-                        server="182.254.243.31:30011",
-                        latency="N/A",
-                        last_connect_time=datetime.now()
-                    ),
-                    "trading": CTPConnectionInfo(
-                        connected=False,
-                        server="182.254.243.31:30001",
-                        latency="N/A",
-                        last_connect_time=datetime.now()
-                    )
-                },
-                services_summary={
-                    "total": 5,
-                    "running": 0,
-                    "stopped": 5,
-                    "error": 0
-                }
-            )
+                system_status=data.get("system_status", "stopped"),
+                running_mode=data.get("running_mode", "MARKET_DATA_ONLY"),
+                start_time=datetime.fromisoformat(data["start_time"].replace("Z", "+00:00")) if data.get("start_time") else None,
+                uptime=data.get("uptime", ""),
+                                ctp_status={
+                                    "market_data": CTPConnectionInfo(
+                                        connected=data.get("ctp_status", {}).get("market_data", {}).get("connected", False),
+                                        server=data.get("ctp_status", {}).get("market_data", {}).get("server", "182.254.243.31:30011"),
+                                        latency=data.get("ctp_status", {}).get("market_data", {}).get("latency", "N/A"),
+                                        last_connect_time=datetime.fromisoformat(data.get("ctp_status", {}).get("market_data", {}).get("last_connect_time", datetime.now().isoformat()).replace("Z", "+00:00")) if data.get("ctp_status", {}).get("market_data", {}).get("last_connect_time") else datetime.now()
+                                    ),
+                                    "trading": CTPConnectionInfo(
+                                        connected=data.get("ctp_status", {}).get("trading", {}).get("connected", False),
+                                        server=data.get("ctp_status", {}).get("trading", {}).get("server", "182.254.243.31:30001"),
+                                        latency=data.get("ctp_status", {}).get("trading", {}).get("latency", "N/A"),
+                                        last_connect_time=datetime.fromisoformat(data.get("ctp_status", {}).get("trading", {}).get("last_connect_time", datetime.now().isoformat()).replace("Z", "+00:00")) if data.get("ctp_status", {}).get("trading", {}).get("last_connect_time") else datetime.now()
+                                    )
+                                },
+                                services_summary=data.get("services_summary", {
+                                    "total": 5,
+                                    "running": 1,
+                                    "stopped": 4,
+                                    "error": 0
+                                }),
+                                version=data.get("version", "1.0.0")
+                            )
+
+                            return SystemStatusResponse(
+                                success=True,
+                                message="系统状态获取成功",
+                                data=system_info,
+                                request_id=str(uuid.uuid4())
+                            )
+                except:
+                    continue
+
+        # 如果无法连接到主系统，返回默认状态
+        system_info = SystemInfo(
+            system_status="stopped",
+            running_mode="UNKNOWN",
+            start_time=datetime.now(),
+            uptime="0h 0m",
+            ctp_status={
+                "market_data": CTPConnectionInfo(
+                    connected=False,
+                    server="182.254.243.31:30011",
+                    latency="N/A",
+                    last_connect_time=datetime.now()
+                ),
+                "trading": CTPConnectionInfo(
+                    connected=False,
+                    server="182.254.243.31:30001",
+                    latency="N/A",
+                    last_connect_time=datetime.now()
+                )
+            },
+            services_summary={
+                "total": 5,
+                "running": 0,
+                "stopped": 5,
+                "error": 0
+            }
+        )
         
         return SystemStatusResponse(
             success=True,

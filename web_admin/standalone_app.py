@@ -644,10 +644,155 @@ class StandaloneWebApp:
                     "data": None
                 }
 
+        # 辅助方法
+        def _get_main_system_info():
+            """获取主系统详细信息"""
+            try:
+                import requests
+                response = requests.get("http://localhost:8000/api/v1/system/status", timeout=2)
+                if response.status_code == 200:
+                    data = response.json()
+                    system_data = data.get("data", {})
+                    return {
+                        "running": True,
+                        "uptime": system_data.get("uptime", "0h 0m 0s"),
+                        "mode": system_data.get("running_mode", "MONITOR_ONLY"),  # 修正字段名
+                        "start_time": system_data.get("start_time"),
+                        "pid": None,  # 主系统API不返回PID，设为None
+                        "ctp_status": system_data.get("ctp_status", {})  # 添加CTP状态信息
+                    }
+                else:
+                    return {"running": False, "uptime": "0h 0m 0s", "mode": "UNKNOWN", "start_time": None, "pid": None, "ctp_status": {}}
+            except:
+                return {"running": False, "uptime": "0h 0m 0s", "mode": "UNKNOWN", "start_time": None, "pid": None, "ctp_status": {}}
+
+        # 特定API路由 - 必须在通配符API代理之前定义
+        @self.app.get("/api/v1/services/list")
+        def get_services_list_sync():
+            """获取服务列表 - 同步版本，避免异步相关的信号错误"""
+            # 获取主系统信息
+            main_info = _get_main_system_info()
+            ctp_status = main_info.get("ctp_status", {})
+
+            # 判断CTP连接状态
+            ctp_md_connected = ctp_status.get("market_data", {}).get("connected", False)
+            ctp_td_connected = ctp_status.get("trading", {}).get("connected", False)
+            ctp_connected = ctp_md_connected and ctp_td_connected
+
+            services_list = [
+                {
+                    "id": "main_system",
+                    "name": "main_system",
+                    "display_name": "主系统",
+                    "status": "running" if main_info["running"] else "stopped",
+                    "description": "ARBIG主系统（包含所有服务）",
+                    "uptime": main_info["uptime"],
+                    "required": True,
+                    "dependencies": [],
+                    "cpu_usage": None,
+                    "memory_usage": None,
+                    "last_heartbeat": None,
+                    "pid": main_info["pid"],
+                    "start_time": main_info["start_time"],
+                    "error_message": None if main_info["running"] else "主系统未运行",
+                    "mode": main_info["mode"]  # 添加运行模式信息
+                },
+                {
+                    "id": "ctp_gateway",
+                    "name": "ctp_gateway",
+                    "display_name": "CTP网关",
+                    "status": "running" if ctp_connected else "stopped",  # 根据实际CTP状态
+                    "description": "CTP交易网关连接",
+                    "uptime": main_info["uptime"] if ctp_connected else "0h 0m 0s",
+                    "required": True,
+                    "dependencies": [],
+                    "cpu_usage": None,
+                    "memory_usage": None,
+                    "last_heartbeat": None,
+                    "pid": None,
+                    "start_time": main_info["start_time"] if ctp_connected else None,
+                    "error_message": None if ctp_connected else "CTP未连接"
+                },
+                {
+                    "id": "market_data",
+                    "name": "market_data",
+                    "display_name": "行情服务",
+                    "status": "running" if (main_info["running"] and ctp_md_connected) else ("ready" if main_info["running"] else "stopped"),
+                    "description": "市场行情数据服务",
+                    "uptime": main_info["uptime"] if main_info["running"] else "0h 0m 0s",
+                    "required": True,
+                    "dependencies": ["ctp_gateway"],
+                    "cpu_usage": None,
+                    "memory_usage": None,
+                    "last_heartbeat": None,
+                    "pid": main_info["pid"],
+                    "start_time": main_info["start_time"],
+                    "error_message": None if (main_info["running"] and ctp_md_connected) else ("等待CTP连接" if main_info["running"] else "主系统未运行")
+                },
+                {
+                    "id": "trading",
+                    "name": "trading",
+                    "display_name": "交易服务",
+                    "status": "running" if (main_info["running"] and ctp_connected) else ("ready" if main_info["running"] else "stopped"),
+                    "description": "交易执行服务",
+                    "uptime": main_info["uptime"] if main_info["running"] else "0h 0m 0s",
+                    "required": False,
+                    "dependencies": ["ctp_gateway", "market_data"],
+                    "cpu_usage": None,
+                    "memory_usage": None,
+                    "last_heartbeat": None,
+                    "pid": main_info["pid"],
+                    "start_time": main_info["start_time"],
+                    "error_message": None if (main_info["running"] and ctp_connected) else ("等待CTP连接" if main_info["running"] else "主系统未运行")
+                },
+                {
+                    "id": "risk",
+                    "name": "risk",
+                    "display_name": "风控服务",
+                    "status": "running" if (main_info["running"] and ctp_connected) else ("ready" if main_info["running"] else "stopped"),
+                    "description": "风险控制服务",
+                    "uptime": main_info["uptime"] if main_info["running"] else "0h 0m 0s",
+                    "required": False,
+                    "dependencies": ["trading"],
+                    "cpu_usage": None,
+                    "memory_usage": None,
+                    "last_heartbeat": None,
+                    "pid": main_info["pid"],
+                    "start_time": main_info["start_time"],
+                    "error_message": None if (main_info["running"] and ctp_connected) else ("等待交易服务" if main_info["running"] else "主系统未运行")
+                }
+            ]
+
+            return {
+                "success": True,
+                "message": "服务列表获取成功",
+                "data": {
+                    "services": services_list
+                }
+            }
+
         # API代理路由 - 将其他API请求转发到主系统
         @self.app.api_route("/api/v1/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
         async def api_proxy(path: str, request: Request):
             """API代理 - 转发请求到主系统"""
+            # 禁用的路径列表 - 这些路径不会被代理到主系统
+            disabled_paths = [
+                "system/start",
+                "system/stop",
+                "services/start",
+                "services/stop",
+                "services/restart"
+                # 注意：services/list 不在禁用列表中，因为我们有自己的同步实现
+            ]
+
+            # 检查是否是禁用的路径
+            if any(path.startswith(disabled_path) for disabled_path in disabled_paths):
+                return {
+                    "success": False,
+                    "message": f"Web Admin不提供 {path} 功能。请手动管理系统和服务。",
+                    "data": None
+                }
+
             try:
                 # 主系统API地址
                 main_system_url = f"http://localhost:8000/api/v1/{path}"
@@ -1109,19 +1254,28 @@ class StandaloneWebApp:
             return self.service_manager.get_service_status(service_id)
         
         @self.app.post("/api/services/{service_id}/start")
-        async def start_service(service_id: str):
-            """启动服务"""
-            return self.service_manager.start_service(service_id)
-        
+        async def start_service_disabled(service_id: str):
+            """服务启动功能已禁用"""
+            return {
+                "success": False,
+                "message": f"Web Admin不提供服务启动功能。请通过主系统管理服务：{service_id}"
+            }
+
         @self.app.post("/api/services/{service_id}/stop")
-        async def stop_service(service_id: str):
-            """停止服务"""
-            return self.service_manager.stop_service(service_id)
-        
+        async def stop_service_disabled(service_id: str):
+            """服务停止功能已禁用"""
+            return {
+                "success": False,
+                "message": f"Web Admin不提供服务停止功能。请通过主系统管理服务：{service_id}"
+            }
+
         @self.app.post("/api/services/{service_id}/restart")
-        async def restart_service(service_id: str):
-            """重启服务"""
-            return self.service_manager.restart_service(service_id)
+        async def restart_service_disabled(service_id: str):
+            """服务重启功能已禁用"""
+            return {
+                "success": False,
+                "message": f"Web Admin不提供服务重启功能。请通过主系统管理服务：{service_id}"
+            }
         
         @self.app.get("/api/services/{service_id}/logs")
         async def get_service_logs(service_id: str, lines: int = 50):
@@ -1485,72 +1639,37 @@ class StandaloneWebApp:
                     # 回退到原来的方式
                     import httpx
                     async with httpx.AsyncClient() as client:
-                        for port in [8001, 8002, 8003]:
+                        for port in [8000, 8001, 8002, 8003]:
                             try:
                                 response = await client.get(f"http://localhost:{port}/api/v1/system/status", timeout=5.0)
                                 if response.status_code == 200:
                                     return response.json()
                             except:
                                 continue
-                        return {"success": False, "message": "主系统API不可用"}
+                        return {"success": False, "message": "主系统未运行或无法连接"}
             except Exception as e:
                 logger.error(f"代理系统状态API失败: {e}")
                 return {"success": False, "message": f"连接主系统失败: {str(e)}"}
 
         @self.app.post("/api/v1/system/start")
-        async def start_system():
-            """启动ARBIG主系统"""
-            try:
-                # 尝试启动主系统
-                import subprocess
-                import sys
-                
-                # 启动主系统进程（后台运行）
-                process = subprocess.Popen([
-                    "/root/anaconda3/envs/vnpy/bin/python", "main.py", "--auto-start"
-                ], cwd=str(Path(__file__).parent.parent),
-                   stdout=subprocess.DEVNULL,
-                   stderr=subprocess.DEVNULL,
-                   start_new_session=True)
-                
-                return {
-                    "success": True,
-                    "message": "ARBIG主系统启动命令已发送",
-                    "data": {"pid": process.pid},
-                    "request_id": str(uuid.uuid4())
-                }
-            except Exception as e:
-                logger.error(f"启动主系统失败: {e}")
-                return {
-                    "success": False,
-                    "message": f"启动主系统失败: {str(e)}",
-                    "data": None,
-                    "request_id": str(uuid.uuid4())
-                }
+        async def start_system_disabled():
+            """系统启动功能已禁用 - 请手动启动主系统"""
+            return {
+                "success": False,
+                "message": "Web Admin不提供系统启动功能。请手动启动主系统：conda activate vnpy && python main.py",
+                "data": {"instruction": "请在终端中手动启动主系统"},
+                "request_id": str(uuid.uuid4())
+            }
 
         @self.app.post("/api/v1/system/stop")
-        async def stop_system():
-            """停止ARBIG主系统"""
-            try:
-                # 查找并停止主系统进程
-                import subprocess
-                
-                # 查找main.py进程
-                result = subprocess.run([
-                    "pkill", "-f", "python.*main.py"
-                ], capture_output=True, text=True)
-                
-                return {
-                    "success": True,
-                    "message": "ARBIG主系统停止命令已发送",
-                    "data": {"stopped": True}
-                }
-            except Exception as e:
-                logger.error(f"停止主系统失败: {e}")
-                return {
-                    "success": False,
-                    "message": f"停止主系统失败: {str(e)}"
-                }
+        async def stop_system_disabled():
+            """系统停止功能已禁用 - 请手动停止主系统"""
+            return {
+                "success": False,
+                "message": "Web Admin不提供系统停止功能。请手动停止主系统：在主系统终端按Ctrl+C",
+                "data": {"instruction": "请在主系统终端按Ctrl+C停止"},
+                "request_id": str(uuid.uuid4())
+            }
 
         @self.app.post("/api/v1/system/mode")
         async def switch_mode(request: dict):
@@ -1737,99 +1856,7 @@ class StandaloneWebApp:
                 }
             }
 
-        @self.app.get("/api/v1/services/list")
-        def get_services_list_sync():
-            """获取服务列表 - 同步版本，避免异步相关的信号错误"""
-            services_list = [
-                {
-                    "id": "main_system",
-                    "name": "main_system",
-                    "display_name": "主系统",
-                    "status": "stopped",
-                    "description": "ARBIG主系统（包含所有服务）",
-                    "uptime": "0h 0m 0s",
-                    "required": True,
-                    "dependencies": [],
-                    "cpu_usage": None,
-                    "memory_usage": None,
-                    "last_heartbeat": None,
-                    "pid": None,
-                    "start_time": None,
-                    "error_message": "主系统未运行"
-                },
-                {
-                    "id": "ctp_gateway",
-                    "name": "ctp_gateway",
-                    "display_name": "CTP网关",
-                    "status": "stopped",
-                    "description": "CTP交易网关连接",
-                    "uptime": "0h 0m 0s",
-                    "required": True,
-                    "dependencies": [],
-                    "cpu_usage": None,
-                    "memory_usage": None,
-                    "last_heartbeat": None,
-                    "pid": None,
-                    "start_time": None,
-                    "error_message": None
-                },
-                {
-                    "id": "market_data",
-                    "name": "market_data",
-                    "display_name": "行情服务",
-                    "status": "stopped",
-                    "description": "市场行情数据服务",
-                    "uptime": "0h 0m 0s",
-                    "required": True,
-                    "dependencies": ["ctp_gateway"],
-                    "cpu_usage": None,
-                    "memory_usage": None,
-                    "last_heartbeat": None,
-                    "pid": None,
-                    "start_time": None,
-                    "error_message": None
-                },
-                {
-                    "id": "trading",
-                    "name": "trading",
-                    "display_name": "交易服务",
-                    "status": "stopped",
-                    "description": "交易执行服务",
-                    "uptime": "0h 0m 0s",
-                    "required": False,
-                    "dependencies": ["ctp_gateway", "market_data"],
-                    "cpu_usage": None,
-                    "memory_usage": None,
-                    "last_heartbeat": None,
-                    "pid": None,
-                    "start_time": None,
-                    "error_message": None
-                },
-                {
-                    "id": "risk",
-                    "name": "risk",
-                    "display_name": "风控服务",
-                    "status": "stopped",
-                    "description": "风险控制服务",
-                    "uptime": "0h 0m 0s",
-                    "required": False,
-                    "dependencies": ["trading"],
-                    "cpu_usage": None,
-                    "memory_usage": None,
-                    "last_heartbeat": None,
-                    "pid": None,
-                    "start_time": None,
-                    "error_message": None
-                }
-            ]
-
-            return {
-                "success": True,
-                "message": "服务列表获取成功",
-                "data": {
-                    "services": services_list
-                }
-            }
+        # 重复的服务列表API已移到API代理之前，这里删除重复定义
 
         # 注释掉有问题的API，使用工作正常的版本
         # @self.app.get("/api/v1/services/list")
@@ -1839,65 +1866,28 @@ class StandaloneWebApp:
         #     pass
 
         @self.app.post("/api/v1/services/start")
-        async def start_service_v1(request: dict):
-            """启动服务 - v1 API兼容"""
-            try:
-                service_name = request.get("service_name")
-                if not service_name:
-                    return {
-                        "success": False,
-                        "message": "缺少service_name参数"
-                    }
-
-                result = self.service_manager.start_service(service_name)
-                return result
-            except Exception as e:
-                logger.error(f"启动服务失败: {e}")
-                return {
-                    "success": False,
-                    "message": f"启动服务失败: {str(e)}"
-                }
+        async def start_service_v1_disabled(request: dict):
+            """服务启动功能已禁用 - v1 API兼容"""
+            return {
+                "success": False,
+                "message": "Web Admin不提供服务启动功能。请通过主系统管理服务。"
+            }
 
         @self.app.post("/api/v1/services/stop")
-        async def stop_service_v1(request: dict):
-            """停止服务 - v1 API兼容"""
-            try:
-                service_name = request.get("service_name")
-                force = request.get("force", False)
-                if not service_name:
-                    return {
-                        "success": False,
-                        "message": "缺少service_name参数"
-                    }
-
-                result = self.service_manager.stop_service(service_name)
-                return result
-            except Exception as e:
-                logger.error(f"停止服务失败: {e}")
-                return {
-                    "success": False,
-                    "message": f"停止服务失败: {str(e)}"
-                }
+        async def stop_service_v1_disabled(request: dict):
+            """服务停止功能已禁用 - v1 API兼容"""
+            return {
+                "success": False,
+                "message": "Web Admin不提供服务停止功能。请通过主系统管理服务。"
+            }
 
         @self.app.post("/api/v1/services/restart")
-        async def restart_service_v1(request: dict):
-            """重启服务 - v1 API兼容"""
-            try:
-                service_name = request.get("service_name")
-                if not service_name:
-                    return {
-                        "success": False,
-                        "message": "缺少service_name参数"
-                    }
-
-                result = self.service_manager.restart_service(service_name)
-                return result
-            except Exception as e:
-                logger.error(f"重启服务失败: {e}")
-                return {
-                    "success": False,
-                    "message": f"重启服务失败: {str(e)}"
-                }
+        async def restart_service_v1_disabled(request: dict):
+            """服务重启功能已禁用 - v1 API兼容"""
+            return {
+                "success": False,
+                "message": "Web Admin不提供服务重启功能。请通过主系统管理服务。"
+            }
 
         # 日志管理API
         @self.app.get("/api/v1/logs/files")

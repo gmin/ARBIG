@@ -1,1045 +1,321 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 """
-ARBIG量化交易系统主程序
-重构为服务容器架构，支持Web指挥中轴控制
+ARBIG量化交易系统主程序 - 单体架构版本
+整合核心系统和Web管理界面到一个进程中
 """
 
-import time
-import signal
 import sys
+import os
+import argparse
+import time
+import asyncio
 import threading
-import uuid
-from datetime import datetime
+import uvicorn
 from pathlib import Path
-from typing import Dict, Any, Optional, List
-from enum import Enum
 
-from core.event_engine import EventEngine
-from core.config_manager import ConfigManager
-from core.services.market_data_service import MarketDataService
-from core.services.account_service import AccountService
-from core.services.trading_service import TradingService
-from core.services.risk_service import RiskService
-from core.services.strategy_service import StrategyService
-from core.types import ServiceConfig
-from gateways.ctp_gateway import CtpGatewayWrapper
-from core.market_data_client import init_market_data_client
+# 添加项目根目录到Python路径
+project_root = Path(__file__).parent
+sys.path.insert(0, str(project_root))
+
+from core.system_controller import SystemController
+from web_admin.api.system_connector import get_system_connector
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-class RunningMode(str, Enum):
-    """系统运行模式"""
-    FULL_TRADING = "FULL_TRADING"        # 完整交易模式
-    MONITOR_ONLY = "MONITOR_ONLY"        # 仅监控模式
-    MARKET_DATA_ONLY = "MARKET_DATA_ONLY" # 仅行情模式
-
-class ServiceStatus(str, Enum):
-    """服务状态"""
-    STOPPED = "stopped"
-    STARTING = "starting"
-    RUNNING = "running"
-    STOPPING = "stopping"
-    ERROR = "error"
-
-class ServiceResult:
-    """服务操作结果"""
-    def __init__(self, success: bool, message: str, data: Dict[str, Any] = None):
-        self.success = success
-        self.message = message
-        self.data = data or {}
-
-class ARBIGServiceContainer:
-    """
-    ARBIG服务容器 - 管理所有服务的生命周期
-    提供Web API控制接口，不再自主决策
-    """
+class ARBIGApplication:
+    """ARBIG单体应用程序"""
 
     def __init__(self):
-        """初始化服务容器"""
-        self.logger = logger
-        self.running = False
-        self.current_mode = RunningMode.MARKET_DATA_ONLY
-        self.start_time = None
+        """初始化应用程序"""
+        self.system_controller = SystemController()
+        self.web_server = None
+        self.web_thread = None
 
-        # CTP连接参数
-        self.MAX_RETRY_COUNT = 3
-        self.RETRY_INTERVAL = 3
-        self.CONNECTION_TIMEOUT = 30
+        # 初始化系统连接器，传入系统控制器实例
+        connector = get_system_connector()
+        connector.set_system_controller(self.system_controller)
 
-        # 核心组件
-        self.event_engine = None
-        self.config_manager = None
-        self.ctp_gateway = None
+        logger.info("ARBIG单体应用程序初始化完成")
 
-        # 核心服务实例
-        self.services = {}
-
-        # 服务状态跟踪
-        self.services_status = {
-            'MarketDataService': ServiceStatus.STOPPED,
-            'AccountService': ServiceStatus.STOPPED,
-            'RiskService': ServiceStatus.STOPPED,
-            'TradingService': ServiceStatus.STOPPED,
-            'StrategyService': ServiceStatus.STOPPED
-        }
-
-        # 服务启动时间
-        self.services_start_time = {}
-
-        # 服务依赖关系
-        self.service_dependencies = {
-            'MarketDataService': ['ctp_gateway'],
-            'AccountService': ['ctp_gateway'],
-            'RiskService': ['AccountService'],
-            'TradingService': ['ctp_gateway', 'MarketDataService', 'AccountService', 'RiskService'],
-            'StrategyService': ['MarketDataService', 'AccountService', 'TradingService']
-        }
-
-        # 线程锁
-        self._lock = threading.Lock()
-
-        # 信号处理
-        signal.signal(signal.SIGINT, self._signal_handler)
-        signal.signal(signal.SIGTERM, self._signal_handler)
-
-        logger.info("ARBIG服务容器初始化完成")
-
-    def _signal_handler(self, signum, frame):
-        """信号处理器"""
-        logger.info(f"收到信号 {signum}，开始关闭系统...")
-        self.stop_system()
-        sys.exit(0)
-
-    # ==================== 系统级API接口 ====================
-
-    def start_system(self) -> ServiceResult:
-        """启动整个系统"""
+    def start_system(self, auto_start: bool = False) -> bool:
+        """启动核心系统"""
         try:
-            with self._lock:
-                if self.running:
-                    return ServiceResult(False, "系统已在运行中")
+            if auto_start:
+                logger.info("🚀 自动启动核心系统")
+                result = self.system_controller.start_system()
+                if not result.success:
+                    logger.error(f"核心系统启动失败: {result.message}")
+                    return False
 
-                logger.info("="*60)
-                logger.info("🚀 启动ARBIG量化交易系统")
-                logger.info("="*60)
-
-                # 1. 初始化配置管理器
-                if not self._init_config_manager():
-                    return ServiceResult(False, "配置管理器初始化失败")
-
-                # 2. 检查主力合约有效性
-                if not self._check_main_contract():
-                    logger.warning("⚠ 主力合约无效或已过期，请通过Web界面设置有效的主力合约")
-                    logger.warning("⚠ 访问 http://localhost:80 -> 行情数据页面设置主力合约")
-
-                # 3. 连接CTP网关
-                ctp_result = self._connect_ctp_with_retry()
-                if ctp_result == "FAILED":
-                    return ServiceResult(False, "CTP连接失败")
-
-                # 4. 启动事件引擎
-                if not self._start_event_engine():
-                    return ServiceResult(False, "事件引擎启动失败")
-
-                # 5. 启动核心服务
-                logger.info(f"准备启动核心服务，CTP状态: {ctp_result}")
-                if not self._start_core_services(ctp_result):
-                    return ServiceResult(False, "核心服务启动失败")
-
-                # 5. 系统启动完成
-                self.running = True
-                self.start_time = datetime.now()
-
-                logger.info("="*60)
-                logger.info("🎉 ARBIG系统启动成功！")
-                logger.info("="*60)
-
-                return ServiceResult(True, "系统启动成功", {
-                    "start_time": self.start_time.isoformat(),
-                    "ctp_status": ctp_result
-                })
+                logger.info("✅ 核心系统自动启动成功")
+                return True
+            else:
+                logger.info("📋 手动启动模式 - 核心系统已准备就绪")
+                return True
 
         except Exception as e:
-            logger.error(f"系统启动失败: {e}")
-            return ServiceResult(False, f"系统启动异常: {e}")
-
-    def start_system_demo_mode(self) -> ServiceResult:
-        """启动系统演示模式（不需要CTP连接）"""
-        try:
-            with self._lock:
-                if self.running:
-                    return ServiceResult(False, "系统已在运行中")
-
-                logger.info("="*60)
-                logger.info("🎭 启动ARBIG量化交易系统 - 演示模式")
-                logger.info("="*60)
-
-                # 1. 初始化配置管理器
-                if not self._init_config_manager():
-                    return ServiceResult(False, "配置管理器初始化失败")
-
-                # 2. 跳过CTP连接，使用模拟网关
-                logger.info("演示模式：跳过CTP连接")
-                self.ctp_gateway = None  # 模拟网关
-
-                # 3. 启动事件引擎
-                if not self._start_event_engine():
-                    return ServiceResult(False, "事件引擎启动失败")
-
-                # 4. 启动核心服务（演示模式）
-                self._start_services_demo_mode()
-
-                # 5. 系统启动完成
-                self.running = True
-                self.start_time = datetime.now()
-
-                logger.info("="*60)
-                logger.info("🎉 ARBIG系统演示模式启动成功！")
-                logger.info("="*60)
-
-                return ServiceResult(True, "系统演示模式启动成功", {
-                    "start_time": self.start_time.isoformat(),
-                    "mode": "DEMO"
-                })
-
-        except Exception as e:
-            logger.error(f"系统演示模式启动失败: {e}")
-            return ServiceResult(False, f"系统演示模式启动异常: {e}")
-
-    def stop_system(self) -> ServiceResult:
-        """停止整个系统"""
-        try:
-            with self._lock:
-                if not self.running:
-                    return ServiceResult(False, "系统未在运行")
-
-                logger.info("开始停止ARBIG系统...")
-
-                # 按相反顺序停止所有服务
-                service_names = ['TradingService', 'RiskService', 'AccountService', 'MarketDataService']
-                stopped_services = []
-
-                for service_name in service_names:
-                    if self.services_status[service_name] == ServiceStatus.RUNNING:
-                        result = self.stop_service(service_name)
-                        if result.success:
-                            stopped_services.append(service_name)
-
-                # 停止事件引擎
-                if self.event_engine:
-                    try:
-                        self.event_engine.stop()
-                        logger.info("✓ 事件引擎已停止")
-                    except Exception as e:
-                        logger.error(f"✗ 事件引擎停止失败: {e}")
-
-                # 断开CTP连接
-                if self.ctp_gateway:
-                    try:
-                        self.ctp_gateway.disconnect()
-                        logger.info("✓ CTP连接已断开")
-                    except Exception as e:
-                        logger.error(f"✗ CTP断开失败: {e}")
-
-                self.running = False
-                logger.info("ARBIG系统已完全停止")
-
-                return ServiceResult(True, "系统停止成功", {
-                    "stopped_services": stopped_services,
-                    "stop_time": datetime.now().isoformat()
-                })
-
-        except Exception as e:
-            logger.error(f"系统停止失败: {e}")
-            return ServiceResult(False, f"系统停止异常: {e}")
-
-    def get_system_status(self) -> Dict[str, Any]:
-        """获取系统状态"""
-        try:
-            uptime = ""
-            if self.start_time:
-                delta = datetime.now() - self.start_time
-                hours, remainder = divmod(delta.total_seconds(), 3600)
-                minutes, seconds = divmod(remainder, 60)
-                uptime = f"{int(hours)}h {int(minutes)}m {int(seconds)}s"
-
-            # CTP连接状态
-            ctp_status = {}
-            if self.ctp_gateway:
-                ctp_status = {
-                    "market_data": {
-                        "connected": self.ctp_gateway.is_md_connected(),
-                        "server": "180.168.146.187:10131",
-                        "latency": "15ms" if self.ctp_gateway.is_md_connected() else None
-                    },
-                    "trading": {
-                        "connected": self.ctp_gateway.is_td_connected(),
-                        "server": "180.168.146.187:10130",
-                        "latency": "18ms" if self.ctp_gateway.is_td_connected() else None
-                    }
-                }
-
-            # 服务统计
-            services_summary = {
-                "total": len(self.services_status),
-                "running": sum(1 for status in self.services_status.values() if status == ServiceStatus.RUNNING),
-                "stopped": sum(1 for status in self.services_status.values() if status == ServiceStatus.STOPPED),
-                "error": sum(1 for status in self.services_status.values() if status == ServiceStatus.ERROR)
-            }
-
-            return {
-                "system_status": "running" if self.running else "stopped",
-                "running_mode": self.current_mode.value,
-                "start_time": self.start_time.isoformat() if self.start_time else None,
-                "uptime": uptime,
-                "ctp_status": ctp_status,
-                "services_summary": services_summary,
-                "version": "1.0.0"
-            }
-
-        except Exception as e:
-            logger.error(f"获取系统状态失败: {e}")
-            return {"error": str(e)}
-
-    def switch_mode(self, mode: RunningMode, reason: str = None) -> ServiceResult:
-        """切换运行模式"""
-        try:
-            old_mode = self.current_mode
-            self.current_mode = mode
-
-            logger.info(f"系统模式已从 {old_mode.value} 切换至 {mode.value}")
-            if reason:
-                logger.info(f"切换原因: {reason}")
-
-            return ServiceResult(True, f"运行模式已切换至 {mode.value}", {
-                "old_mode": old_mode.value,
-                "new_mode": mode.value,
-                "switch_time": datetime.now().isoformat(),
-                "reason": reason
-            })
-
-        except Exception as e:
-            logger.error(f"切换运行模式失败: {e}")
-            return ServiceResult(False, f"切换运行模式异常: {e}")
-
-    # ==================== 服务管理API接口 ====================
-
-    def start_service(self, service_name: str, config: Dict[str, Any] = None) -> ServiceResult:
-        """启动指定服务"""
-        try:
-            with self._lock:
-                # 检查服务是否已在运行
-                if self.services_status.get(service_name) == ServiceStatus.RUNNING:
-                    return ServiceResult(False, f"{service_name}已在运行中")
-
-                # 检查系统是否已启动
-                if not self.running:
-                    return ServiceResult(False, "系统未启动，请先启动系统")
-
-                # 检查依赖关系
-                if not self._check_service_dependencies(service_name):
-                    return ServiceResult(False, f"{service_name}的依赖服务未启动")
-
-                # 设置服务状态为启动中
-                self.services_status[service_name] = ServiceStatus.STARTING
-
-                # 启动服务
-                success = False
-                if service_name == 'MarketDataService':
-                    success = self._start_market_data_service(config)
-                elif service_name == 'AccountService':
-                    success = self._start_account_service(config)
-                elif service_name == 'RiskService':
-                    success = self._start_risk_service(config)
-                elif service_name == 'TradingService':
-                    success = self._start_trading_service(config)
-                elif service_name == 'StrategyService':
-                    success = self._start_strategy_service(config)
-                else:
-                    return ServiceResult(False, f"未知的服务: {service_name}")
-
-                if success:
-                    self.services_status[service_name] = ServiceStatus.RUNNING
-                    self.services_start_time[service_name] = datetime.now()
-                    self._update_running_mode()
-
-                    return ServiceResult(True, f"{service_name}启动成功", {
-                        "service_name": service_name,
-                        "start_time": self.services_start_time[service_name].isoformat(),
-                        "config": config
-                    })
-                else:
-                    self.services_status[service_name] = ServiceStatus.ERROR
-                    return ServiceResult(False, f"{service_name}启动失败")
-
-        except Exception as e:
-            self.services_status[service_name] = ServiceStatus.ERROR
-            logger.error(f"启动服务{service_name}异常: {e}")
-            return ServiceResult(False, f"启动服务异常: {e}")
-
-    def stop_service(self, service_name: str, force: bool = False) -> ServiceResult:
-        """停止指定服务"""
-        try:
-            with self._lock:
-                # 检查服务是否在运行
-                if self.services_status.get(service_name) != ServiceStatus.RUNNING:
-                    return ServiceResult(False, f"{service_name}未在运行")
-
-                # 检查是否有其他服务依赖此服务
-                if not force:
-                    dependent_services = self._get_dependent_services(service_name)
-                    if dependent_services:
-                        return ServiceResult(False, f"以下服务依赖{service_name}: {', '.join(dependent_services)}")
-
-                # 设置服务状态为停止中
-                self.services_status[service_name] = ServiceStatus.STOPPING
-
-                # 停止服务
-                success = False
-                if service_name in self.services:
-                    try:
-                        self.services[service_name].stop()
-                        del self.services[service_name]
-                        success = True
-                    except Exception as e:
-                        logger.error(f"停止服务{service_name}失败: {e}")
-
-                if success:
-                    self.services_status[service_name] = ServiceStatus.STOPPED
-                    if service_name in self.services_start_time:
-                        del self.services_start_time[service_name]
-                    self._update_running_mode()
-
-                    return ServiceResult(True, f"{service_name}停止成功", {
-                        "service_name": service_name,
-                        "stop_time": datetime.now().isoformat()
-                    })
-                else:
-                    self.services_status[service_name] = ServiceStatus.ERROR
-                    return ServiceResult(False, f"{service_name}停止失败")
-
-        except Exception as e:
-            logger.error(f"停止服务{service_name}异常: {e}")
-            return ServiceResult(False, f"停止服务异常: {e}")
-
-    def restart_service(self, service_name: str, config: Dict[str, Any] = None) -> ServiceResult:
-        """重启指定服务"""
-        try:
-            # 先停止服务
-            stop_result = self.stop_service(service_name, force=True)
-            if not stop_result.success:
-                return stop_result
-
-            # 等待一下确保服务完全停止
-            time.sleep(1)
-
-            # 再启动服务
-            return self.start_service(service_name, config)
-
-        except Exception as e:
-            logger.error(f"重启服务{service_name}异常: {e}")
-            return ServiceResult(False, f"重启服务异常: {e}")
-
-    def get_service_status(self, service_name: str) -> Dict[str, Any]:
-        """获取服务状态"""
-        try:
-            if service_name not in self.services_status:
-                return {"error": f"未知的服务: {service_name}"}
-
-            status = self.services_status[service_name]
-            start_time = self.services_start_time.get(service_name)
-
-            uptime = ""
-            if start_time and status == ServiceStatus.RUNNING:
-                delta = datetime.now() - start_time
-                hours, remainder = divmod(delta.total_seconds(), 3600)
-                minutes, seconds = divmod(remainder, 60)
-                uptime = f"{int(hours)}h {int(minutes)}m {int(seconds)}s"
-
-            return {
-                "name": service_name,
-                "display_name": self._get_service_display_name(service_name),
-                "status": status.value,
-                "start_time": start_time.isoformat() if start_time else None,
-                "uptime": uptime,
-                "required": service_name == 'MarketDataService',
-                "dependencies": self.service_dependencies.get(service_name, [])
-            }
-
-        except Exception as e:
-            logger.error(f"获取服务{service_name}状态失败: {e}")
-            return {"error": str(e)}
-
-    def get_all_services_status(self) -> List[Dict[str, Any]]:
-        """获取所有服务状态"""
-        try:
-            services = []
-            for service_name in self.services_status.keys():
-                service_info = self.get_service_status(service_name)
-                if "error" not in service_info:
-                    services.append(service_info)
-            return services
-
-        except Exception as e:
-            logger.error(f"获取所有服务状态失败: {e}")
-            return []
-
-    # ==================== 内部辅助方法 ====================
-
-    def _init_config_manager(self) -> bool:
-        """初始化配置管理器"""
-        try:
-            self.config_manager = ConfigManager()
-            logger.info("✓ 配置管理器初始化成功")
-            return True
-        except Exception as e:
-            logger.error(f"✗ 配置管理器初始化失败: {e}")
+            logger.error(f"启动核心系统失败: {e}")
             return False
 
-    def _check_main_contract(self) -> bool:
-        """检查主力合约有效性"""
+    def start_web_server(self, host: str = "0.0.0.0", port: int = 8080,
+                        reload: bool = False) -> bool:
+        """启动Web服务器"""
         try:
-            if not self.config_manager:
-                return False
+            logger.info("🌐 启动Web服务器")
+            logger.info(f"📍 地址: http://{host}:{port}")
 
-            # 获取配置的主力合约
-            market_data_config = self.config_manager.config.get('market_data', {})
-            main_contract = market_data_config.get('main_contract', '')
+            def run_server():
+                """在独立线程中运行Web服务器"""
+                try:
+                    uvicorn.run(
+                        "web_admin.api.main:app",
+                        host=host,
+                        port=port,
+                        reload=reload,
+                        log_level="info",
+                        access_log=True
+                    )
+                except Exception as e:
+                    logger.error(f"Web服务器运行异常: {e}")
 
-            if not main_contract:
-                logger.warning("未配置主力合约")
-                return False
+            # 在独立线程中启动Web服务器
+            self.web_thread = threading.Thread(target=run_server, daemon=True)
+            self.web_thread.start()
 
-            # 检查合约是否过期
-            import re
-            from datetime import datetime
+            # 等待一下确保服务器启动
+            time.sleep(2)
 
-            # 提取合约年月，如 au2509 -> 2025年09月
-            match = re.match(r'(\w+)(\d{4})', main_contract.lower())
-            if not match:
-                logger.warning(f"主力合约格式无效: {main_contract}")
-                return False
-
-            symbol, year_month = match.groups()
-            year = int('20' + year_month[:2])
-            month = int(year_month[2:4])
-
-            # 检查是否过期（合约月份小于当前月份）
-            now = datetime.now()
-            contract_date = datetime(year, month, 1)
-
-            if contract_date < datetime(now.year, now.month, 1):
-                logger.warning(f"主力合约已过期: {main_contract} (到期: {year}年{month:02d}月)")
-                return False
-
-            logger.info(f"✓ 主力合约有效: {main_contract} (到期: {year}年{month:02d}月)")
+            logger.info("✅ Web服务器启动成功")
             return True
 
         except Exception as e:
-            logger.error(f"检查主力合约失败: {e}")
+            logger.error(f"启动Web服务器失败: {e}")
             return False
 
-    def _check_service_dependencies(self, service_name: str) -> bool:
-        """检查服务依赖关系"""
+    def stop_system(self):
+        """停止系统"""
         try:
-            dependencies = self.service_dependencies.get(service_name, [])
+            logger.info("正在停止ARBIG系统...")
 
-            for dep in dependencies:
-                if dep == 'ctp_gateway':
-                    if not self.ctp_gateway or not (self.ctp_gateway.is_md_connected() or self.ctp_gateway.is_td_connected()):
-                        logger.error(f"{service_name}需要CTP连接，但CTP未连接")
-                        return False
-                else:
-                    if self.services_status.get(dep) != ServiceStatus.RUNNING:
-                        logger.error(f"{service_name}需要{dep}服务，但{dep}未运行")
-                        return False
-
-            return True
-
-        except Exception as e:
-            logger.error(f"检查服务依赖失败: {e}")
-            return False
-
-    def _get_dependent_services(self, service_name: str) -> List[str]:
-        """获取依赖指定服务的其他服务"""
-        dependent_services = []
-        for svc_name, deps in self.service_dependencies.items():
-            if service_name in deps and self.services_status.get(svc_name) == ServiceStatus.RUNNING:
-                dependent_services.append(svc_name)
-        return dependent_services
-
-    def _get_service_display_name(self, service_name: str) -> str:
-        """获取服务显示名称"""
-        display_names = {
-            'MarketDataService': '行情服务',
-            'AccountService': '账户服务',
-            'RiskService': '风控服务',
-            'TradingService': '交易服务'
-        }
-        return display_names.get(service_name, service_name)
-
-    def _update_running_mode(self):
-        """根据服务状态更新运行模式"""
-        try:
-            running_services = [name for name, status in self.services_status.items()
-                              if status == ServiceStatus.RUNNING]
-
-            if all(svc in running_services for svc in ['MarketDataService', 'AccountService', 'RiskService', 'TradingService']):
-                self.current_mode = RunningMode.FULL_TRADING
-            elif 'MarketDataService' in running_services and 'AccountService' in running_services:
-                self.current_mode = RunningMode.MONITOR_ONLY
+            # 停止核心系统
+            result = self.system_controller.stop_system()
+            if result.success:
+                logger.info("✅ 核心系统已停止")
             else:
-                self.current_mode = RunningMode.MARKET_DATA_ONLY
+                logger.error(f"核心系统停止失败: {result.message}")
 
-            logger.info(f"运行模式更新为: {self.current_mode.value}")
+            logger.info("✅ ARBIG系统已完全停止")
 
         except Exception as e:
-            logger.error(f"更新运行模式失败: {e}")
+            logger.error(f"停止系统时发生错误: {e}")
 
-    def _connect_ctp_with_retry(self) -> str:
-        """CTP连接重试逻辑"""
-        logger.info("开始CTP连接...")
-
-        for attempt in range(1, self.MAX_RETRY_COUNT + 1):
-            logger.info(f"CTP连接尝试 {attempt}/{self.MAX_RETRY_COUNT}")
-
-            try:
-                # 创建CTP网关
-                if not self.ctp_gateway:
-                    self.ctp_gateway = CtpGatewayWrapper(self.config_manager)
-
-                # 尝试连接
-                if self.ctp_gateway.connect():
-                    # 等待连接建立
-                    if self._wait_for_ctp_connection():
-                        connection_status = self._check_ctp_connection()
-                        if connection_status != "FAILED":
-                            logger.info(f"✓ CTP连接成功，状态: {connection_status}")
-                            return connection_status
-                        else:
-                            logger.warning("CTP连接状态检查失败")
-                    else:
-                        logger.warning("CTP连接超时")
-                else:
-                    logger.warning("CTP连接调用失败")
-
-            except Exception as e:
-                logger.error(f"CTP连接异常: {e}")
-
-            # 重试前等待
-            if attempt < self.MAX_RETRY_COUNT:
-                logger.info(f"等待{self.RETRY_INTERVAL}秒后重试...")
-                time.sleep(self.RETRY_INTERVAL)
-
-        logger.error("CTP连接失败，已达到最大重试次数")
-        return "FAILED"
-
-    def _wait_for_ctp_connection(self) -> bool:
-        """等待CTP连接建立"""
-        start_time = time.time()
-
-        while time.time() - start_time < self.CONNECTION_TIMEOUT:
-            if self.ctp_gateway.is_md_connected() or self.ctp_gateway.is_td_connected():
-                # 至少有一个连接成功，再等待一下看是否都能连上
-                time.sleep(2)
-                return True
-            time.sleep(1)
-
-        return False
-
-    def _check_ctp_connection(self) -> str:
-        """检查CTP连接状态"""
-        md_connected = self.ctp_gateway.is_md_connected()  # 行情连接
-        td_connected = self.ctp_gateway.is_td_connected()  # 交易连接
-
-        if md_connected and td_connected:
-            return "FULL"      # 完整连接
-        elif md_connected:
-            return "MD_ONLY"   # 仅行情
-        elif td_connected:
-            return "TD_ONLY"   # 仅交易（不太可能）
-        else:
-            return "FAILED"    # 完全失败
-
-    def _start_event_engine(self) -> bool:
-        """启动事件引擎"""
+    def run(self, with_web: bool = True, web_host: str = "0.0.0.0",
+            web_port: int = 8080, web_reload: bool = False):
+        """运行应用程序主循环"""
         try:
-            self.event_engine = EventEngine()
-            self.event_engine.start()
-            logger.info("✓ 事件引擎启动成功")
-            return True
-        except Exception as e:
-            logger.error(f"✗ 事件引擎启动失败: {e}")
-            return False
+            logger.info("="*60)
+            logger.info("🎯 ARBIG量化交易系统运行中")
+            logger.info("="*60)
 
-    def _start_core_services(self, ctp_status: str) -> bool:
-        """启动核心服务"""
-        logger.info("开始启动核心服务...")
-
-        # 1. 启动行情服务（必须成功）
-        if not self._start_market_data_service():
-            logger.error("✗ 行情服务启动失败，系统无法继续")
-            return False
-
-        # 2. 根据CTP连接状态启动其他服务
-        if ctp_status in ["FULL", "TD_ONLY"]:
-            # 有交易连接才启动交易相关服务
-            self._start_account_service()
-            self._start_risk_service()
-            self._start_trading_service()
-        else:
-            logger.warning("仅有行情连接，跳过交易相关服务")
-
-        logger.info("核心服务启动完成")
-        return True
-
-    def _start_market_data_service(self, config: Dict[str, Any] = None) -> bool:
-        """启动行情服务"""
-        try:
-            # 从配置文件读取行情订阅配置
-            market_data_config = self.config_manager.config.get('market_data', {})
-            main_contract = market_data_config.get('main_contract', 'au2509')
-            # 将单个主力合约转换为列表格式，以兼容现有的MarketDataService
-            main_contracts = [main_contract] if main_contract else ['au2509']
-            cache_size = market_data_config.get('cache_size', 1000)
-
-            service_config = ServiceConfig(
-                name="market_data",
-                enabled=True,
-                config=config or {
-                    'symbols': main_contracts,
-                    'cache_size': cache_size,
-                    'auto_subscribe': market_data_config.get('auto_subscribe', True)
-                }
-            )
-
-            # 获取Redis配置
-            redis_config = self.config_manager.get_redis_config()
-            redis_dict = {
-                'host': redis_config.host,
-                'port': redis_config.port,
-                'db': redis_config.db
-            }
-            if redis_config.password:
-                redis_dict['password'] = redis_config.password
-
-            # 初始化全局市场数据客户端
-            if init_market_data_client(redis_dict):
-                logger.info("✓ 全局市场数据客户端初始化成功")
+            if with_web:
+                logger.info("💻 Web管理界面: http://{}:{}".format(web_host, web_port))
+                logger.info("🔧 系统控制: 通过Web界面进行")
             else:
-                logger.warning("⚠ 全局市场数据客户端初始化失败")
+                logger.info("🔧 系统控制: 仅命令行模式")
 
-            market_data_service = MarketDataService(
-                self.event_engine, service_config, self.ctp_gateway, redis_dict
-            )
+            logger.info("⏹️  退出系统: 按 Ctrl+C")
+            logger.info("="*60)
 
-            if market_data_service.start():
-                self.services['MarketDataService'] = market_data_service
-                self.services_status['MarketDataService'] = ServiceStatus.RUNNING
-                logger.info("✓ 行情服务启动成功（已连接Redis）")
-                return True
-            else:
-                self.services_status['MarketDataService'] = ServiceStatus.ERROR
-                logger.error("✗ 行情服务启动失败")
-                return False
+            if with_web:
+                # 启动Web服务器
+                if not self.start_web_server(web_host, web_port, web_reload):
+                    logger.error("Web服务器启动失败")
+                    return
 
-        except Exception as e:
-            logger.error(f"✗ 行情服务启动异常: {e}")
-            return False
-
-    def _start_account_service(self, config: Dict[str, Any] = None) -> bool:
-        """启动账户服务"""
-        try:
-            service_config = ServiceConfig(
-                name="account",
-                enabled=True,
-                config=config or {
-                    'update_interval': 30,
-                    'position_sync': True,
-                    'auto_query_after_trade': True
-                }
-            )
-
-            account_service = AccountService(
-                self.event_engine, service_config, self.ctp_gateway
-            )
-
-            if account_service.start():
-                self.services['AccountService'] = account_service
-                self.services_status['AccountService'] = ServiceStatus.RUNNING
-                logger.info("✓ 账户服务启动成功")
-                return True
-            else:
-                self.services_status['AccountService'] = ServiceStatus.ERROR
-                logger.warning("⚠ 账户服务启动失败")
-                return False
-                
-        except Exception as e:
-            logger.warning(f"⚠ 账户服务启动异常: {e}")
-            return False
-            
-    def _start_risk_service(self, config: Dict[str, Any] = None) -> bool:
-        """启动风控服务"""
-        try:
-            service_config = ServiceConfig(
-                name="risk",
-                enabled=True,
-                config=config or {
-                    'max_position_ratio': 0.8,
-                    'max_daily_loss': 50000,
-                    'max_single_order_volume': 10
-                }
-            )
-
-            # 获取账户服务实例
-            account_service = self.services.get('AccountService')
-            if not account_service:
-                logger.error("风控服务需要账户服务，但账户服务未启动")
-                return False
-
-            risk_service = RiskService(
-                self.event_engine, service_config, account_service
-            )
-
-            if risk_service.start():
-                self.services['RiskService'] = risk_service
-                self.services_status['RiskService'] = ServiceStatus.RUNNING
-                logger.info("✓ 风控服务启动成功")
-                return True
-            else:
-                self.services_status['RiskService'] = ServiceStatus.ERROR
-                logger.warning("⚠ 风控服务启动失败")
-                return False
-
-        except Exception as e:
-            logger.warning(f"⚠ 风控服务启动异常: {e}")
-            return False
-            
-    def _start_trading_service(self, config: Dict[str, Any] = None) -> bool:
-        """启动交易服务"""
-        try:
-            service_config = ServiceConfig(
-                name="trading",
-                enabled=True,
-                config=config or {
-                    'order_timeout': 30,
-                    'max_orders_per_second': 5
-                }
-            )
-
-            # 获取依赖服务实例
-            account_service = self.services.get('AccountService')
-            risk_service = self.services.get('RiskService')
-
-            if not account_service:
-                logger.error("交易服务需要账户服务，但账户服务未启动")
-                return False
-
-            if not risk_service:
-                logger.error("交易服务需要风控服务，但风控服务未启动")
-                return False
-
-            trading_service = TradingService(
-                self.event_engine, service_config, self.ctp_gateway,
-                account_service, risk_service
-            )
-
-            if trading_service.start():
-                self.services['TradingService'] = trading_service
-                self.services_status['TradingService'] = ServiceStatus.RUNNING
-                logger.info("✓ 交易服务启动成功")
-                return True
-            else:
-                self.services_status['TradingService'] = ServiceStatus.ERROR
-                logger.warning("⚠ 交易服务启动失败")
-                return False
-
-        except Exception as e:
-            logger.warning(f"⚠ 交易服务启动异常: {e}")
-            return False
-            
-    def _start_strategy_service(self, config: Dict[str, Any] = None) -> bool:
-        """启动策略服务"""
-        try:
-            # 检查依赖服务
-            market_data_service = self.services.get('MarketDataService')
-            account_service = self.services.get('AccountService')
-            trading_service = self.services.get('TradingService')
-
-            if not market_data_service:
-                logger.error("策略服务需要行情服务，但行情服务未启动")
-                return False
-
-            if not account_service:
-                logger.error("策略服务需要账户服务，但账户服务未启动")
-                return False
-
-            if not trading_service:
-                logger.error("策略服务需要交易服务，但交易服务未启动")
-                return False
-
-            strategy_service = StrategyService(self.event_engine, self.config_manager)
-
-            if strategy_service.start():
-                self.services['StrategyService'] = strategy_service
-                logger.info("✓ 策略服务启动成功")
-                return True
-            else:
-                logger.warning("⚠ 策略服务启动失败")
-                return False
-
-        except Exception as e:
-            logger.warning(f"⚠ 策略服务启动异常: {e}")
-            return False
-            
-    def _start_services_demo_mode(self):
-        """启动演示模式的服务"""
-        logger.info("启动演示模式服务...")
-
-        # 在演示模式下，我们只启动策略服务，其他服务使用模拟数据
-        try:
-            strategy_service = StrategyService(self.event_engine, self.config_manager)
-
-            if strategy_service.start():
-                self.services['StrategyService'] = strategy_service
-                self.services_status['StrategyService'] = ServiceStatus.RUNNING
-                logger.info("✓ 策略服务（演示模式）启动成功")
-            else:
-                logger.warning("⚠ 策略服务（演示模式）启动失败")
-
-            # 模拟其他服务状态
-            self.services_status['MarketDataService'] = ServiceStatus.RUNNING
-            self.services_status['AccountService'] = ServiceStatus.RUNNING
-            self.services_status['TradingService'] = ServiceStatus.RUNNING
-            self.services_status['RiskService'] = ServiceStatus.RUNNING
-
-            logger.info("✓ 演示模式服务启动完成")
-
-        except Exception as e:
-            logger.error(f"演示模式服务启动失败: {e}")
-        
-    def run(self):
-        """运行系统主循环（保持兼容性）"""
-        try:
-            logger.info("ARBIG服务容器运行中...")
-            logger.info("系统现在通过Web API进行控制")
-            logger.info("访问 http://localhost:80/api/docs 查看API文档")
-
-            # 服务容器保持运行，等待Web API控制
-            while True:
-                time.sleep(1)
-                # 可以在这里添加定期检查逻辑
-                # 比如检查服务状态、内存使用等
+            # 运行系统控制器主循环
+            self.system_controller.run()
 
         except KeyboardInterrupt:
             logger.info("收到键盘中断信号")
         except Exception as e:
-            logger.error(f"系统运行异常: {e}")
+            logger.error(f"运行时发生错误: {e}")
         finally:
             self.stop_system()
 
-# ==================== 全局服务容器实例 ====================
+def main():
+    """主函数"""
+    parser = argparse.ArgumentParser(description='ARBIG量化交易系统 v2.0 - 单体架构')
+    parser.add_argument('--auto-start', action='store_true',
+                       help='自动启动所有服务（包括CTP连接和交易服务）')
+    parser.add_argument('--config', type=str, default='config.json',
+                       help='配置文件路径')
+    parser.add_argument('--headless', action='store_true',
+                       help='无头模式：不启动Web界面')
+    parser.add_argument('--web-only', action='store_true',
+                       help='仅Web模式：只启动Web界面（调试用）')
+    parser.add_argument('--host', type=str, default='0.0.0.0',
+                       help='Web服务器主机地址')
+    parser.add_argument('--port', type=int, default=8080,
+                       help='Web服务器端口')
+    parser.add_argument('--reload', action='store_true',
+                       help='开发模式：Web服务器自动重载')
+    parser.add_argument('--version', action='version', version='ARBIG v2.0.0 - 单体架构')
 
-# 全局服务容器实例
-_service_container = None
-app_instance = None  # 为Web API提供的全局实例
+    args = parser.parse_args()
 
-def get_service_container() -> ARBIGServiceContainer:
-    """获取全局服务容器实例"""
-    global _service_container
-    if _service_container is None:
-        _service_container = ARBIGServiceContainer()
-    return _service_container
+    # 显示启动信息
+    logger.info("="*60)
+    logger.info("🏛️  ARBIG量化交易系统 v2.0")
+    logger.info("🔄 单体架构版本 - 统一进程设计")
+    logger.info("="*60)
 
-def init_service_container():
-    """初始化服务容器"""
-    global _service_container, app_instance
-    _service_container = ARBIGServiceContainer()
-    app_instance = _service_container  # 设置全局实例
-    return _service_container
+    # 创建应用程序实例
+    app = ARBIGApplication()
 
+    try:
+        # 启动核心系统
+        if not args.web_only:
+            if not app.start_system(auto_start=args.auto_start):
+                logger.error("❌ 核心系统启动失败")
+                sys.exit(1)
+
+        # 确定是否启动Web界面
+        with_web = not args.headless
+
+        # 运行应用程序
+        app.run(
+            with_web=with_web,
+            web_host=args.host,
+            web_port=args.port,
+            web_reload=args.reload
+        )
+
+    except Exception as e:
+        logger.error(f"程序异常: {e}")
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()
+# -*- coding: utf-8 -*-
+
+"""
+ARBIG量化交易系统主程序 - 重构版本
+专注于系统核心控制，Web界面通过独立服务提供
+"""
+
+import sys
+import os
+import argparse
+import time
+from pathlib import Path
+
+# 添加项目根目录到Python路径
+project_root = Path(__file__).parent
+sys.path.insert(0, str(project_root))
+
+from core.system_controller import SystemController
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
+
+class ARBIGMain:
+    """ARBIG主程序类 - 简化版本"""
+    
+    def __init__(self):
+        """初始化主程序"""
+        self.system_controller = SystemController()
+        logger.info("ARBIG主程序初始化完成")
+    
+    def start(self, auto_start: bool = False) -> bool:
+        """启动系统"""
+        try:
+            if auto_start:
+                logger.info("🚀 自动启动模式")
+                result = self.system_controller.start_system()
+                if not result.success:
+                    logger.error(f"系统启动失败: {result.message}")
+                    return False
+                
+                logger.info("✅ 系统自动启动成功")
+                return True
+            else:
+                logger.info("📋 手动启动模式")
+                logger.info("系统已准备就绪，等待通过Web界面启动")
+                return True
+                
+        except Exception as e:
+            logger.error(f"启动失败: {e}")
+            return False
+    
+    def stop(self):
+        """停止系统"""
+        try:
+            logger.info("正在停止ARBIG系统...")
+            result = self.system_controller.stop_system()
+            if result.success:
+                logger.info("✅ ARBIG系统已完全停止")
+            else:
+                logger.error(f"系统停止失败: {result.message}")
+                
+        except Exception as e:
+            logger.error(f"停止系统时发生错误: {e}")
+    
+    def run(self):
+        """运行主循环"""
+        try:
+            logger.info("="*60)
+            logger.info("🎯 ARBIG量化交易系统运行中")
+            logger.info("="*60)
+            logger.info("💻 Web管理界面: http://localhost:80")
+            logger.info("🔧 系统控制: 通过Web界面进行")
+            logger.info("⏹️  退出系统: 按 Ctrl+C")
+            logger.info("="*60)
+            
+            # 运行系统控制器主循环
+            self.system_controller.run()
+                
+        except KeyboardInterrupt:
+            logger.info("收到键盘中断信号")
+        except Exception as e:
+            logger.error(f"运行时发生错误: {e}")
+        finally:
+            self.stop()
 
 def main():
-    """主函数 - 现在作为服务容器运行"""
-    import argparse
-    
-    parser = argparse.ArgumentParser(description='ARBIG服务容器')
-    parser.add_argument('--daemon', '-d', action='store_true', help='后台运行模式')
-    parser.add_argument('--api-only', action='store_true', help='仅启动API服务')
-    parser.add_argument('--auto-start', action='store_true', help='自动启动系统')
-    parser.add_argument('--demo-mode', action='store_true', help='演示模式（不需要CTP连接）')
+    """主函数"""
+    parser = argparse.ArgumentParser(description='ARBIG量化交易系统 v2.0')
+    parser.add_argument('--auto-start', action='store_true', 
+                       help='自动启动所有服务（包括CTP连接和交易服务）')
+    parser.add_argument('--config', type=str, default='config.json',
+                       help='配置文件路径')
+    parser.add_argument('--version', action='version', version='ARBIG v2.0.0')
     
     args = parser.parse_args()
     
-    print("🚀 ARBIG服务容器")
-    print("=" * 50)
-    print("系统现在通过Web API进行控制")
-    print("API文档: http://localhost:80/api/docs")
-    print("系统状态: http://localhost:80/api/v1/system/status")
-    print("=" * 50)
-
-    # 创建服务容器
-    service_container = init_service_container()
-
+    # 显示启动信息
+    logger.info("="*60)
+    logger.info("🏛️  ARBIG量化交易系统 v2.0")
+    logger.info("🔄 架构重构版本 - 清晰分层设计")
+    logger.info("="*60)
+    
+    # 创建主程序实例
+    app = ARBIGMain()
+    
     try:
-        # 如果指定自动启动，则启动系统
-        if args.auto_start:
-            logger.info("自动启动系统...")
-            if args.demo_mode:
-                logger.info("演示模式：跳过CTP连接，直接启动服务...")
-                result = service_container.start_system_demo_mode()
-            else:
-                result = service_container.start_system()
-
-            if result.success:
-                logger.info("✓ 系统自动启动成功")
-            else:
-                logger.error(f"✗ 系统自动启动失败: {result.message}")
-
-        # 连接服务容器到Web API
-        try:
-            from web_admin.api.dependencies import set_service_container
-            from web_admin.core.communication_manager import set_service_container_for_communication
-
-            set_service_container(service_container)
-            set_service_container_for_communication(service_container)
-            logger.info("✓ 服务容器已连接到Web API和通信管理器")
-        except ImportError:
-            logger.warning("⚠ 无法导入Web API模块，API功能将不可用")
-
-        # 启动内部API服务（用于与web_admin通信）
-        if not args.api_only:
-            logger.info("启动内部API服务...")
-
-            # 在单独线程中启动API服务（使用8000端口，避免与web_admin冲突）
-            import threading
-            from web_admin.api.main import start_api_server
-
-            api_thread = threading.Thread(
-                target=start_api_server,
-                kwargs={"host": "127.0.0.1", "port": 8000, "reload": False},
-                daemon=True
-            )
-            api_thread.start()
-
-            logger.info("✓ 内部API服务已启动（端口8000）")
-            logger.info("Web管理界面由独立的web_admin模块提供（端口80）")
-
-        # 运行主循环
-        if args.daemon:
-            logger.info("服务容器以后台模式运行")
+        # 启动系统
+        if app.start(auto_start=args.auto_start):
+            # 运行主循环
+            app.run()
         else:
-            logger.info("服务容器运行中，按Ctrl+C停止")
-
-        service_container.run()
-
-    except KeyboardInterrupt:
-        logger.info("收到停止信号")
+            logger.error("❌ 系统启动失败")
+            sys.exit(1)
+            
     except Exception as e:
-        logger.error(f"服务容器运行异常: {e}")
+        logger.error(f"程序异常: {e}")
         sys.exit(1)
-    finally:
-        logger.info("服务容器已停止")
 
 if __name__ == "__main__":
     main()

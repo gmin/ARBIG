@@ -1,14 +1,15 @@
 """
 API依赖注入
-提供API路由所需的依赖项
+提供API路由所需的依赖项 - 重构版本
 """
 
 from typing import Optional
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
+from .system_connector import get_system_connector, SystemConnector
+
 # 全局变量，用于存储系统组件的引用
-# 连接到重构后的main.py服务容器
 _service_container = None
 _system_manager = None
 _service_manager = None
@@ -150,9 +151,19 @@ def init_managers():
     if _data_manager is None:
         _data_manager = DataManager()
 
-# 依赖注入函数
+# 依赖注入函数 - 新架构
+def get_system_connector_dep() -> SystemConnector:
+    """获取系统连接器依赖"""
+    return get_system_connector()
+
+# 依赖注入函数 - 兼容性
 def get_system_manager():
     """获取系统管理器"""
+    # 优先使用新的系统连接器
+    connector = get_system_connector()
+    if connector.system_controller or connector.legacy_container:
+        return connector
+
     # 如果有真实的服务容器，返回服务容器，否则返回模拟的管理器
     if _service_container:
         return _service_container

@@ -8,6 +8,7 @@ import json
 import yaml
 from typing import Dict, Any, Optional
 from pathlib import Path
+from datetime import datetime
 
 from core.types import CtpConfig, DatabaseConfig, RedisConfig, ServiceConfig
 from utils.logger import get_logger
@@ -257,13 +258,45 @@ class ConfigManager:
     def get_redis_config(self) -> RedisConfig:
         """获取Redis配置"""
         config = self.get_config('database.redis') or {}
-        
+
         return RedisConfig(
             host=config.get('host', 'localhost'),
             port=config.get('port', 6379),
             db=config.get('db', 0),
             password=config.get('password', '')
         )
+
+    def get_main_contract(self) -> str:
+        """获取主力合约代码"""
+        market_data_config = self.get_config('market_data') or {}
+        return market_data_config.get('main_contract', 'au2509')
+
+    def set_main_contract(self, contract: str) -> bool:
+        """设置主力合约代码"""
+        try:
+            self.set_config('market_data.main_contract', contract)
+            self.set_config('market_data.last_update', datetime.now().isoformat())
+
+            # 保存配置
+            return self.save_config()
+        except Exception as e:
+            logger.error(f"设置主力合约失败: {e}")
+            return False
+
+    def get_contract_multiplier(self) -> int:
+        """获取合约乘数"""
+        market_data_config = self.get_config('market_data') or {}
+        return market_data_config.get('contract_multiplier', 1000)
+
+    def get_market_data_config(self) -> dict:
+        """获取行情数据配置"""
+        return self.get_config('market_data') or {
+            'main_contract': 'au2509',
+            'contract_multiplier': 1000,
+            'exchange': 'SHFE',
+            'auto_subscribe': True,
+            'cache_size': 1000
+        }
     
     def save_config(self) -> bool:
         """

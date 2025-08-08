@@ -1,0 +1,28 @@
+{
+  "mysql": {
+    "host": "localhost",
+    "port": 3306,
+    "user": "root",
+    "password": "arbig123",
+    "database": "arbig_trading",
+    "charset": "utf8mb4",
+    "minsize": 5,
+    "maxsize": 20,
+    "echo": false
+  },
+  "redis": {
+    "host": "localhost",
+    "port": 6379,
+    "db": 0,
+    "password": null,
+    "max_connections": 20
+  },
+  "market_data": {
+    "main_contract": "au2509",
+    "contract_multiplier": 1000,
+    "exchange": "SHFE",
+    "auto_subscribe": true,
+    "cache_size": 1000,
+    "last_update": "2025-08-06"
+  }
+}

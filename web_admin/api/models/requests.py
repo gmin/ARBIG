@@ -26,6 +26,10 @@ class ServiceControlRequest(BaseModel):
     force: bool = Field(False, description="是否强制执行")
     config: Optional[Dict[str, Any]] = Field(None, description="服务配置")
 
+class ServiceConfigRequest(BaseModel):
+    """服务配置请求"""
+    config: Dict[str, Any] = Field(..., description="服务配置参数")
+
 class StrategyControlRequest(BaseModel):
     """策略控制请求"""
     strategy_name: str = Field(..., description="策略名称")
