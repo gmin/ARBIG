@@ -4,7 +4,25 @@
 """
 
 CONFIG = {
-    # 数据源配置
+    # 主力合约配置
+    'main_contract': {
+        'symbol': 'au2510',
+        'name': '黄金主力',
+        'exchange': 'SHFE',
+        'description': '上海期货交易所黄金主力合约'
+    },
+
+    # 支持的合约列表
+    'supported_contracts': [
+        {'symbol': 'au2510', 'name': '黄金2510', 'exchange': 'SHFE', 'category': '贵金属', 'is_main': True},
+        {'symbol': 'ag2510', 'name': '白银主力', 'exchange': 'SHFE', 'category': '贵金属', 'is_main': False},
+        {'symbol': 'cu2510', 'name': '铜主力', 'exchange': 'SHFE', 'category': '有色金属', 'is_main': False}
+    ],
+
+    # 自动订阅的合约
+    'auto_subscribe_contracts': ['au2510'],
+
+    # 数据源配置 (保留兼容性)
     'shfe': {
         'gateway_name': 'CTP',
         'host': '',           # CTP服务器地址
@@ -14,7 +32,6 @@ CONFIG = {
         'broker_id': '9999',      # 经纪商代码
         'app_id': '',         # 应用ID
         'auth_code': '',      # 认证码
-        'symbol': 'AU2508',   # 合约代码
     },
     
     
@@ -72,11 +89,23 @@ CONFIG = {
                 'trade_data': 'trades',
                 'position_data': 'positions'
             }
-        },
-        'redis': {
-            'host': 'localhost',
-            'port': 6379,
-            'db': 0
         }
     }
 }
+
+# 配置工具函数
+def get_main_contract():
+    """获取主力合约配置"""
+    return CONFIG['main_contract']
+
+def get_supported_contracts():
+    """获取支持的合约列表"""
+    return CONFIG['supported_contracts']
+
+def get_auto_subscribe_contracts():
+    """获取自动订阅的合约列表"""
+    return CONFIG['auto_subscribe_contracts']
+
+def get_main_contract_symbol():
+    """获取主力合约代码"""
+    return CONFIG['main_contract']['symbol']

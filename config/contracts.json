@@ -1,0 +1,50 @@
+{
+  "main_contract": {
+    "symbol": "au2508",
+    "name": "黄金主力",
+    "exchange": "SHFE",
+    "description": "上海期货交易所黄金主力合约"
+  },
+  "supported_contracts": [
+    {
+      "symbol": "au2508",
+      "name": "黄金主力",
+      "exchange": "SHFE",
+      "category": "贵金属",
+      "is_main": true
+    },
+    {
+      "symbol": "au2509",
+      "name": "黄金2509",
+      "exchange": "SHFE",
+      "category": "贵金属",
+      "is_main": false
+    },
+    {
+      "symbol": "au2510",
+      "name": "黄金2510",
+      "exchange": "SHFE",
+      "category": "贵金属",
+      "is_main": false
+    },
+    {
+      "symbol": "ag2508",
+      "name": "白银主力",
+      "exchange": "SHFE",
+      "category": "贵金属",
+      "is_main": false
+    },
+    {
+      "symbol": "cu2508",
+      "name": "铜主力",
+      "exchange": "SHFE",
+      "category": "有色金属",
+      "is_main": false
+    }
+  ],
+  "auto_subscribe": [
+    "au2508"
+  ],
+  "config_version": "1.0",
+  "last_updated": "2025-08-11"
+}

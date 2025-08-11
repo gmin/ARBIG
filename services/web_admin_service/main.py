@@ -212,154 +212,27 @@ async def health_check():
     )
 
 @app.get("/", response_class=HTMLResponse, summary="Web管理界面")
-async def web_interface():
-    """Web管理界面主页"""
-    html_content = """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>ARBIG量化交易系统 - Web管理界面</title>
-        <meta charset="utf-8">
-        <style>
-            body { font-family: Arial, sans-serif; margin: 40px; background: #f5f5f5; }
-            .container { max-width: 1200px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-            h1 { color: #333; border-bottom: 2px solid #007acc; padding-bottom: 10px; }
-            .service-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin: 20px 0; }
-            .service-card { border: 1px solid #ddd; padding: 20px; border-radius: 6px; background: #fafafa; }
-            .status-running { color: #28a745; font-weight: bold; }
-            .status-stopped { color: #dc3545; font-weight: bold; }
-            .btn { padding: 8px 16px; margin: 5px; border: none; border-radius: 4px; cursor: pointer; text-decoration: none; display: inline-block; }
-            .btn-primary { background: #007acc; color: white; }
-            .btn-success { background: #28a745; color: white; }
-            .btn-danger { background: #dc3545; color: white; }
-            .btn:hover { opacity: 0.8; }
-            .api-links { margin: 20px 0; }
-            .api-links a { margin-right: 15px; }
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <h1>🏛️ ARBIG量化交易系统 v2.0</h1>
-            <p><strong>微服务架构</strong> - Web管理界面</p>
-            
-            <div class="api-links">
-                <a href="/trading" class="btn btn-success">📈 交易管理</a>
-                <a href="/api/docs" class="btn btn-primary">📚 API文档</a>
-                <a href="/health" class="btn btn-success">💚 健康检查</a>
-                <a href="/api/v1/services" class="btn btn-primary">🔧 服务列表</a>
-                <a href="/api/v1/system/status" class="btn btn-primary">📊 系统状态</a>
-            </div>
-            
-            <h2>🔧 微服务管理</h2>
-            <div class="service-grid">
-                <div class="service-card">
-                    <h3>核心交易服务</h3>
-                    <p><strong>端口:</strong> 8001</p>
-                    <p><strong>状态:</strong> <span id="trading-status" class="status-stopped">检查中...</span></p>
-                    <a href="http://localhost:8001/docs" class="btn btn-primary" target="_blank">API文档</a>
-                    <a href="http://localhost:8001/health" class="btn btn-success" target="_blank">健康检查</a>
-                </div>
-                
-                <div class="service-card">
-                    <h3>Web管理服务</h3>
-                    <p><strong>端口:</strong> 80</p>
-                    <p><strong>状态:</strong> <span class="status-running">运行中</span></p>
-                    <a href="/api/docs" class="btn btn-primary">API文档</a>
-                    <a href="/health" class="btn btn-success">健康检查</a>
-                </div>
-            </div>
-            
-            <h2>🎯 快速操作</h2>
-            <div style="margin: 20px 0;">
-                <button onclick="startSystem()" class="btn btn-success">启动交易系统</button>
-                <button onclick="stopSystem()" class="btn btn-danger">停止交易系统</button>
-                <button onclick="checkStatus()" class="btn btn-primary">检查系统状态</button>
-            </div>
-            
-            <div id="result" style="margin: 20px 0; padding: 15px; background: #f8f9fa; border-radius: 4px; display: none;"></div>
-        </div>
-        
-        <script>
-            // 检查交易服务状态
-            async function checkTradingServiceStatus() {
-                try {
-                    const response = await fetch('/api/v1/services/trading_service/status');
-                    const data = await response.json();
-                    const statusElement = document.getElementById('trading-status');
-                    if (data.success && data.data.status === 'running') {
-                        statusElement.textContent = '运行中';
-                        statusElement.className = 'status-running';
-                    } else {
-                        statusElement.textContent = '已停止';
-                        statusElement.className = 'status-stopped';
-                    }
-                } catch (error) {
-                    const statusElement = document.getElementById('trading-status');
-                    statusElement.textContent = '连接失败';
-                    statusElement.className = 'status-stopped';
-                }
-            }
-            
-            async function startSystem() {
-                showResult('正在启动交易系统...', 'info');
-                try {
-                    const response = await fetch('/api/v1/system/start', { method: 'POST' });
-                    const data = await response.json();
-                    showResult(data.message, data.success ? 'success' : 'error');
-                    checkTradingServiceStatus();
-                } catch (error) {
-                    showResult('启动失败: ' + error.message, 'error');
-                }
-            }
-            
-            async function stopSystem() {
-                showResult('正在停止交易系统...', 'info');
-                try {
-                    const response = await fetch('/api/v1/system/stop', { method: 'POST' });
-                    const data = await response.json();
-                    showResult(data.message, data.success ? 'success' : 'error');
-                    checkTradingServiceStatus();
-                } catch (error) {
-                    showResult('停止失败: ' + error.message, 'error');
-                }
-            }
-            
-            async function checkStatus() {
-                showResult('正在检查系统状态...', 'info');
-                try {
-                    const response = await fetch('/api/v1/system/status');
-                    const data = await response.json();
-                    if (data.success) {
-                        const status = data.data;
-                        showResult(`系统状态: ${status.system_status} | 运行模式: ${status.running_mode} | 运行时间: ${status.uptime}`, 'success');
-                    } else {
-                        showResult(data.message, 'error');
-                    }
-                    checkTradingServiceStatus();
-                } catch (error) {
-                    showResult('状态检查失败: ' + error.message, 'error');
-                }
-            }
-            
-            function showResult(message, type) {
-                const resultDiv = document.getElementById('result');
-                resultDiv.style.display = 'block';
-                resultDiv.innerHTML = message;
-                resultDiv.style.background = type === 'success' ? '#d4edda' : 
-                                           type === 'error' ? '#f8d7da' : '#d1ecf1';
-                resultDiv.style.color = type === 'success' ? '#155724' : 
-                                       type === 'error' ? '#721c24' : '#0c5460';
-            }
-            
-            // 页面加载时检查服务状态
-            window.onload = function() {
-                checkTradingServiceStatus();
-            };
-        </script>
-    </body>
-    </html>
-    """
-    return HTMLResponse(content=html_content)
+async def web_interface(request: Request):
+    """Web管理界面主页 - Dashboard"""
+    # 检查模板文件是否存在
+    template_file = templates_dir / "dashboard.html" if templates_dir.exists() else None
+    if templates and template_file and template_file.exists():
+        return templates.TemplateResponse("dashboard.html", {"request": request})
+    else:
+        return HTMLResponse(content="""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>ARBIG量化交易系统</title>
+            <meta charset="utf-8">
+            <meta http-equiv="refresh" content="0;url=/trading">
+        </head>
+        <body>
+            <p>正在跳转到交易管理页面...</p>
+            <script>window.location.href='/trading';</script>
+        </body>
+        </html>
+        """)
 
 # API路由
 @app.get("/api/v1/services", response_model=APIResponse, summary="获取所有服务")

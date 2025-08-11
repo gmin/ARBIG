@@ -15,6 +15,7 @@ from shared.models.trading import (
 )
 from shared.utils.service_client import ServiceClient
 from utils.logger import get_logger
+from config.config import get_supported_contracts, get_main_contract_symbol
 
 logger = get_logger(__name__)
 
@@ -471,3 +472,23 @@ async def get_tick(
     except Exception as e:
         logger.error(f"获取行情数据失败: {e}")
         raise HTTPException(status_code=500, detail=f"获取行情数据失败: {str(e)}")
+
+@router.get("/contracts/config")
+async def get_contracts_config():
+    """获取合约配置信息"""
+    try:
+        supported_contracts = get_supported_contracts()
+        main_contract_symbol = get_main_contract_symbol()
+
+        return {
+            "success": True,
+            "data": {
+                "main_contract": main_contract_symbol,
+                "supported_contracts": supported_contracts,
+                "default_symbol": main_contract_symbol
+            },
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"获取合约配置失败: {e}")
+        raise HTTPException(status_code=500, detail=f"获取合约配置失败: {str(e)}")

@@ -18,6 +18,7 @@ from vnpy.trader.constant import Exchange, Direction, OrderType, Offset
 from vnpy.trader.event import EVENT_CONTRACT, EVENT_TICK, EVENT_ORDER, EVENT_TRADE, EVENT_ACCOUNT, EVENT_POSITION
 
 from utils.logger import get_logger
+from config.config import get_main_contract_symbol, get_auto_subscribe_contracts
 
 logger = get_logger(__name__)
 
@@ -182,9 +183,9 @@ class CtpIntegration:
             # 获取所有合约
             all_contracts = self.main_engine.get_all_contracts()
             if not all_contracts:
-                logger.warning("未收到合约数据，尝试手动订阅au2508")
-                # 手动订阅au2508合约
-                await self._manual_subscribe_au2508()
+                logger.warning("未收到合约数据，尝试手动订阅主力合约")
+                # 手动订阅主力合约
+                await self._manual_subscribe_main_contract()
                 return
 
             # 筛选黄金合约
@@ -203,34 +204,35 @@ class CtpIntegration:
 
                 logger.info(f"✅ 已订阅主力合约: {main_contract.symbol}")
             else:
-                logger.warning("未找到黄金合约，尝试手动订阅au2508")
-                await self._manual_subscribe_au2508()
+                logger.warning("未找到黄金合约，尝试手动订阅主力合约")
+                await self._manual_subscribe_main_contract()
 
         except Exception as e:
             logger.error(f"订阅合约失败: {e}")
             # 失败时也尝试手动订阅
-            await self._manual_subscribe_au2508()
+            await self._manual_subscribe_main_contract()
 
-    async def _manual_subscribe_au2508(self):
-        """手动订阅au2508合约"""
+    async def _manual_subscribe_main_contract(self):
+        """手动订阅主力合约"""
         try:
-            logger.info("手动订阅au2508合约...")
+            main_symbol = get_main_contract_symbol()
+            logger.info(f"手动订阅主力合约: {main_symbol}...")
             req = SubscribeRequest(
-                symbol="au2508",
+                symbol=main_symbol,
                 exchange=Exchange.SHFE
             )
             self.ctp_gateway.subscribe(req)
-            logger.info("✅ 已手动订阅au2508合约")
+            logger.info(f"✅ 已手动订阅主力合约: {main_symbol}")
 
             # 等待行情数据
             await asyncio.sleep(3)
-            if "au2508" in self.ticks:
-                logger.info("✅ au2508行情数据接收成功")
+            if main_symbol in self.ticks:
+                logger.info(f"✅ {main_symbol}行情数据接收成功")
             else:
-                logger.warning("⚠️ au2508行情数据未收到，可能需要等待")
+                logger.warning(f"⚠️ {main_symbol}行情数据未收到，可能需要等待")
 
         except Exception as e:
-            logger.error(f"手动订阅au2508失败: {e}")
+            logger.error(f"手动订阅主力合约失败: {e}")
     
     def _on_tick(self, event):
         """处理行情数据"""
@@ -463,14 +465,65 @@ class CtpIntegration:
         if not self.account:
             return None
 
+        # 基础账户信息
+        balance = getattr(self.account, 'balance', 0)
+        available = getattr(self.account, 'available', 0)
+        margin = getattr(self.account, 'margin', 0)
+        commission = getattr(self.account, 'commission', 0)
+        close_profit = getattr(self.account, 'close_profit', 0)
+        frozen = getattr(self.account, 'frozen', 0)
+        pre_balance = getattr(self.account, 'pre_balance', 0)
+
+        # 计算衍生指标
+        total_assets = balance + close_profit  # 总资产
+        net_assets = balance - margin  # 净资产
+        risk_ratio = (margin / balance * 100) if balance > 0 else 0  # 风险度
+        margin_ratio = (margin / available * 100) if available > 0 else 0  # 保证金率
+        daily_pnl = balance - pre_balance  # 当日盈亏
+
+        # 计算可开仓手数（假设每手保证金10000元）
+        margin_per_lot = 10000
+        available_lots = int(available / margin_per_lot) if available > 0 else 0
+
+        # 计算持仓相关信息
+        position_value = 0  # 持仓市值
+        unrealized_pnl = 0  # 未实现盈亏
+
+        # 从持仓数据计算
+        for symbol, position in self.positions.items():
+            if hasattr(position, 'volume') and position.volume > 0:
+                pos_value = getattr(position, 'volume', 0) * getattr(position, 'price', 0)
+                position_value += pos_value
+                unrealized_pnl += getattr(position, 'pnl', 0)
+
         return {
-            'balance': getattr(self.account, 'balance', 0),
-            'available': getattr(self.account, 'available', 0),
-            'margin': getattr(self.account, 'margin', 0),
-            'commission': getattr(self.account, 'commission', 0),
-            'close_profit': getattr(self.account, 'close_profit', 0),
-            'frozen': getattr(self.account, 'frozen', 0),
-            'pre_balance': getattr(self.account, 'pre_balance', 0)
+            # 基础信息
+            'accountid': getattr(self.account, 'accountid', 'CTP_ACCOUNT'),
+            'balance': balance,
+            'available': available,
+            'margin': margin,
+            'commission': commission,
+            'close_profit': close_profit,
+            'frozen': frozen,
+            'pre_balance': pre_balance,
+
+            # 衍生指标
+            'total_assets': total_assets,
+            'net_assets': net_assets,
+            'risk_ratio': round(risk_ratio, 2),
+            'margin_ratio': round(margin_ratio, 2),
+            'daily_pnl': daily_pnl,
+            'available_lots': available_lots,
+
+            # 持仓相关
+            'position_value': position_value,
+            'unrealized_pnl': unrealized_pnl,
+            'realized_pnl': close_profit,  # 已实现盈亏
+
+            # 其他信息
+            'currency': 'CNY',
+            'gateway_name': getattr(self.account, 'gateway_name', 'CTP'),
+            'update_time': datetime.now().isoformat()
         }
 
     def get_position_info(self, symbol: str = None) -> Dict[str, Any]:

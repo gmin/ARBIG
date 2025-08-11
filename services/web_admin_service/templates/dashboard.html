@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ARBIG量化交易系统 - 控制台</title>
+    <link rel="stylesheet" href="/static/css/dashboard.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>">
+</head>
+<body>
+    <!-- 导航栏 -->
+    <nav class="navbar">
+        <div class="navbar-content">
+            <a href="/" class="navbar-brand">📊 ARBIG量化交易系统</a>
+            <div class="navbar-center">
+                <ul class="navbar-nav">
+                    <li><a href="/" class="active">控制台</a></li>
+                    <li><a href="/trading">交易管理</a></li>
+                    <li><a href="/api/docs" target="_blank">API文档</a></li>
+                </ul>
+            </div>
+            <div class="navbar-user">
+                <div class="user-info">
+                    <div class="user-avatar">👤</div>
+                    <div class="user-details">
+                        <div class="user-name">交易员</div>
+                        <div class="user-status">在线</div>
+                    </div>
+                </div>
+                <div class="user-menu">
+                    <button class="btn btn-outline" onclick="logout()">退出</button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- 主容器 -->
+    <div class="container">
+        <!-- 页面标题 -->
+        <div class="page-header">
+            <h1 class="page-title">交易控制台</h1>
+            <p class="page-subtitle">实时监控量化交易系统状态和性能指标</p>
+        </div>
+
+        <!-- 系统状态概览 -->
+        <div class="grid grid-4">
+            <div class="card stat-card">
+                <div class="stat-value" id="system-status">
+                    <span class="status-indicator online">
+                        <span class="status-dot"></span>
+                        在线
+                    </span>
+                </div>
+                <div class="stat-label">系统状态</div>
+            </div>
+            
+            <div class="card stat-card">
+                <div class="stat-value" id="total-positions">--</div>
+                <div class="stat-label">总持仓</div>
+                <div class="stat-change" id="positions-change">--</div>
+            </div>
+            
+            <div class="card stat-card">
+                <div class="stat-value" id="total-pnl">--</div>
+                <div class="stat-label">总盈亏 (元)</div>
+                <div class="stat-change" id="pnl-change">--</div>
+            </div>
+            
+            <div class="card stat-card">
+                <div class="stat-value" id="active-strategies">--</div>
+                <div class="stat-label">活跃策略</div>
+                <div class="stat-change" id="strategies-change">--</div>
+            </div>
+        </div>
+
+        <!-- 账户信息 -->
+        <div class="card" style="margin-top: 32px;">
+            <div class="card-header">💰 账户信息</div>
+            <div class="card-body">
+                <div class="grid grid-4" style="gap: 24px;">
+                    <div style="text-align: center;">
+                        <div style="font-size: 20px; font-weight: 700; color: var(--primary-color);" id="account-balance">--</div>
+                        <div style="color: var(--text-secondary); font-size: 12px; margin-top: 4px;">账户余额</div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="font-size: 20px; font-weight: 700; color: var(--text-primary);" id="available-funds">--</div>
+                        <div style="color: var(--text-secondary); font-size: 12px; margin-top: 4px;">可用资金</div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="font-size: 20px; font-weight: 700; color: var(--warning-color);" id="margin-used">--</div>
+                        <div style="color: var(--text-secondary); font-size: 12px; margin-top: 4px;">占用保证金</div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="font-size: 20px; font-weight: 700;" id="total-pnl-display">--</div>
+                        <div style="color: var(--text-secondary); font-size: 12px; margin-top: 4px;">总盈亏</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 主要功能区域 -->
+        <div class="grid grid-2" style="margin-top: 32px;">
+            <!-- 实时行情 -->
+            <div class="card">
+                <div class="card-header">
+                    <span>📈 实时行情 - au2508</span>
+                    <span class="status-indicator online" id="market-status">
+                        <span class="status-dot"></span>
+                        已连接
+                    </span>
+                </div>
+                <div class="card-body" style="padding: 0;">
+                    <!-- 订单簿样式显示 -->
+                    <div class="orderbook">
+                        <!-- 卖一价 (上方，红色) -->
+                        <div class="orderbook-row sell">
+                            <div class="price-label">ASK</div>
+                            <div class="price-value" id="ask-price">--</div>
+                            <div class="volume-value" id="ask-volume">--</div>
+                        </div>
+
+                        <!-- 最新价 (中间，突出显示) -->
+                        <div class="orderbook-center">
+                            <div>
+                                <div class="last-price" id="last-price">--</div>
+                                <div style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">最新价</div>
+                            </div>
+                            <div class="price-change" id="price-change">--</div>
+                        </div>
+
+                        <!-- 买一价 (下方，绿色) -->
+                        <div class="orderbook-row buy">
+                            <div class="price-label">BID</div>
+                            <div class="price-value" id="bid-price">--</div>
+                            <div class="volume-value" id="bid-volume">--</div>
+                        </div>
+                    </div>
+
+                    <div style="padding: 16px 20px; text-align: center; background: var(--bg-secondary);">
+                        <div style="font-size: 16px; font-weight: 600; color: var(--text-primary);" id="volume">--</div>
+                        <div style="color: var(--text-secondary); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px;">总成交量</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 持仓概览 -->
+            <div class="card">
+                <div class="card-header">💼 持仓概览</div>
+                <div class="card-body">
+                    <div id="positions-loading" class="loading">
+                        <div class="spinner"></div>
+                        加载中...
+                    </div>
+                    <div id="positions-content" style="display: none;">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>方向</th>
+                                    <th>数量</th>
+                                    <th>开仓价</th>
+                                    <th>盈亏</th>
+                                </tr>
+                            </thead>
+                            <tbody id="positions-table">
+                                <!-- 动态填充 -->
+                            </tbody>
+                        </table>
+                    </div>
+                    <div id="no-positions" style="display: none; text-align: center; padding: 40px; color: var(--text-secondary);">
+                        暂无持仓
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 快速操作 -->
+        <div class="card" style="margin-top: 32px;">
+            <div class="card-header">⚡ 快速操作</div>
+            <div class="card-body">
+                <div style="display: flex; gap: 16px; flex-wrap: wrap;">
+                    <a href="/trading" class="btn btn-primary">📊 交易管理</a>
+                    <button class="btn btn-success" onclick="refreshData()">🔄 刷新数据</button>
+                    <button class="btn btn-outline" onclick="viewLogs()">📋 查看日志</button>
+                    <button class="btn btn-danger" onclick="emergencyStop()">🛑 紧急停止</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 系统信息 -->
+        <div class="grid grid-3" style="margin-top: 32px;">
+            <div class="card">
+                <div class="card-header">🔧 核心交易服务</div>
+                <div class="card-body">
+                    <div class="status-indicator online" id="trading-service-status">
+                        <span class="status-dot"></span>
+                        运行中
+                    </div>
+                    <div style="margin-top: 12px; font-size: 14px; color: var(--text-secondary);">
+                        端口: 8001<br>
+                        版本: v2.0
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">🌐 Web管理服务</div>
+                <div class="card-body">
+                    <div class="status-indicator online">
+                        <span class="status-dot"></span>
+                        运行中
+                    </div>
+                    <div style="margin-top: 12px; font-size: 14px; color: var(--text-secondary);">
+                        端口: 80<br>
+                        版本: v2.0
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">📡 CTP连接</div>
+                <div class="card-body">
+                    <div class="status-indicator online" id="ctp-status">
+                        <span class="status-dot"></span>
+                        已连接
+                    </div>
+                    <div style="margin-top: 12px; font-size: 14px; color: var(--text-secondary);">
+                        模拟环境<br>
+                        行情: 正常
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/dashboard.js"></script>
+</body>
+</html>
