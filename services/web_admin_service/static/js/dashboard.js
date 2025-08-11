@@ -3,14 +3,37 @@ class Dashboard {
     constructor() {
         this.updateInterval = 2000; // 2秒更新一次
         this.isUpdating = false;
+        this.mainContract = 'au2510'; // 默认值，将从配置加载
         this.init();
     }
 
-    init() {
+    async init() {
         console.log('🚀 ARBIG Dashboard 初始化...');
-        this.startAutoUpdate();
+        await this.loadMainContract();
         this.bindEvents();
-        this.loadInitialData();
+        await this.loadInitialData();
+        this.startAutoUpdate();
+    }
+
+    async loadMainContract() {
+        try {
+            const response = await fetch('/api/v1/trading/config/main_contract');
+            if (response.ok) {
+                const result = await response.json();
+                if (result.success && result.data.main_contract) {
+                    this.mainContract = result.data.main_contract;
+                    console.log(`✅ 主力合约配置加载成功: ${this.mainContract}`);
+
+                    // 更新页面显示
+                    const symbolElement = document.getElementById('main-contract-symbol');
+                    if (symbolElement) {
+                        symbolElement.textContent = this.mainContract;
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('❌ 加载主力合约配置失败:', error);
+        }
     }
 
     bindEvents() {
@@ -63,18 +86,18 @@ class Dashboard {
         try {
             // 优先从CTP状态接口获取数据，确保数据来源一致
             const response = await fetch('/api/v1/trading/ctp_status');
-            if (!response.ok) throw new Error('CTP状态获取失败');
-
-            const statusData = await response.json();
-            if (statusData.success && statusData.data.tick_data && statusData.data.tick_data.au2508) {
-                const tick = statusData.data.tick_data.au2508;
-                this.displayMarketData(tick);
-                this.updateMarketStatus('online');
-                return;
+            if (response.ok) {
+                const statusData = await response.json();
+                if (statusData.success && statusData.data.tick_data && statusData.data.tick_data[this.mainContract]) {
+                    const tick = statusData.data.tick_data[this.mainContract];
+                    this.displayMarketData(tick);
+                    this.updateMarketStatus('online');
+                    return;
+                }
             }
 
             // 如果状态接口失败，尝试直接API
-            const tickResponse = await fetch('/api/v1/trading/tick/au2508');
+            const tickResponse = await fetch(`/api/v1/trading/tick/${this.mainContract}`);
             if (tickResponse.ok) {
                 const tickResult = await tickResponse.json();
                 if (tickResult.success && tickResult.data && tickResult.data.response) {
@@ -150,7 +173,7 @@ class Dashboard {
             if (Array.isArray(result)) {
                 // API直接返回数组格式
                 positionsArray = result.map(pos => ({
-                    symbol: pos.symbol || 'au2508',
+                    symbol: pos.symbol || this.mainContract,
                     direction: pos.direction,
                     volume: pos.volume,
                     open_price: pos.open_price || pos.avg_price,
@@ -160,7 +183,7 @@ class Dashboard {
             } else if (result.success && result.data) {
                 if (Array.isArray(result.data)) {
                     positionsArray = result.data.map(pos => ({
-                        symbol: pos.symbol || 'au2508',
+                        symbol: pos.symbol || this.mainContract,
                         direction: pos.direction,
                         volume: pos.volume,
                         open_price: pos.open_price || pos.avg_price,

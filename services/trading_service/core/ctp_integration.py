@@ -188,24 +188,41 @@ class CtpIntegration:
                 await self._manual_subscribe_main_contract()
                 return
 
-            # 筛选黄金合约
-            gold_contracts = [c for c in all_contracts if c.symbol.startswith("au") and c.exchange == Exchange.SHFE]
+            # 优先使用配置文件中的主力合约
+            main_symbol = get_main_contract_symbol()
+            logger.info(f"配置文件中的主力合约: {main_symbol}")
 
-            if gold_contracts:
-                # 选择主力合约（通常是最近月份）
-                main_contract = gold_contracts[0]  # 简化选择逻辑
+            # 检查配置的主力合约是否在可用合约中
+            target_contract = None
+            for contract in all_contracts:
+                if contract.symbol == main_symbol and contract.exchange == Exchange.SHFE:
+                    target_contract = contract
+                    break
 
-                # 订阅行情
+            if target_contract:
+                # 订阅配置文件中指定的主力合约
                 req = SubscribeRequest(
-                    symbol=main_contract.symbol,
-                    exchange=main_contract.exchange
+                    symbol=target_contract.symbol,
+                    exchange=target_contract.exchange
                 )
                 self.ctp_gateway.subscribe(req)
-
-                logger.info(f"✅ 已订阅主力合约: {main_contract.symbol}")
+                logger.info(f"✅ 已订阅配置的主力合约: {target_contract.symbol}")
             else:
-                logger.warning("未找到黄金合约，尝试手动订阅主力合约")
-                await self._manual_subscribe_main_contract()
+                # 如果配置的合约不可用，筛选黄金合约作为备选
+                gold_contracts = [c for c in all_contracts if c.symbol.startswith("au") and c.exchange == Exchange.SHFE]
+
+                if gold_contracts:
+                    # 选择第一个可用的黄金合约作为备选
+                    backup_contract = gold_contracts[0]
+                    req = SubscribeRequest(
+                        symbol=backup_contract.symbol,
+                        exchange=backup_contract.exchange
+                    )
+                    self.ctp_gateway.subscribe(req)
+                    logger.warning(f"⚠️ 配置的合约{main_symbol}不可用，使用备选合约: {backup_contract.symbol}")
+                else:
+                    logger.warning("未找到任何黄金合约，尝试手动订阅主力合约")
+                    await self._manual_subscribe_main_contract()
 
         except Exception as e:
             logger.error(f"订阅合约失败: {e}")

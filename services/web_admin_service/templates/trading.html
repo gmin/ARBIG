@@ -98,11 +98,7 @@
                         <label style="display: block; margin-bottom: 8px; font-weight: 500;">合约代码</label>
                         <select id="symbol" onchange="onSymbolChange()"
                                 style="width: 100%; padding: 8px 12px; border: 1px solid var(--border-color); border-radius: var(--radius); font-size: 14px;">
-                            <option value="au2508">黄金主力 (au2508)</option>
-                            <option value="au2509">黄金2509 (au2509)</option>
-                            <option value="au2510">黄金2510 (au2510)</option>
-                            <option value="ag2508">白银主力 (ag2508)</option>
-                            <option value="cu2508">铜主力 (cu2508)</option>
+                            <option value="">加载中...</option>
                         </select>
                     </div>
 
@@ -127,7 +123,7 @@
 
             <!-- 实时行情 -->
             <div class="card">
-                <div class="card-header">📈 实时行情 - <span id="market-symbol">au2508</span></div>
+                <div class="card-header">📈 实时行情 - <span id="market-symbol">加载中...</span></div>
                 <div class="card-body" style="padding: 0;">
                     <!-- 订单簿样式显示 -->
                     <div class="orderbook">
@@ -363,6 +359,6 @@
         </div>
     </div>
 
-    <script src="/static/js/trading.js"></script>
+    <script src="/static/js/trading.js?v=2.0"></script>
 </body>
 </html>

@@ -76,26 +76,28 @@ pip install -r requirements.txt
 
 ```bash
 # 推荐方式：使用统一启动脚本
-python start_arbig.py
-# 然后选择选项1: 启动ARBIG Web管理系统
+python start.py
+# 然后选择选项1: 启动完整系统
 
-# 其他启动方式
-python main.py --auto-start --demo-mode  # 演示模式
-python main.py --auto-start              # 完整交易模式
-python main.py --api-only               # 仅API服务
+# 自动启动模式
+python start.py --mode full --auto      # 完整系统
+python start.py --mode web --auto       # 仅Web界面
+python start.py --mode trading --auto   # 仅交易服务
 
-# 快速帮助
-python help.py
+# 微服务启动（手动）
+python services/trading_service/main.py --port 8001    # 核心交易服务
+python services/web_admin_service/main.py --port 80    # Web管理服务
 ```
 
 ### 4. 访问Web管理界面
 
-打开浏览器访问: **http://localhost:8000**
+打开浏览器访问: **http://localhost**
 
-- 🎛️ **交易管理** - 手动下单、订单监控
+- 🎛️ **交易管理** - 手动下单、订单监控 (http://localhost/trading)
 - 🛡️ **风控管理** - 紧急暂停、一键平仓
 - 📊 **系统监控** - 实时状态、性能指标
-- 📈 **信号监控** - 交易信号跟踪分析
+- 📈 **策略监控** - 交易策略跟踪分析
+- 📖 **API文档** - 交易API文档 (http://localhost:8001/docs)
 
 ## 🧪 功能测试
 

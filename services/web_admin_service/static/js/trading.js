@@ -11,24 +11,30 @@ const TRADING_CONFIG = {
     // 获取当前选中的合约
     getCurrentSymbol() {
         const symbolInput = document.getElementById('symbol');
-        return symbolInput ? symbolInput.value : this.DEFAULT_SYMBOL;
+        if (symbolInput && symbolInput.value) {
+            return symbolInput.value;
+        }
+        // 如果选择器没有值，返回默认主力合约
+        return this.DEFAULT_SYMBOL || 'au2510';
     },
 
     // 从服务器加载合约配置
     async loadContractsConfig() {
         try {
-            const response = await fetch('/api/v1/trading/contracts/config');
+            const response = await fetch('/api/v1/trading/config/main_contract');
             const result = await response.json();
 
             if (result.success) {
-                this.DEFAULT_SYMBOL = result.data.default_symbol;
-                this.SUPPORTED_SYMBOLS = result.data.supported_contracts.map(contract => ({
-                    code: contract.symbol,
-                    name: contract.name,
-                    exchange: contract.exchange,
-                    category: contract.category,
-                    is_main: contract.is_main
-                }));
+                this.DEFAULT_SYMBOL = result.data.main_contract;
+                this.SUPPORTED_SYMBOLS = result.data.supported_contracts || [
+                    { symbol: result.data.main_contract, name: `黄金主力 (${result.data.main_contract})`, is_main: true },
+                    { symbol: 'au2508', name: '黄金2508 (au2508)', is_main: false },
+                    { symbol: 'au2509', name: '黄金2509 (au2509)', is_main: false },
+                    { symbol: 'au2510', name: '黄金2510 (au2510)', is_main: false },
+                    { symbol: 'ag2508', name: '白银主力 (ag2508)', is_main: false },
+                    { symbol: 'cu2508', name: '铜主力 (cu2508)', is_main: false }
+                ];
+
                 console.log('✅ 合约配置加载成功:', this.SUPPORTED_SYMBOLS);
                 return true;
             } else {
@@ -39,15 +45,41 @@ const TRADING_CONFIG = {
             console.error('❌ 合约配置加载异常:', error);
             // 使用默认配置作为备用
             this.SUPPORTED_SYMBOLS = [
-                { code: 'au2510', name: '黄金2510', exchange: 'SHFE', category: '贵金属', is_main: true }
+                { symbol: 'au2510', name: '黄金2510', is_main: true }
             ];
             return false;
         }
     },
 
+    // 更新合约选择器
+    updateSymbolSelector() {
+        const symbolSelect = document.getElementById('symbol');
+        if (!symbolSelect) return;
+
+        // 清空现有选项
+        symbolSelect.innerHTML = '';
+
+        // 添加合约选项
+        this.SUPPORTED_SYMBOLS.forEach(contract => {
+            const option = document.createElement('option');
+            option.value = contract.symbol;
+            option.textContent = contract.name;
+            if (contract.is_main || contract.symbol === this.DEFAULT_SYMBOL) {
+                option.selected = true;
+            }
+            symbolSelect.appendChild(option);
+        });
+
+        // 更新行情显示的合约名称
+        const marketSymbolElement = document.getElementById('market-symbol');
+        if (marketSymbolElement) {
+            marketSymbolElement.textContent = this.DEFAULT_SYMBOL;
+        }
+    },
+
     // 获取合约显示名称
     getSymbolDisplayName(symbol) {
-        const contract = this.SUPPORTED_SYMBOLS.find(s => s.code === symbol);
+        const contract = this.SUPPORTED_SYMBOLS.find(s => s.symbol === symbol);
         return contract ? contract.name : symbol;
     },
 
@@ -347,16 +379,42 @@ class TradingManager {
         this.updateSystemStatus();
     }
 
-    updateSystemStatus() {
-        // 更新CTP连接状态
-        const ctpStatusElement = document.getElementById('ctp-status');
-        if (ctpStatusElement) {
-            // 这里可以调用CTP状态API
-            ctpStatusElement.textContent = '已连接';
-            ctpStatusElement.className = 'status-value online';
+    async updateSystemStatus() {
+        try {
+            // 获取CTP连接状态
+            const response = await fetch('/api/v1/trading/ctp_status');
+            if (response.ok) {
+                const result = await response.json();
+
+                // 更新CTP连接状态
+                const ctpStatusElement = document.getElementById('ctp-status');
+                if (ctpStatusElement) {
+                    if (result.success && result.data.trading_connected && result.data.market_connected) {
+                        ctpStatusElement.textContent = '已连接';
+                        ctpStatusElement.className = 'status-value online';
+                    } else {
+                        ctpStatusElement.textContent = '连接断开';
+                        ctpStatusElement.className = 'status-value offline';
+                    }
+                }
+            } else {
+                // API调用失败，显示断开状态
+                const ctpStatusElement = document.getElementById('ctp-status');
+                if (ctpStatusElement) {
+                    ctpStatusElement.textContent = '连接断开';
+                    ctpStatusElement.className = 'status-value offline';
+                }
+            }
+        } catch (error) {
+            console.error('❌ 获取CTP状态失败:', error);
+            const ctpStatusElement = document.getElementById('ctp-status');
+            if (ctpStatusElement) {
+                ctpStatusElement.textContent = '连接断开';
+                ctpStatusElement.className = 'status-value offline';
+            }
         }
 
-        // 更新策略状态
+        // 更新策略状态 (暂时硬编码，后续可以从API获取)
         const strategyStatusElement = document.getElementById('strategy-status');
         if (strategyStatusElement) {
             strategyStatusElement.textContent = '运行中';
@@ -816,7 +874,7 @@ async function closeAllPositions() {
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
-                        symbol: position.symbol || 'au2508',
+                        symbol: position.symbol || TRADING_CONFIG.DEFAULT_SYMBOL,
                         direction: position.direction,
                         volume: position.volume
                     })
@@ -867,10 +925,7 @@ async function emergencyStop() {
     }
 }
 
-// 页面加载完成后初始化
-document.addEventListener('DOMContentLoaded', () => {
-    window.tradingManager = new TradingManager();
-});
+
 
 // 页面可见性变化处理
 document.addEventListener('visibilitychange', () => {
@@ -1119,44 +1174,27 @@ document.addEventListener('click', function(event) {
 document.addEventListener('DOMContentLoaded', async function() {
     console.log('🚀 交易管理页面加载完成');
 
-    // 首先加载合约配置
-    await TRADING_CONFIG.loadContractsConfig();
+    try {
+        // 首先加载合约配置
+        console.log('📋 加载合约配置...');
+        await TRADING_CONFIG.loadContractsConfig();
 
-    // 初始化合约选择器
-    initializeContractSelector();
+        // 更新合约选择器和显示
+        console.log('🔄 更新合约选择器...');
+        TRADING_CONFIG.updateSymbolSelector();
 
-    // 初始化合约显示
-    const marketSymbolElement = document.getElementById('market-symbol');
-    if (marketSymbolElement) {
-        const currentSymbol = TRADING_CONFIG.getCurrentSymbol();
-        marketSymbolElement.textContent = TRADING_CONFIG.getSymbolDisplayName(currentSymbol);
+        // 创建交易管理器实例
+        console.log('🎯 创建交易管理器...');
+        window.tradingManager = new TradingManager();
+
+        // 开始自动更新
+        console.log('⏰ 开始自动更新...');
+        window.tradingManager.startAutoUpdate();
+
+        console.log('✅ 交易管理页面初始化完成');
+    } catch (error) {
+        console.error('❌ 交易管理页面初始化失败:', error);
     }
-
-    // 创建交易管理器实例
-    window.tradingManager = new TradingManager();
-
-    // 开始自动更新
-    window.tradingManager.startAutoUpdate();
 });
 
-// 初始化合约选择器
-function initializeContractSelector() {
-    const symbolSelect = document.getElementById('symbol');
-    if (symbolSelect && TRADING_CONFIG.SUPPORTED_SYMBOLS.length > 0) {
-        // 清空现有选项
-        symbolSelect.innerHTML = '';
 
-        // 添加新的合约选项
-        TRADING_CONFIG.SUPPORTED_SYMBOLS.forEach(contract => {
-            const option = document.createElement('option');
-            option.value = contract.code;
-            option.textContent = `${contract.name} (${contract.code})`;
-            if (contract.is_main) {
-                option.selected = true;
-            }
-            symbolSelect.appendChild(option);
-        });
-
-        console.log('✅ 合约选择器初始化完成');
-    }
-}

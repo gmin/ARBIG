@@ -26,10 +26,36 @@ async def get_service_client():
     """获取服务客户端"""
     return ServiceClient("trading_service", "http://localhost:8001")
 
+@router.get("/config/main_contract")
+async def get_main_contract():
+    """获取主力合约配置"""
+    try:
+        main_symbol = get_main_contract_symbol()
+        supported_contracts = get_supported_contracts()
+
+        return {
+            "success": True,
+            "data": {
+                "main_contract": main_symbol,
+                "supported_contracts": supported_contracts
+            }
+        }
+    except Exception as e:
+        logger.error(f"获取主力合约配置失败: {e}")
+        return {
+            "success": False,
+            "message": f"获取主力合约配置失败: {str(e)}"
+        }
+
 @router.get("/market/current", response_model=MarketDataResponse)
-async def get_current_market_data(symbol: str = "au2508"):
+async def get_current_market_data(symbol: str = None):
     """获取当前行情数据（Redis已移除，使用CTP数据）"""
     try:
+        # 如果没有指定合约，使用主力合约
+        if symbol is None:
+            from config.config import MAIN_CONTRACT
+            symbol = MAIN_CONTRACT
+
         # 直接从核心交易服务获取CTP数据
         service_client = await get_service_client()
         response = await service_client.get(f"/real_trading/tick/{symbol}")
@@ -428,11 +454,12 @@ async def get_ctp_status(
             pass
 
         try:
-            tick_response = await service_client.get("/real_trading/tick/au2508")
+            main_symbol = get_main_contract_symbol()
+            tick_response = await service_client.get(f"/real_trading/tick/{main_symbol}")
             if tick_response.success and "response" in tick_response.data:
                 tick_data = json.loads(tick_response.data["response"])
                 if tick_data.get("success"):
-                    result_data["tick_data"] = {"au2508": tick_data["data"]}
+                    result_data["tick_data"] = {main_symbol: tick_data["data"]}
         except:
             pass
 
