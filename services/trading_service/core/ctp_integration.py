@@ -294,7 +294,8 @@ class CtpIntegration:
         """处理成交回报"""
         trade = event.data
         self.trades[trade.tradeid] = trade
-        
+
+
         # 调用回调函数
         for callback in self.trade_callbacks:
             try:
@@ -428,12 +429,174 @@ class CtpIntegration:
             'OPEN': Offset.OPEN,
             'CLOSE': Offset.CLOSETODAY,  # 修改：SHFE默认使用平今仓
             'CLOSE_TODAY': Offset.CLOSETODAY,
-            'CLOSE_YESTERDAY': Offset.CLOSEYESTERDAY
+            'CLOSE_YESTERDAY': Offset.CLOSEYESTERDAY,
+            'CLOSETODAY': Offset.CLOSETODAY,  # 添加：支持CLOSETODAY格式
+            'CLOSEYESTERDAY': Offset.CLOSEYESTERDAY  # 添加：支持CLOSEYESTERDAY格式
         }
         result = offset_map.get(offset, Offset.OPEN)
         logger.info(f"开平仓转换: {offset} -> {result}")
         return result
-    
+
+    def _calculate_total_margin(self) -> float:
+        """计算总保证金"""
+        total_margin = 0.0
+
+        # 尝试从vnpy持仓对象获取实际保证金
+        for position in self.positions.values():
+            if hasattr(position, 'volume') and position.volume > 0:
+                # 检查各种可能的保证金字段
+                margin_fields = ['margin', 'frozen', 'margin_used', 'position_margin', 'use_margin']
+                for field in margin_fields:
+                    if hasattr(position, field):
+                        value = getattr(position, field)
+                        if field in ['margin', 'frozen', 'margin_used', 'position_margin', 'use_margin'] and value > 0:
+                            total_margin += value
+
+        # 如果没有找到保证金字段，使用计算方式
+        if total_margin == 0:
+            positions_info = self.get_position_info()
+            if isinstance(positions_info, dict):
+                for symbol, pos_info in positions_info.items():
+                    if isinstance(pos_info, dict):
+                        long_pos = pos_info.get('long_position', 0)
+                        short_pos = pos_info.get('short_position', 0)
+                        total_volume = long_pos + short_pos
+
+                        if total_volume > 0:
+                            # 获取当前价格
+                            current_price = 775.0  # 默认价格
+                            if symbol in self.ticks:
+                                current_price = self.ticks[symbol].last_price
+
+                            # 根据实际情况调整保证金率
+                            # 217117.60 / (2手 × 777价格 × 1000) = 0.1397 ≈ 13.97%
+                            contract_value = current_price * 1000  # 每手合约价值
+                            margin_rate = 0.1397  # 13.97%保证金率（根据实际数据调整）
+                            position_margin = contract_value * margin_rate * total_volume
+                            total_margin += position_margin
+
+        return round(total_margin, 2)
+
+    def _calculate_close_profit(self) -> float:
+        """计算平仓盈亏（从CTP账户数据获取）"""
+        # 直接从CTP账户数据获取平仓盈亏
+        if hasattr(self, 'account_data') and self.account_data:
+            # CTP账户数据中的CloseProfit字段就是平仓盈亏
+            close_profit = self.account_data.get('close_profit', 0.0)
+            if close_profit != 0:
+                return float(close_profit)
+
+        # 如果CTP没有提供，尝试从成交记录计算
+        return self._calculate_realized_pnl_from_trades()
+
+    def _calculate_commission(self) -> float:
+        """计算手续费（开仓2元/手，平仓0元/手）"""
+        # 优先从CTP账户数据获取手续费
+        if hasattr(self, 'account_data') and self.account_data:
+            commission = self.account_data.get('commission', 0.0)
+            if commission != 0:
+                return float(commission)
+
+        # 如果CTP没有提供，根据实际规则计算
+        total_commission = 0.0
+
+        # 从成交记录计算手续费
+        for trade in self.trades.values():
+            if hasattr(trade, 'commission'):
+                # 如果成交记录中有手续费字段，直接使用
+                total_commission += float(getattr(trade, 'commission', 0))
+            elif hasattr(trade, 'volume') and hasattr(trade, 'offset'):
+                # 根据开平仓类型计算手续费
+                volume = trade.volume
+                offset_str = str(trade.offset).upper()
+
+                if 'OPEN' in offset_str:
+                    # 开仓手续费：2元/手
+                    total_commission += volume * 2.0
+                else:
+                    # 平仓手续费：0元/手
+                    total_commission += volume * 0.0
+
+        return total_commission
+
+    def _calculate_realized_pnl_from_trades(self) -> float:
+        """从成交记录计算已实现盈亏"""
+        realized_pnl = 0.0
+
+        # 简化的盈亏计算：配对开平仓交易
+        open_trades = {}  # 存储开仓交易 {symbol_direction: [trades]}
+
+        for trade in self.trades.values():
+            if not hasattr(trade, 'symbol') or not hasattr(trade, 'offset'):
+                continue
+
+            symbol = trade.symbol
+            offset_str = str(trade.offset).upper()
+            direction = str(getattr(trade, 'direction', '')).upper()
+            volume = getattr(trade, 'volume', 0)
+            price = getattr(trade, 'price', 0)
+
+            if 'OPEN' in offset_str:
+                # 开仓交易
+                key = f"{symbol}_{direction}"
+                if key not in open_trades:
+                    open_trades[key] = []
+                open_trades[key].append({
+                    'volume': volume,
+                    'price': price,
+                    'direction': direction
+                })
+            elif 'CLOSE' in offset_str:
+                # 平仓交易，计算盈亏
+                # 平仓方向与开仓方向相反
+                open_direction = 'LONG' if 'SELL' in direction else 'SHORT'
+                key = f"{symbol}_{open_direction}"
+
+                if key in open_trades and open_trades[key]:
+                    # 找到对应的开仓交易计算盈亏
+                    open_trade = open_trades[key].pop(0)  # FIFO
+
+                    # 如果成交记录中有盈亏字段，直接使用
+                    if hasattr(trade, 'pnl'):
+                        realized_pnl += float(getattr(trade, 'pnl', 0))
+                    else:
+                        # 否则根据价格差计算（使用实际的合约信息）
+                        price_diff = price - open_trade['price']
+                        if open_direction == 'SHORT':
+                            price_diff = -price_diff  # 空单盈亏相反
+
+                        # 从合约信息获取合约乘数，如果没有则使用默认值
+                        contract_size = self._get_contract_size(symbol)
+                        pnl = price_diff * min(volume, open_trade['volume']) * contract_size
+                        realized_pnl += pnl
+
+        return realized_pnl
+
+    def _get_contract_size(self, symbol: str) -> float:
+        """获取合约乘数（从CTP合约信息获取）"""
+        # 从CTP合约信息获取
+        if symbol in self.contracts:
+            contract = self.contracts[symbol]
+            if hasattr(contract, 'size'):
+                return float(contract.size)
+
+        # 根据合约代码推断（黄金期货通常是1000克/手）
+        if symbol.startswith('au'):
+            return 1000.0  # 黄金期货
+        elif symbol.startswith('ag'):
+            return 15000.0  # 白银期货
+        else:
+            return 1.0  # 默认值
+
+    def _calculate_daily_pnl(self) -> float:
+        """计算当日盈亏"""
+        # 从持仓盈亏 + 平仓盈亏计算
+        total_pnl = 0
+        for position in self.positions.values():
+            if hasattr(position, 'pnl'):
+                total_pnl += position.pnl
+        return total_pnl
+
     def cancel_order(self, order_id: str) -> bool:
         """撤销订单"""
         try:
@@ -482,60 +645,97 @@ class CtpIntegration:
         if not self.account:
             return None
 
-        # 基础账户信息
+        # 基础账户信息（从CTP实际可用字段获取）
         balance = getattr(self.account, 'balance', 0)
         available = getattr(self.account, 'available', 0)
-        margin = getattr(self.account, 'margin', 0)
-        commission = getattr(self.account, 'commission', 0)
-        close_profit = getattr(self.account, 'close_profit', 0)
         frozen = getattr(self.account, 'frozen', 0)
-        pre_balance = getattr(self.account, 'pre_balance', 0)
+
+        # 检查是否有风险度相关字段
+        risk_fields = ['risk_ratio', 'risk_degree', 'margin_ratio', 'risk_rate']
+        ctp_risk_ratio = 0
+        for field in risk_fields:
+            if hasattr(self.account, field):
+                value = getattr(self.account, field)
+                if field in ['risk_ratio', 'risk_degree', 'risk_rate'] and value > 0:
+                    ctp_risk_ratio = value
+
+        # 计算保证金（从持仓计算）
+        margin = self._calculate_total_margin()
+
+        # 计算缺失字段（CTP不直接提供）
+        commission = self._calculate_commission()  # 从成交记录动态计算手续费
+
+        # 优先使用精确的已实现盈亏，否则使用估算
+        realized_pnl = self._calculate_realized_pnl_from_trades()
+        if abs(realized_pnl) < 10:  # 如果计算结果很小，使用估算方法
+            close_profit = self._calculate_close_profit()
+        else:
+            close_profit = realized_pnl
+
+        pre_balance = balance - self._calculate_daily_pnl()  # 估算昨日余额
 
         # 计算衍生指标
         total_assets = balance + close_profit  # 总资产
         net_assets = balance - margin  # 净资产
-        risk_ratio = (margin / balance * 100) if balance > 0 else 0  # 风险度
+
+        # 风险度：优先使用CTP提供的，否则自己计算
+        if ctp_risk_ratio > 0:
+            risk_ratio = ctp_risk_ratio * 100  # CTP可能返回小数形式
+        else:
+            risk_ratio = (margin / balance * 100) if balance > 0 else 0  # 自己计算
+
         margin_ratio = (margin / available * 100) if available > 0 else 0  # 保证金率
         daily_pnl = balance - pre_balance  # 当日盈亏
 
-        # 计算可开仓手数（假设每手保证金10000元）
-        margin_per_lot = 10000
-        available_lots = int(available / margin_per_lot) if available > 0 else 0
+        # 计算可开仓手数（基于实际保证金需求）
+        avg_margin_per_lot = 62000  # 黄金期货每手约6.2万保证金
+        available_lots = int(available / avg_margin_per_lot) if available > 0 else 0
 
         # 计算持仓相关信息
-        position_value = 0  # 持仓市值
-        unrealized_pnl = 0  # 未实现盈亏
+        position_value = 0.0  # 持仓市值
+        position_pnl = 0.0   # 持仓盈亏（未实现盈亏）
 
         # 从持仓数据计算
         for symbol, position in self.positions.items():
             if hasattr(position, 'volume') and position.volume > 0:
-                pos_value = getattr(position, 'volume', 0) * getattr(position, 'price', 0)
+                # 持仓市值
+                current_price = 775.0  # 默认价格
+                if position.symbol in self.ticks:
+                    current_price = self.ticks[position.symbol].last_price
+                pos_value = position.volume * current_price * 1000  # 每手1000克
                 position_value += pos_value
-                unrealized_pnl += getattr(position, 'pnl', 0)
+
+                # 持仓盈亏
+                position_pnl += getattr(position, 'pnl', 0)
 
         return {
             # 基础信息
             'accountid': getattr(self.account, 'accountid', 'CTP_ACCOUNT'),
-            'balance': balance,
-            'available': available,
-            'margin': margin,
-            'commission': commission,
-            'close_profit': close_profit,
-            'frozen': frozen,
-            'pre_balance': pre_balance,
+            'balance': round(balance, 2),
+            'available': round(available, 2),
+            'margin': round(margin, 2),
+            'commission': round(commission, 2),
+            'close_profit': round(close_profit, 2),
+            'frozen': round(frozen, 2),
+            'pre_balance': round(pre_balance, 2),
 
             # 衍生指标
-            'total_assets': total_assets,
-            'net_assets': net_assets,
+            'total_assets': round(total_assets, 2),
+            'net_assets': round(net_assets, 2),
             'risk_ratio': round(risk_ratio, 2),
             'margin_ratio': round(margin_ratio, 2),
-            'daily_pnl': daily_pnl,
+            'daily_pnl': round(daily_pnl, 2),
             'available_lots': available_lots,
 
             # 持仓相关
-            'position_value': position_value,
-            'unrealized_pnl': unrealized_pnl,
-            'realized_pnl': close_profit,  # 已实现盈亏
+            'position_value': round(position_value, 2),
+            'position_pnl': round(position_pnl, 2),      # 持仓盈亏（原未实现盈亏）
+            'close_pnl': round(close_profit, 2),         # 平仓盈亏（原已实现盈亏）
+            'total_pnl': round(position_pnl + close_profit, 2),  # 总盈亏
+
+            # 兼容旧字段名
+            'unrealized_pnl': round(position_pnl, 2),    # 兼容：未实现盈亏 -> 持仓盈亏
+            'realized_pnl': round(close_profit, 2),      # 兼容：已实现盈亏 -> 平仓盈亏
 
             # 其他信息
             'currency': 'CNY',

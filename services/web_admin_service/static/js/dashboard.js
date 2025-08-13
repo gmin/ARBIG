@@ -375,22 +375,46 @@ class Dashboard {
         const balance = account.balance || 0;
         const available = account.available || 0;
         const margin = account.margin || 0;
-        const closeProfit = account.close_profit || 0;
+        const totalPnl = account.total_pnl || account.close_profit || 0;  // 总盈亏
+        const positionPnl = account.position_pnl || account.unrealized_pnl || 0;  // 持仓盈亏
 
         document.getElementById('account-balance').textContent = this.formatCurrency(balance);
         document.getElementById('available-funds').textContent = this.formatCurrency(available);
         document.getElementById('margin-used').textContent = this.formatCurrency(margin);
 
+        // 更新账户信息区域的总盈亏
         const pnlElement = document.getElementById('total-pnl-display');
-        pnlElement.textContent = this.formatCurrency(closeProfit);
+        pnlElement.textContent = this.formatCurrency(totalPnl);
+
+        // 更新概览卡片的持仓盈亏
+        const overviewPnlElement = document.getElementById('total-pnl');
+        overviewPnlElement.textContent = this.formatCurrency(positionPnl);
 
         // 根据盈亏设置颜色
-        if (closeProfit > 0) {
-            pnlElement.style.color = 'var(--success-color)';
-        } else if (closeProfit < 0) {
-            pnlElement.style.color = 'var(--error-color)';
+        const setColorForElement = (element, value) => {
+            if (value > 0) {
+                element.style.color = 'var(--success-color)';
+            } else if (value < 0) {
+                element.style.color = 'var(--error-color)';
+            } else {
+                element.style.color = 'var(--text-primary)';
+            }
+        };
+
+        setColorForElement(pnlElement, totalPnl);
+        setColorForElement(overviewPnlElement, positionPnl);
+
+        // 更新持仓盈亏变化指示
+        const pnlChangeElement = document.getElementById('pnl-change');
+        if (positionPnl > 0) {
+            pnlChangeElement.textContent = '盈利';
+            pnlChangeElement.style.color = 'var(--success-color)';
+        } else if (positionPnl < 0) {
+            pnlChangeElement.textContent = '亏损';
+            pnlChangeElement.style.color = 'var(--error-color)';
         } else {
-            pnlElement.style.color = 'var(--text-primary)';
+            pnlChangeElement.textContent = '持平';
+            pnlChangeElement.style.color = 'var(--text-secondary)';
         }
     }
 

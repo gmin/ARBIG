@@ -14,7 +14,7 @@ CONFIG = {
 
     # 支持的合约列表
     'supported_contracts': [
-        {'symbol': 'au2510', 'name': '黄金2510', 'exchange': 'SHFE', 'category': '贵金属', 'is_main': True},
+        {'symbol': 'au2510', 'name': '黄金主力', 'exchange': 'SHFE', 'category': '贵金属', 'is_main': True},
         {'symbol': 'ag2510', 'name': '白银主力', 'exchange': 'SHFE', 'category': '贵金属', 'is_main': False},
         {'symbol': 'cu2510', 'name': '铜主力', 'exchange': 'SHFE', 'category': '有色金属', 'is_main': False}
     ],

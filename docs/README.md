@@ -1,15 +1,17 @@
-# ARBIG 文档中心
+# ARBIG 系统文档中心
 
 ## 📚 文档导航
 
-欢迎来到ARBIG量化交易系统的文档中心！这里包含了系统的完整技术文档。
+欢迎来到ARBIG量化交易系统的文档中心！这里是所有技术文档的导航入口，帮助您快速找到需要的信息。
+
+> 🎯 **快速开始**: 如果您是新用户，建议先阅读 [项目README](../README.md) 了解系统概况和启动方法
 
 ### 🏗️ 系统架构
 
-| 文档 | 描述 | 更新状态 |
-|------|------|----------|
-| [**系统架构**](ARCHITECTURE.md) | 详细的系统架构设计和技术栈 | ✅ v2.0 |
-| [**架构更新**](ARCHITECTURE_UPDATE.md) | v2.0架构变更说明和升级指南 | ✅ 最新 |
+| 文档 | 描述 | 状态 |
+|------|------|------|
+| [**当前系统架构**](CURRENT_ARCHITECTURE.md) ⭐ | 微服务架构详细说明 | ✅ v3.0 当前有效 |
+| [**历史架构文档**](archive/) | 历史架构文档归档 | 📚 历史参考 |
 
 ### 📖 用户文档
 
@@ -20,12 +22,19 @@
 
 ### 🔧 技术文档
 
+#### 🚀 部署和配置
 | 文档 | 描述 | 适用对象 |
 |------|------|----------|
+| [**CTP配置指南**](../CTP_SETUP.md) ⭐ | CTP连接配置与问题解决 | 🔧 所有用户 |
+| [**部署指南v2.0**](DEPLOYMENT_V2.md) | 生产环境部署配置 | 🔧 运维人员 |
+
+#### 🛠️ 开发文档
+| 文档 | 描述 | 适用对象 |
+|------|------|----------|
+| [**交易服务指南**](TRADING_SERVICE_GUIDE.md) | 核心交易服务详细说明 | 👨‍💻 开发者 |
+| [**账户服务指南**](ACCOUNT_SERVICE_GUIDE.md) | 账户管理服务 | 👨‍💻 开发者 |
+| [**行情服务指南**](MARKET_DATA_SERVICE_GUIDE.md) | 市场数据服务 | 👨‍💻 开发者 |
 | [**API接口规范**](WEB_API_SPECIFICATION.md) | 完整的API接口文档 | 👨‍💻 开发者 |
-| [**账户服务指南**](ACCOUNT_SERVICE_GUIDE.md) | 账户服务使用说明 | 👨‍💻 开发者 |
-| [**行情服务指南**](MARKET_DATA_SERVICE_GUIDE.md) | 行情数据服务文档 | 👨‍💻 开发者 |
-| [**交易服务指南**](TRADING_SERVICE_GUIDE.md) | 交易执行服务文档 | 👨‍💻 开发者 |
 
 ### 📊 策略文档
 
@@ -34,27 +43,33 @@
 | [**策略总览**](strategies/README.md) | 策略文档导航和选择指南 | 📈 策略用户 |
 | [**基差套利指南**](strategies/SPREAD_THRESHOLD_GUIDE.md) | 基差套利阈值设置详解 | 📈 策略用户 |
 
-### 🎨 设计文档
+### 🧪 测试和质量
+
+| 文档 | 描述 | 适用对象 |
+|------|------|----------|
+| [**测试指南**](../tests/README.md) | 测试框架和用例 | 👨‍💻 开发者 |
+| [**持仓管理**](position_management.md) | 持仓数据管理 | 👨‍💻 开发者 |
+
+### 🎨 设计文档 (历史参考)
 
 | 文档 | 描述 | 状态 |
 |------|------|------|
-| [**Web界面设计**](WEB_UI_DESIGN.md) | Web界面设计规范 | 📋 参考 |
-| [**指挥中心设计**](WEB_COMMAND_CENTER_DESIGN.md) | Web指挥中心设计思路 | 📋 参考 |
-| [**实施计划**](WEB_COMMAND_CENTER_IMPLEMENTATION_PLAN.md) | 项目实施计划 | 📋 参考 |
+| [**Web界面设计**](WEB_UI_DESIGN.md) | Web界面设计规范 | 📚 历史参考 |
+| [**历史设计文档**](archive/) | 历史设计思路和实施计划 | 📚 历史参考 |
 
 ## 🎯 快速导航
 
 ### 👋 新用户入门
-1. 阅读 [README.md](../README.md) 了解项目概述
-2. 查看 [系统架构](ARCHITECTURE.md) 理解系统设计
-3. 按照 [部署指南](DEPLOYMENT_V2.md) 搭建环境
-4. 参考 [用户手册](USER_MANUAL.md) 开始使用
+1. 阅读 [项目README](../README.md) 了解项目概述和快速启动 ⭐
+2. 查看 [当前系统架构](CURRENT_ARCHITECTURE.md) 理解微服务设计
+3. 配置 [CTP连接](../CTP_SETUP.md) 解决连接问题
+4. 参考 [用户手册](USER_MANUAL.md) 开始使用系统
 
 ### 👨‍💻 开发者指南
-1. 了解 [系统架构](ARCHITECTURE.md) 和 [架构更新](ARCHITECTURE_UPDATE.md)
-2. 查看 [API接口规范](WEB_API_SPECIFICATION.md)
-3. 阅读各服务的技术文档
-4. 参考策略开发相关文档
+1. 了解 [当前系统架构](CURRENT_ARCHITECTURE.md) 和微服务设计
+2. 查看 [交易服务指南](TRADING_SERVICE_GUIDE.md) 了解核心服务
+3. 阅读 [API接口规范](WEB_API_SPECIFICATION.md) 进行接口开发
+4. 参考各服务的详细技术文档
 
 ### 📈 策略用户
 1. 查看 [策略总览](strategies/README.md) 选择合适策略
@@ -63,24 +78,24 @@
 4. 使用Web管理系统监控策略表现
 
 ### 🔧 运维人员
-1. 参考 [部署指南](DEPLOYMENT_V2.md) 进行部署
-2. 了解 [系统架构](ARCHITECTURE.md) 便于维护
-3. 查看 [用户手册](USER_MANUAL.md) 中的监控部分
-4. 关注 [架构更新](ARCHITECTURE_UPDATE.md) 了解变更
+1. 阅读 [项目README](../README.md) 了解启动和重启命令 ⭐
+2. 配置 [CTP连接](../CTP_SETUP.md) 解决连接问题
+3. 参考 [部署指南](DEPLOYMENT_V2.md) 进行生产部署
+4. 了解 [当前系统架构](CURRENT_ARCHITECTURE.md) 便于维护
 
 ## 📋 文档状态
 
 ### ✅ 已完成文档
-- 系统架构文档 (v2.0)
-- 架构更新说明
-- 部署指南 (v2.0)
-- 策略文档重组
-- API接口规范更新
+- 当前系统架构文档 (v3.0微服务架构) ⭐
+- CTP配置和问题解决指南
+- 历史架构文档归档整理
+- 项目README更新 (启动命令、文档导航)
+- 文档中心重构
 
 ### 🔄 需要更新的文档
-- [ ] 用户手册 (需要更新v2.0架构内容)
-- [ ] 各服务指南 (需要更新模块路径)
-- [ ] 开发指南 (需要创建)
+- [ ] 用户手册 (需要更新微服务架构内容)
+- [ ] 各服务指南 (需要更新为当前架构)
+- [ ] API接口规范 (需要更新端点信息)
 
 ### 📝 计划新增文档
 - [ ] 故障排除指南
@@ -92,17 +107,19 @@
 ## 🔍 文档搜索
 
 ### 按功能查找
+- **系统启动**: [项目README](../README.md) - 启动命令和重启方法 ⭐
+- **CTP问题**: [CTP配置指南](../CTP_SETUP.md) - 连接问题解决 ⭐
 - **交易功能**: [用户手册](USER_MANUAL.md), [交易服务指南](TRADING_SERVICE_GUIDE.md)
-- **风控功能**: [用户手册](USER_MANUAL.md), [架构文档](ARCHITECTURE.md)
-- **监控功能**: [用户手册](USER_MANUAL.md), [系统架构](ARCHITECTURE.md)
+- **系统架构**: [当前架构](CURRENT_ARCHITECTURE.md) - 微服务架构说明
 - **API开发**: [API接口规范](WEB_API_SPECIFICATION.md), 各服务指南
 - **策略配置**: [策略总览](strategies/README.md), 具体策略文档
 
 ### 按角色查找
-- **系统管理员**: [部署指南](DEPLOYMENT_V2.md), [系统架构](ARCHITECTURE.md)
+- **新用户**: [项目README](../README.md), [CTP配置](../CTP_SETUP.md) ⭐
+- **系统管理员**: [当前架构](CURRENT_ARCHITECTURE.md), [部署指南](DEPLOYMENT_V2.md)
 - **交易员**: [用户手册](USER_MANUAL.md), [策略文档](strategies/)
-- **开发者**: [API规范](WEB_API_SPECIFICATION.md), [架构文档](ARCHITECTURE.md)
-- **风控人员**: [用户手册](USER_MANUAL.md), [架构文档](ARCHITECTURE.md)
+- **开发者**: [当前架构](CURRENT_ARCHITECTURE.md), [API规范](WEB_API_SPECIFICATION.md)
+- **运维人员**: [项目README](../README.md), [CTP配置](../CTP_SETUP.md)
 
 ## 📞 文档反馈
 
@@ -147,5 +164,6 @@
 
 **文档维护**: 本文档中心由ARBIG开发团队维护，欢迎社区贡献！
 
-**最后更新**: 2025-01-09  
-**文档版本**: v2.0
+**最后更新**: 2025-01-12
+**文档版本**: v3.0 (微服务架构)
+**维护状态**: ✅ 当前有效

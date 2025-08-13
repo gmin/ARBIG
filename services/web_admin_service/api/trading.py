@@ -370,6 +370,28 @@ async def close_position(
         logger.error(f"平仓操作失败: {e}")
         raise HTTPException(status_code=500, detail=f"平仓操作失败: {str(e)}")
 
+@router.post("/positions/close_all")
+async def close_all_positions(
+    service_client: ServiceClient = Depends(get_service_client)
+):
+    """一键平仓所有持仓"""
+    try:
+        # 简化实现：直接调用核心交易服务的一键平仓，使用默认合约
+        close_response = await service_client.post("/real_trading/close_position", data={
+            "symbol": "au2510",  # 使用默认合约
+            "direction": "all",
+            "order_type": "MARKET"
+        })
+
+        logger.info(f"一键平仓调用结果: {close_response}")
+
+        # 直接返回核心服务的响应
+        return close_response
+
+    except Exception as e:
+        logger.error(f"一键平仓失败: {e}")
+        raise HTTPException(status_code=500, detail=f"一键平仓失败: {str(e)}")
+
 @router.get("/positions")
 async def get_positions(
     symbol: Optional[str] = None,

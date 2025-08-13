@@ -19,13 +19,13 @@ def start_backend():
     """启动后端服务"""
     print("🔧 启动后端服务...")
     try:
-        # 启动main.py服务容器
+        # 使用start.py启动微服务架构
         subprocess.Popen([
-            sys.executable, "main.py", "--auto-start"
+            sys.executable, "start.py", "--mode", "full", "--auto"
         ], cwd=project_root)
-        
+
         # 等待后端启动
-        time.sleep(5)
+        time.sleep(10)  # 微服务启动需要更多时间
         
         # 检查后端是否启动成功
         try:
