@@ -285,7 +285,7 @@ async def send_real_order(request: Dict[str, Any]):
                 volume,
                 price,
                 order_type.lower(),
-                "submitted",
+                "pending",
                 datetime.now(),
                 datetime.now()
             ))
@@ -379,24 +379,63 @@ async def close_position(request: Dict[str, Any]):
             close_volume = volume if volume > 0 else position_info['long_position']
             close_volume = min(close_volume, position_info['long_position'])
 
-            # 智能平仓：先尝试平今仓，失败则尝试平昨仓
+            # 智能平仓：根据当前时间判断今昨仓优先级
+            current_hour = datetime.now().hour
+
             order_id = None
             offset_used = None
 
-            # 尝试平今仓
-            try:
-                order_id = ctp.send_order(symbol, 'SELL', close_volume, price, order_type, 'CLOSETODAY')
-                offset_used = 'CLOSETODAY'
-            except:
-                pass
+            # 获取仓位详情，判断今昨仓
+            position_detail = ctp.get_position_detail(symbol, 'LONG')
+            today_volume = getattr(position_detail, 'today_position', 0) if position_detail else 0
+            yesterday_volume = getattr(position_detail, 'yesterday_position', 0) if position_detail else 0
 
-            # 如果平今仓失败，尝试平昨仓
-            if not order_id:
+            order_id = None
+            offset_used = None
+
+            logger.info(f"多单仓位详情: 今仓{today_volume}手, 昨仓{yesterday_volume}手, 需平{close_volume}手")
+
+            # 优先平今仓
+            if today_volume > 0 and close_volume <= today_volume:
+                try:
+                    order_id = ctp.send_order(symbol, 'SELL', close_volume, price, order_type, 'CLOSETODAY')
+                    offset_used = 'CLOSETODAY'
+                    logger.info(f"✅ 平今仓多单: {symbol} {close_volume}手")
+                except Exception as e:
+                    logger.warning(f"平今仓多单失败: {e}")
+                    pass
+
+            # 如果没有今仓或需要平的数量超过今仓，平昨仓
+            if not order_id and yesterday_volume > 0:
                 try:
                     order_id = ctp.send_order(symbol, 'SELL', close_volume, price, order_type, 'CLOSEYESTERDAY')
                     offset_used = 'CLOSEYESTERDAY'
-                except:
+                    logger.info(f"✅ 平昨仓多单: {symbol} {close_volume}手")
+                except Exception as e:
+                    logger.warning(f"平昨仓多单失败: {e}")
                     pass
+
+            # 如果仓位信息获取失败，使用尝试模式
+            if not order_id:
+                logger.warning(f"无法获取仓位详情或平仓失败，使用尝试模式")
+                # 先尝试平今仓
+                try:
+                    order_id = ctp.send_order(symbol, 'SELL', close_volume, price, order_type, 'CLOSETODAY')
+                    offset_used = 'CLOSETODAY'
+                    logger.info(f"尝试平今仓多单: {symbol} {close_volume}手")
+                except Exception as e:
+                    logger.warning(f"平今仓多单失败: {e}")
+                    pass
+
+                # 如果平今仓失败，尝试平昨仓
+                if not order_id:
+                    try:
+                        order_id = ctp.send_order(symbol, 'SELL', close_volume, price, order_type, 'CLOSEYESTERDAY')
+                        offset_used = 'CLOSEYESTERDAY'
+                        logger.info(f"尝试平昨仓多单: {symbol} {close_volume}手")
+                    except Exception as e:
+                        logger.warning(f"平昨仓多单失败: {e}")
+                        pass
 
             if order_id:
                 orders_sent.append({
@@ -410,28 +449,57 @@ async def close_position(request: Dict[str, Any]):
             close_volume = volume if volume > 0 else position_info['short_position']
             close_volume = min(close_volume, position_info['short_position'])
 
-            # 智能平仓：先尝试平今仓，再尝试平昨仓
+            # 获取仓位详情，判断今昨仓
+            position_detail = ctp.get_position_detail(symbol, 'SHORT')
+            today_volume = getattr(position_detail, 'today_position', 0) if position_detail else 0
+            yesterday_volume = getattr(position_detail, 'yesterday_position', 0) if position_detail else 0
+
             order_id = None
             offset_used = None
 
-            # 先尝试平今仓
-            try:
-                order_id = ctp.send_order(symbol, 'BUY', close_volume, price, order_type, 'CLOSETODAY')
-                offset_used = 'CLOSETODAY'
-                logger.info(f"尝试平今仓空单: {symbol} {close_volume}手")
-            except Exception as e:
-                logger.warning(f"平昨今仓空单失败: {e}")
-                pass
+            logger.info(f"空单仓位详情: 今仓{today_volume}手, 昨仓{yesterday_volume}手, 需平{close_volume}手")
 
-            # 如果平今仓失败，尝试平昨仓
-            if not order_id:
+            # 优先平今仓
+            if today_volume > 0 and close_volume <= today_volume:
+                try:
+                    order_id = ctp.send_order(symbol, 'BUY', close_volume, price, order_type, 'CLOSETODAY')
+                    offset_used = 'CLOSETODAY'
+                    logger.info(f"✅ 平今仓空单: {symbol} {close_volume}手")
+                except Exception as e:
+                    logger.warning(f"平今仓空单失败: {e}")
+                    pass
+
+            # 如果没有今仓或需要平的数量超过今仓，平昨仓
+            if not order_id and yesterday_volume > 0:
                 try:
                     order_id = ctp.send_order(symbol, 'BUY', close_volume, price, order_type, 'CLOSEYESTERDAY')
                     offset_used = 'CLOSEYESTERDAY'
-                    logger.info(f"尝试平昨仓空单: {symbol} {close_volume}手")
+                    logger.info(f"✅ 平昨仓空单: {symbol} {close_volume}手")
                 except Exception as e:
                     logger.warning(f"平昨仓空单失败: {e}")
                     pass
+
+            # 如果仓位信息获取失败，使用尝试模式
+            if not order_id:
+                logger.warning(f"无法获取仓位详情或平仓失败，使用尝试模式")
+                # 先尝试平今仓
+                try:
+                    order_id = ctp.send_order(symbol, 'BUY', close_volume, price, order_type, 'CLOSETODAY')
+                    offset_used = 'CLOSETODAY'
+                    logger.info(f"尝试平今仓空单: {symbol} {close_volume}手")
+                except Exception as e:
+                    logger.warning(f"平今仓空单失败: {e}")
+                    pass
+
+                # 如果平今仓失败，尝试平昨仓
+                if not order_id:
+                    try:
+                        order_id = ctp.send_order(symbol, 'BUY', close_volume, price, order_type, 'CLOSEYESTERDAY')
+                        offset_used = 'CLOSEYESTERDAY'
+                        logger.info(f"尝试平昨仓空单: {symbol} {close_volume}手")
+                    except Exception as e:
+                        logger.warning(f"平昨仓空单失败: {e}")
+                        pass
 
             if order_id:
                 orders_sent.append({

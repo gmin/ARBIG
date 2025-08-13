@@ -834,6 +834,48 @@ class CtpIntegration:
 
             return positions
 
+    def get_position_detail(self, symbol: str, direction: str):
+        """获取仓位详情，包含今昨仓信息"""
+        try:
+            # 查找对应的持仓记录
+            direction_key = f"{symbol}_{direction.title()}"  # 如 "au2510_Long"
+
+            if direction_key in self.positions:
+                position = self.positions[direction_key]
+
+                # 创建仓位详情对象
+                class PositionDetail:
+                    def __init__(self, position):
+                        self.symbol = position.symbol
+                        self.direction = position.direction
+                        self.volume = position.volume
+                        self.price = position.price
+
+                        # 从CTP持仓数据获取今昨仓信息
+                        self.today_position = getattr(position, 'today_position', 0)
+                        self.yesterday_position = getattr(position, 'yesterday_position', 0)
+
+                        # 如果CTP没有提供今昨仓信息，根据时间估算
+                        if self.today_position == 0 and self.yesterday_position == 0:
+                            import datetime as dt
+                            current_hour = dt.datetime.now().hour
+
+                            # 简化判断：如果是夜盘时间，假设是今仓；否则假设是昨仓
+                            if current_hour >= 21 or current_hour < 9:
+                                self.today_position = position.volume
+                                self.yesterday_position = 0
+                            else:
+                                self.today_position = 0
+                                self.yesterday_position = position.volume
+
+                return PositionDetail(position)
+
+            return None
+
+        except Exception as e:
+            logger.error(f"获取仓位详情失败: {e}")
+            return None
+
     def get_smart_offset(self, symbol: str, direction: str) -> str:
         """智能判断开平仓类型 - 禁用智能平仓，允许双向持仓"""
         position_info = self.get_position_info(symbol)

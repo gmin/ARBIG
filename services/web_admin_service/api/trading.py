@@ -360,10 +360,18 @@ async def close_position(
 ):
     """平仓操作"""
     try:
-        # 转发到核心交易服务的平仓接口
-        response = await service_client.post("/real_trading/close_position", data=close_data)
+        # 标准化参数格式
+        normalized_data = {
+            "symbol": close_data.get("symbol", "au2510"),
+            "direction": close_data.get("direction", "all").lower(),  # 转换为小写
+            "volume": close_data.get("volume", 0),
+            "order_type": close_data.get("order_type", "MARKET")  # 默认市价单
+        }
 
-        logger.info(f"平仓操作: {close_data}")
+        # 转发到核心交易服务的平仓接口
+        response = await service_client.post("/real_trading/close_position", data=normalized_data)
+
+        logger.info(f"平仓操作: {close_data} -> {normalized_data}")
         return response
 
     except Exception as e:
