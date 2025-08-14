@@ -855,18 +855,66 @@ class CtpIntegration:
                         self.today_position = getattr(position, 'today_position', 0)
                         self.yesterday_position = getattr(position, 'yesterday_position', 0)
 
-                        # 如果CTP没有提供今昨仓信息，根据时间估算
+                        # 如果CTP没有提供今昨仓信息，需要智能判断
                         if self.today_position == 0 and self.yesterday_position == 0:
-                            import datetime as dt
-                            current_hour = dt.datetime.now().hour
+                            logger.info(f"CTP未提供今昨仓信息，开始智能判断: {position.symbol} {position.direction} 总持仓{position.volume}手")
 
-                            # 简化判断：如果是夜盘时间，假设是今仓；否则假设是昨仓
-                            if current_hour >= 21 or current_hour < 9:
-                                self.today_position = position.volume
-                                self.yesterday_position = 0
+                            # 尝试从vnpy的持仓对象获取更多信息
+                            today_pos = getattr(position, 'today_position', 0)
+                            yesterday_pos = getattr(position, 'yesterday_position', 0)
+                            yd_position = getattr(position, 'yd_position', 0)  # 昨仓
+
+                            if today_pos > 0 or yesterday_pos > 0:
+                                self.today_position = today_pos
+                                self.yesterday_position = yesterday_pos
+                                logger.info(f"从vnpy对象获取今昨仓: 今仓{today_pos}手, 昨仓{yesterday_pos}手")
+                            elif yd_position > 0:
+                                self.today_position = max(0, position.volume - yd_position)
+                                self.yesterday_position = yd_position
+                                logger.info(f"从yd_position获取昨仓: 今仓{self.today_position}手, 昨仓{self.yesterday_position}手")
                             else:
-                                self.today_position = 0
-                                self.yesterday_position = position.volume
+                                # 最后的判断逻辑：基于交易时间
+                                import datetime as dt
+                                now = dt.datetime.now()
+                                current_hour = now.hour
+                                current_minute = now.minute
+
+                                # 判断是否在交易时间内
+                                is_night_session = (current_hour >= 21) or (current_hour <= 2) or (current_hour == 2 and current_minute <= 30)
+                                is_morning_session = (current_hour >= 9 and current_hour < 11) or (current_hour == 11 and current_minute <= 30)
+                                is_afternoon_session = (current_hour >= 13 and current_hour < 15) or (current_hour == 15 and current_minute == 0)
+
+                                is_trading_time = is_night_session or is_morning_session or is_afternoon_session
+
+                                if is_trading_time:
+                                    # 交易时间内，根据距离开盘时间判断
+                                    if is_night_session and current_hour >= 21:
+                                        # 夜盘开盘后，可能有今仓
+                                        minutes_since_night_open = (current_hour - 21) * 60 + current_minute
+                                        if minutes_since_night_open <= 120:  # 开盘2小时内
+                                            self.today_position = position.volume
+                                            self.yesterday_position = 0
+                                            logger.info(f"夜盘开盘{minutes_since_night_open}分钟，判断为今仓: {position.volume}手")
+                                        else:
+                                            # 可能是混合仓位
+                                            self.today_position = position.volume // 2
+                                            self.yesterday_position = position.volume - self.today_position
+                                            logger.info(f"夜盘中后期，判断为混合仓位: 今仓{self.today_position}手, 昨仓{self.yesterday_position}手")
+                                    elif is_morning_session or is_afternoon_session:
+                                        # 日盘时间，更可能是昨仓
+                                        self.today_position = 0
+                                        self.yesterday_position = position.volume
+                                        logger.info(f"日盘时间，判断为昨仓: {position.volume}手")
+                                    else:
+                                        # 夜盘后期，混合判断
+                                        self.today_position = position.volume // 3
+                                        self.yesterday_position = position.volume - self.today_position
+                                        logger.info(f"夜盘后期，判断为混合仓位: 今仓{self.today_position}手, 昨仓{self.yesterday_position}手")
+                                else:
+                                    # 非交易时间，全部当作昨仓
+                                    self.today_position = 0
+                                    self.yesterday_position = position.volume
+                                    logger.info(f"非交易时间，判断为昨仓: {position.volume}手")
 
                 return PositionDetail(position)
 
@@ -885,6 +933,120 @@ class CtpIntegration:
 
         # 总是开仓，允许双向持仓
         return 'OPEN'
+
+    def get_historical_data(self, symbol: str, interval: str = "1m", count: int = 100):
+        """获取历史K线数据"""
+        try:
+            from vnpy.trader.constant import Interval
+            from vnpy.trader.object import HistoryRequest
+            from datetime import datetime, timedelta
+
+            # 转换时间周期
+            interval_map = {
+                "1m": Interval.MINUTE,
+                "5m": Interval.MINUTE * 5,
+                "15m": Interval.MINUTE * 15,
+                "30m": Interval.MINUTE * 30,
+                "1h": Interval.HOUR,
+                "1d": Interval.DAILY
+            }
+
+            vnpy_interval = interval_map.get(interval, Interval.MINUTE)
+
+            # 计算开始时间
+            end_time = datetime.now()
+            if interval == "1d":
+                start_time = end_time - timedelta(days=count + 10)
+            elif interval == "1h":
+                start_time = end_time - timedelta(hours=count + 24)
+            else:
+                start_time = end_time - timedelta(minutes=count * 5 + 60)
+
+            # 创建历史数据请求
+            req = HistoryRequest(
+                symbol=symbol,
+                exchange=self.contracts[symbol].exchange if symbol in self.contracts else None,
+                start=start_time,
+                end=end_time,
+                interval=vnpy_interval
+            )
+
+            # 获取历史数据
+            if hasattr(self.main_engine, 'query_history'):
+                bars = self.main_engine.query_history(req, self.gateway_name)
+
+                # 转换为标准格式
+                historical_data = []
+                for bar in bars[-count:]:  # 只返回请求的数量
+                    historical_data.append({
+                        'symbol': bar.symbol,
+                        'datetime': bar.datetime.isoformat(),
+                        'open': bar.open_price,
+                        'high': bar.high_price,
+                        'low': bar.low_price,
+                        'close': bar.close_price,
+                        'volume': bar.volume,
+                        'interval': interval
+                    })
+
+                logger.info(f"获取历史数据成功: {symbol} {interval} {len(historical_data)}条")
+                return historical_data
+            else:
+                logger.warning("CTP网关不支持历史数据查询")
+                return []
+
+        except Exception as e:
+            logger.error(f"获取历史数据失败: {e}")
+            return []
+
+    def get_simulated_historical_data(self, symbol: str, interval: str = "1m", count: int = 100):
+        """生成模拟历史数据用于回测（当CTP历史数据不可用时）"""
+        try:
+            import random
+            from datetime import datetime, timedelta
+
+            # 获取当前价格作为基准
+            current_price = 775.0  # 默认黄金价格
+            if symbol in self.ticks:
+                current_price = self.ticks[symbol].last_price
+
+            # 生成模拟数据
+            historical_data = []
+            base_time = datetime.now() - timedelta(minutes=count)
+
+            for i in range(count):
+                # 模拟价格波动
+                price_change = random.uniform(-0.5, 0.5)  # ±0.5%的波动
+                open_price = current_price * (1 + price_change / 100)
+
+                high_price = open_price * (1 + random.uniform(0, 0.3) / 100)
+                low_price = open_price * (1 - random.uniform(0, 0.3) / 100)
+                close_price = open_price + random.uniform(-0.2, 0.2)
+
+                volume = random.randint(10, 100)
+
+                bar_time = base_time + timedelta(minutes=i)
+
+                historical_data.append({
+                    'symbol': symbol,
+                    'datetime': bar_time.isoformat(),
+                    'open': round(open_price, 2),
+                    'high': round(high_price, 2),
+                    'low': round(low_price, 2),
+                    'close': round(close_price, 2),
+                    'volume': volume,
+                    'interval': interval
+                })
+
+                # 更新基准价格
+                current_price = close_price
+
+            logger.info(f"生成模拟历史数据: {symbol} {interval} {len(historical_data)}条")
+            return historical_data
+
+        except Exception as e:
+            logger.error(f"生成模拟历史数据失败: {e}")
+            return []
     
     def add_tick_callback(self, callback: Callable):
         """添加行情回调"""

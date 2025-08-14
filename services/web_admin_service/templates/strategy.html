@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>策略管理 - ARBIG量化交易系统</title>
+    <link rel="stylesheet" href="/static/css/dashboard.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎯</text></svg>">
+</head>
+<body>
+    <!-- 导航栏 -->
+    <nav class="navbar">
+        <div class="navbar-content">
+            <a href="/" class="navbar-brand">📊 ARBIG量化交易系统</a>
+            <div class="navbar-center">
+                <ul class="navbar-nav">
+                    <li><a href="/">控制台</a></li>
+                    <li><a href="/trading">交易管理</a></li>
+                    <li><a href="/strategy" class="active">策略管理</a></li>
+                    <li><a href="/api/docs" target="_blank">API文档</a></li>
+                </ul>
+            </div>
+            <div class="navbar-user">
+                <div class="user-info">
+                    <div class="user-avatar">👤</div>
+                    <div class="user-details">
+                        <div class="user-name">交易员</div>
+                        <div class="user-status">在线</div>
+                    </div>
+                </div>
+                <div class="user-menu">
+                    <button class="btn btn-outline" onclick="logout()">退出</button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <!-- 页面标题 -->
+        <div class="page-header">
+            <h1 class="page-title">策略管理</h1>
+            <div class="page-subtitle">量化策略配置、回测与实时运行管理</div>
+        </div>
+
+        <!-- 策略状态概览 -->
+        <div class="grid grid-4" style="margin-top: 32px;">
+            <div class="card stat-card">
+                <div class="stat-value" id="active-strategy-display">
+                    <span class="status-indicator" id="strategy-status-indicator">⏸️</span>
+                    <span id="active-strategy">无活跃策略</span>
+                </div>
+                <div class="stat-label">当前运行策略</div>
+            </div>
+            <div class="card stat-card">
+                <div class="stat-value" id="strategy-count">0</div>
+                <div class="stat-label">可用策略数量</div>
+            </div>
+            <div class="card stat-card">
+                <div class="stat-value" id="backtest-count">0</div>
+                <div class="stat-label">今日回测次数</div>
+            </div>
+            <div class="card stat-card">
+                <div class="stat-value">
+                    <button id="refresh-btn" class="btn btn-primary btn-sm">🔄 刷新</button>
+                </div>
+                <div class="stat-label">操作</div>
+            </div>
+        </div>
+
+        <!-- 策略列表 -->
+        <div class="grid grid-1" style="margin-top: 32px;">
+            <div class="card">
+                <div class="card-header">🎯 策略列表</div>
+                <div class="card-body">
+                    <div class="strategy-grid" id="strategy-grid">
+                        <!-- 策略卡片将在这里动态生成 -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 策略回测 -->
+        <div class="grid grid-1" style="margin-top: 32px;">
+            <div class="card">
+                <div class="card-header">📈 策略回测</div>
+                <div class="card-body">
+                    <div class="grid grid-5" style="gap: 16px; margin-bottom: 24px;">
+                        <div class="form-group">
+                            <label for="backtest-strategy">选择策略</label>
+                            <select id="backtest-strategy" class="form-control">
+                                <option value="">请选择策略</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="backtest-symbol">交易品种</label>
+                            <input type="text" id="backtest-symbol" class="form-control" value="au2510">
+                        </div>
+                        <div class="form-group">
+                            <label for="backtest-interval">时间周期</label>
+                            <select id="backtest-interval" class="form-control">
+                                <option value="1m">1分钟</option>
+                                <option value="5m">5分钟</option>
+                                <option value="15m">15分钟</option>
+                                <option value="1h">1小时</option>
+                                <option value="1d">1天</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="backtest-count">数据条数</label>
+                            <input type="number" id="backtest-count" class="form-control" value="100" min="10" max="1000">
+                        </div>
+                        <div class="form-group">
+                            <label>&nbsp;</label>
+                            <button id="run-backtest-btn" class="btn btn-primary">🚀 运行回测</button>
+                        </div>
+                    </div>
+
+                    <!-- 回测结果 -->
+                    <div id="backtest-results" class="backtest-results" style="display: none;">
+                        <div class="section-divider"></div>
+                        <h3 style="margin-bottom: 16px;">📊 回测结果</h3>
+                        <div class="grid grid-5" style="gap: 16px;">
+                            <div class="stat-card">
+                                <div class="stat-value" id="total-return">--</div>
+                                <div class="stat-label">总收益率</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-value" id="max-drawdown">--</div>
+                                <div class="stat-label">最大回撤</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-value" id="total-trades">--</div>
+                                <div class="stat-label">交易次数</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-value" id="initial-capital">--</div>
+                                <div class="stat-label">初始资金</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-value" id="final-capital">--</div>
+                                <div class="stat-label">最终资金</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    </div>
+
+    <!-- 策略参数编辑模态框 -->
+    <div id="params-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>⚙️ 编辑策略参数</h3>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <form id="params-form">
+                    <div id="params-container">
+                        <!-- 参数输入框将在这里动态生成 -->
+                    </div>
+                    <div class="modal-actions">
+                        <button type="button" class="btn btn-outline" id="cancel-params">取消</button>
+                        <button type="submit" class="btn btn-primary">💾 保存参数</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/strategy.js"></script>
+</body>
+</html>

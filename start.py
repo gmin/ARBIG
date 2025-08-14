@@ -61,11 +61,12 @@ def start_service(name, command, port, check_port=True):
     if check_port:
         # 检查端口是否被占用
         result = subprocess.run(
-            f"netstat -tlnp | grep :{port}",
+            f"netstat -tlnp | grep ':{port} '",
             shell=True, capture_output=True, text=True
         )
         if result.returncode == 0 and result.stdout.strip():
             print(f"⚠️  端口 {port} 已被占用")
+            print(f"占用详情: {result.stdout.strip()}")
             return None
     
     try:
@@ -103,15 +104,16 @@ def show_menu():
     print("1. 🚀 启动完整系统 (推荐)")
     print("2. 🔧 仅启动Web管理界面")
     print("3. 📊 仅启动核心交易服务")
-    print("4. 🧪 运行系统测试")
+    print("4. 🎯 仅启动策略管理服务")
+    print("5. 🧪 运行系统测试")
     print("0. 👋 退出")
     print("="*60)
 
 def main():
     """主函数"""
     parser = argparse.ArgumentParser(description='ARBIG量化交易系统启动器')
-    parser.add_argument('--mode', type=str, choices=['full', 'web', 'trading', 'test'],
-                       help='启动模式: full(完整系统), web(Web界面), trading(交易服务), test(测试)')
+    parser.add_argument('--mode', type=str, choices=['full', 'web', 'trading', 'strategy', 'test'],
+                       help='启动模式: full(完整系统), web(Web界面), trading(交易服务), strategy(策略服务), test(测试)')
     parser.add_argument('--auto', action='store_true', help='自动启动，不显示菜单')
     
     args = parser.parse_args()
@@ -129,6 +131,8 @@ def main():
             start_web_only()
         elif args.mode == 'trading':
             start_trading_only()
+        elif args.mode == 'strategy':
+            start_strategy_only()
         elif args.mode == 'test':
             run_tests()
         return
@@ -137,8 +141,8 @@ def main():
     while True:
         show_menu()
         try:
-            choice = input("\n请选择 (0-4): ").strip()
-            
+            choice = input("\n请选择 (0-5): ").strip()
+
             if choice == "0":
                 print("👋 再见！")
                 break
@@ -152,6 +156,9 @@ def main():
                 start_trading_only()
                 break
             elif choice == "4":
+                start_strategy_only()
+                break
+            elif choice == "5":
                 run_tests()
                 input("\n按Enter键继续...")
             else:
@@ -163,43 +170,63 @@ def main():
 def start_full_system():
     """启动完整系统"""
     print("\n🚀 启动完整ARBIG系统...")
-    
+
+    processes = []
+
     # 启动核心交易服务
     trading_process = start_service(
         "核心交易服务",
         "conda run -n vnpy python services/trading_service/main.py --port 8001",
         8001
     )
-    
+
     if not trading_process:
         print("❌ 核心交易服务启动失败")
         return
-    
+    processes.append(trading_process)
+
+    # 启动策略管理服务
+    strategy_process = start_service(
+        "策略管理服务",
+        "conda run -n vnpy python services/strategy_service/main.py --port 8002",
+        8002
+    )
+
+    if not strategy_process:
+        print("⚠️  策略管理服务启动失败，但系统将继续运行")
+    else:
+        processes.append(strategy_process)
+
     # 启动Web管理服务
     web_process = start_service(
         "Web管理服务",
         "conda run -n vnpy python services/web_admin_service/main.py --port 80",
         80
     )
-    
+
     if not web_process:
         print("❌ Web管理服务启动失败")
-        trading_process.terminate()
+        for p in processes:
+            p.terminate()
         return
-    
+    processes.append(web_process)
+
     print("\n✅ ARBIG完整系统启动成功！")
     print("🎛️  Web管理界面: http://localhost")
     print("📊 交易页面: http://localhost/trading")
-    print("📖 API文档: http://localhost:8001/docs")
-    
+    print("🎯 策略管理: http://localhost/strategy")
+    print("📖 交易API文档: http://localhost:8001/docs")
+    if strategy_process:
+        print("🔧 策略API文档: http://localhost:8002/docs")
+
     try:
         input("\n按Enter键停止系统...")
     except KeyboardInterrupt:
         pass
-    
+
     print("\n🛑 正在停止系统...")
-    web_process.terminate()
-    trading_process.terminate()
+    for process in processes:
+        process.terminate()
     print("✅ 系统已停止")
 
 def start_web_only():
@@ -208,8 +235,8 @@ def start_web_only():
     
     web_process = start_service(
         "Web管理服务",
-        "conda run -n vnpy python services/web_admin_service/main.py --port 80",
-        80
+        "conda run -n vnpy python services/web_admin_service/main.py --port 8080",
+        8080
     )
     
     if web_process:
@@ -245,6 +272,29 @@ def start_trading_only():
         
         trading_process.terminate()
         print("✅ 交易服务已停止")
+
+def start_strategy_only():
+    """仅启动策略管理服务"""
+    print("\n🎯 启动策略管理服务...")
+
+    strategy_process = start_service(
+        "策略管理服务",
+        "conda run -n vnpy python services/strategy_service/main.py --port 8002",
+        8002
+    )
+
+    if strategy_process:
+        print("\n✅ 策略管理服务启动成功！")
+        print("🔧 策略服务API: http://localhost:8002")
+        print("📖 API文档: http://localhost:8002/docs")
+
+        try:
+            input("\n按Enter键停止服务...")
+        except KeyboardInterrupt:
+            pass
+
+        strategy_process.terminate()
+        print("✅ 策略服务已停止")
 
 def run_tests():
     """运行系统测试"""

@@ -400,6 +400,70 @@ async def close_all_positions(
         logger.error(f"一键平仓失败: {e}")
         raise HTTPException(status_code=500, detail=f"一键平仓失败: {str(e)}")
 
+# 策略管理API代理
+@router.get("/strategies")
+async def get_strategies():
+    """获取策略列表"""
+    try:
+        # 直接调用策略管理服务
+        import httpx
+        async with httpx.AsyncClient() as client:
+            response = await client.get("http://localhost:8002/strategies")
+            return response.json()
+    except Exception as e:
+        logger.error(f"获取策略列表失败: {e}")
+        raise HTTPException(status_code=500, detail=f"获取策略列表失败: {str(e)}")
+
+@router.post("/strategies/{strategy_name}/start")
+async def start_strategy(strategy_name: str):
+    """启动策略"""
+    try:
+        import httpx
+        async with httpx.AsyncClient() as client:
+            response = await client.post(f"http://localhost:8002/strategies/{strategy_name}/start")
+            return response.json()
+    except Exception as e:
+        logger.error(f"启动策略失败: {e}")
+        raise HTTPException(status_code=500, detail=f"启动策略失败: {str(e)}")
+
+@router.post("/strategies/{strategy_name}/stop")
+async def stop_strategy(strategy_name: str):
+    """停止策略"""
+    try:
+        import httpx
+        async with httpx.AsyncClient() as client:
+            response = await client.post(f"http://localhost:8002/strategies/{strategy_name}/stop")
+            return response.json()
+    except Exception as e:
+        logger.error(f"停止策略失败: {e}")
+        raise HTTPException(status_code=500, detail=f"停止策略失败: {str(e)}")
+
+@router.post("/strategies/{strategy_name}/params")
+async def update_strategy_params(strategy_name: str, params: dict):
+    """更新策略参数"""
+    try:
+        import httpx
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"http://localhost:8002/strategies/{strategy_name}/params",
+                json=params
+            )
+            return response.json()
+    except Exception as e:
+        logger.error(f"更新策略参数失败: {e}")
+        raise HTTPException(status_code=500, detail=f"更新策略参数失败: {str(e)}")
+
+@router.post("/backtest")
+async def run_backtest(backtest_request: dict, service_client: ServiceClient = Depends(get_service_client)):
+    """运行策略回测"""
+    try:
+        # 转发到核心交易服务的回测接口
+        response = await service_client.post("/real_trading/backtest", data=backtest_request)
+        return response
+    except Exception as e:
+        logger.error(f"运行回测失败: {e}")
+        raise HTTPException(status_code=500, detail=f"运行回测失败: {str(e)}")
+
 @router.get("/positions")
 async def get_positions(
     symbol: Optional[str] = None,

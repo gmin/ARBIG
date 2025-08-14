@@ -979,6 +979,44 @@ async def trading_page(request: Request):
         </html>
         """
 
+@app.get("/strategy", response_class=HTMLResponse, summary="策略管理页面")
+async def strategy_page(request: Request):
+    """策略管理页面"""
+    # 检查模板文件是否存在
+    template_path = Path("services/web_admin_service/templates/strategy.html")
+    if template_path.exists():
+        return templates.TemplateResponse("strategy.html", {"request": request})
+    else:
+        # 返回简单的策略管理页面
+        return """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>ARBIG策略管理</title>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <link rel="stylesheet" href="/static/css/main.css?v=2.1">
+        </head>
+        <body>
+            <nav class="navbar">
+                <div class="container">
+                    <h1>ARBIG策略管理</h1>
+                    <ul class="nav-links">
+                        <li><a href="/">首页</a></li>
+                        <li><a href="/trading">交易管理</a></li>
+                        <li><a href="/strategy" class="active">策略管理</a></li>
+                    </ul>
+                </div>
+            </nav>
+            <div class="container">
+                <h2>策略管理功能开发中...</h2>
+                <p>策略管理服务正在开发中，敬请期待！</p>
+                <p>策略服务API: <a href="http://localhost:8002" target="_blank">http://localhost:8002</a></p>
+            </div>
+        </body>
+        </html>
+        """
+
 def main():
     """主函数"""
     parser = argparse.ArgumentParser(description='ARBIG Web管理服务')
