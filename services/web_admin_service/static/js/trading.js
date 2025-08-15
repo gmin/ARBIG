@@ -239,29 +239,9 @@ class TradingManager {
 
             const result = await response.json();
 
-            // 处理持仓数据格式 - API现在直接返回数组
+            // 处理持仓数据格式 - 统一处理今昨仓信息
             let positionsArray = [];
-            if (Array.isArray(result)) {
-                // API直接返回数组格式
-                positionsArray = result.map(pos => ({
-                    symbol: pos.symbol || TRADING_CONFIG.DEFAULT_SYMBOL,
-                    direction: pos.direction,
-                    volume: pos.volume,
-                    open_price: pos.open_price || pos.avg_price,
-                    current_price: pos.current_price || 0,
-                    unrealized_pnl: pos.unrealized_pnl || 0
-                }));
-            } else if (result.success && result.data) {
-                if (Array.isArray(result.data)) {
-                    positionsArray = result.data.map(pos => ({
-                        symbol: pos.symbol || TRADING_CONFIG.DEFAULT_SYMBOL,
-                        direction: pos.direction,
-                        volume: pos.volume,
-                        open_price: pos.open_price || pos.avg_price,
-                        current_price: pos.current_price || 0,
-                        unrealized_pnl: pos.unrealized_pnl || 0
-                    }));
-                } else {
+            if (result.success && result.data) {
                     // 兼容旧的对象格式，包含今昨仓信息
                     Object.keys(result.data).forEach(symbol => {
                         const pos = result.data[symbol];
@@ -333,7 +313,7 @@ class TradingManager {
         // 清空表格
         tableBody.innerHTML = '';
 
-        positions.forEach(position => {
+        positions.forEach((position, index) => {
             if (position.volume === 0) return; // 跳过空仓位
 
             const row = document.createElement('tr');
@@ -344,6 +324,13 @@ class TradingManager {
 
             const symbol = position.symbol || TRADING_CONFIG.DEFAULT_SYMBOL;
 
+            // 创建平仓按钮，传递完整的position信息
+            const closeButton = document.createElement('button');
+            closeButton.className = 'btn btn-danger';
+            closeButton.style.cssText = 'font-size: 12px; padding: 4px 8px;';
+            closeButton.textContent = '平仓';
+            closeButton.onclick = () => closePosition(symbol, position.direction, position.volume, position.position_detail);
+
             row.innerHTML = `
                 <td>${symbol}</td>
                 <td>${direction}</td>
@@ -351,12 +338,11 @@ class TradingManager {
                 <td>${(position.open_price || 0).toFixed(2)}</td>
                 <td>${currentPrice.toFixed(2)}</td>
                 <td class="${pnlClass}">${pnl.toFixed(0)}</td>
-                <td>
-                    <button class="btn btn-danger" onclick="closePosition('${symbol}', '${position.direction}', ${position.volume})" style="font-size: 12px; padding: 4px 8px;">
-                        平仓
-                    </button>
-                </td>
+                <td></td>
             `;
+
+            // 将按钮添加到最后一个单元格
+            row.lastElementChild.appendChild(closeButton);
             tableBody.appendChild(row);
         });
     }
@@ -773,40 +759,7 @@ function showOrderResult(message, type) {
     }
 }
 
-async function closePosition(symbol, direction, volume) {
-    if (!confirm(`确定要平仓 ${symbol} ${direction === 'LONG' ? '多头' : '空头'} ${volume}手 吗？`)) {
-        return;
-    }
-
-    try {
-        const response = await fetch('/api/v1/trading/close_position', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                symbol: symbol,
-                direction: direction,
-                volume: volume
-            })
-        });
-
-        const result = await response.json();
-
-        if (result.success) {
-            alert('✅ 平仓订单提交成功！');
-            // 刷新持仓数据
-            if (window.tradingManager) {
-                window.tradingManager.updatePositions();
-            }
-        } else {
-            alert(`❌ 平仓失败: ${result.message}`);
-        }
-    } catch (error) {
-        console.error('❌ 平仓失败:', error);
-        alert(`❌ 平仓失败: ${error.message}`);
-    }
-}
+// 旧的closePosition函数已删除，现在使用智能平仓对话框
 
 function refreshPositions() {
     console.log('🔄 手动刷新持仓数据...');
@@ -871,7 +824,14 @@ async function closeAllPositions() {
         const response = await fetch('/api/v1/trading/positions');
         const result = await response.json();
 
-        if (!result.success || !result.data || result.data.length === 0) {
+        if (!result.success || !result.data) {
+            alert('当前没有持仓需要平仓');
+            return;
+        }
+
+        // 使用TradingManager的当前持仓数据（已经解析过的）
+        const positions = window.tradingManager?.currentPositions || [];
+        if (positions.length === 0) {
             alert('当前没有持仓需要平仓');
             return;
         }
@@ -879,25 +839,21 @@ async function closeAllPositions() {
         let successCount = 0;
         let failCount = 0;
 
-        // 逐个平仓
-        for (const position of result.data) {
+        // 逐个平仓 - 使用智能平仓逻辑
+        for (const position of positions) {
             if (position.volume === 0) continue;
 
             try {
-                const closeResponse = await fetch('/api/v1/trading/close_position', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        symbol: position.symbol || TRADING_CONFIG.DEFAULT_SYMBOL,
-                        direction: position.direction,
-                        volume: position.volume
-                    })
-                });
+                // 使用前端智能平仓逻辑
+                const closeResult = await smartClosePosition(
+                    position.symbol || TRADING_CONFIG.DEFAULT_SYMBOL,
+                    position.direction,
+                    position.volume,
+                    position.today_volume || 0,
+                    position.yd_volume || 0
+                );
 
-                const closeResult = await closeResponse.json();
-                if (closeResult.success) {
+                if (closeResult.orders.length > 0) {
                     successCount++;
                 } else {
                     failCount++;
@@ -1034,29 +990,7 @@ async function resumeStrategy() {
     }
 }
 
-async function closeAllPositions() {
-    if (confirm('⚠️ 确定要平掉所有持仓吗？\n此操作不可撤销！')) {
-        console.log('🔴 一键平仓...');
-        try {
-            const response = await fetch('/api/v1/trading/positions/close_all', {
-                method: 'POST'
-            });
-            const result = await response.json();
-            if (result.success) {
-                alert('✅ 所有持仓已平仓');
-                // 刷新持仓数据
-                if (window.tradingManager) {
-                    window.tradingManager.updatePositions();
-                }
-            } else {
-                alert('❌ 平仓失败: ' + (result.message || '未知错误'));
-            }
-        } catch (error) {
-            console.error('❌ 平仓错误:', error);
-            alert('❌ 平仓失败，请检查网络连接');
-        }
-    }
-}
+// 重复的closeAllPositions函数已删除
 
 function updateStrategyStatus() {
     // 更新策略状态显示
@@ -1070,24 +1004,41 @@ let currentClosePosition = null;
 
 // 打开平仓对话框
 function closePosition(symbol, direction, totalVolume, positionDetail) {
+    console.log('🔍 平仓对话框调用参数:', { symbol, direction, totalVolume, positionDetail });
+
     // 从当前持仓数据中获取详细信息
     const currentPositions = window.tradingManager?.currentPositions || [];
+    console.log('🔍 当前持仓数据:', currentPositions);
+
     const position = currentPositions.find(p =>
         p.symbol === symbol && p.direction === direction
     );
+    console.log('🔍 找到的持仓:', position);
 
-    const detail = position?.position_detail || {
-        total: totalVolume,
-        today: 0,
-        yesterday: totalVolume
-    };
+    // 优先使用position中的今昨仓数据
+    let todayVolume = 0;
+    let yesterdayVolume = 0;
+
+    if (position) {
+        todayVolume = position.today_volume || 0;
+        yesterdayVolume = position.yd_volume || 0;
+    } else if (positionDetail) {
+        todayVolume = positionDetail.today || 0;
+        yesterdayVolume = positionDetail.yesterday || 0;
+    } else {
+        // 默认全部为昨仓
+        todayVolume = 0;
+        yesterdayVolume = totalVolume;
+    }
+
+    console.log('🔍 最终今昨仓数量:', { todayVolume, yesterdayVolume, totalVolume });
 
     currentClosePosition = {
         symbol,
         direction,
         totalVolume,
-        todayVolume: detail.today,
-        yesterdayVolume: detail.yesterday
+        todayVolume,
+        yesterdayVolume
     };
 
     // 填充对话框信息
@@ -1096,8 +1047,8 @@ function closePosition(symbol, direction, totalVolume, positionDetail) {
     document.getElementById('close-total-volume').textContent = `${totalVolume}手`;
 
     // 显示今昨仓详情
-    document.getElementById('close-today-volume').textContent = `${detail.today}手`;
-    document.getElementById('close-yesterday-volume').textContent = `${detail.yesterday}手`;
+    document.getElementById('close-today-volume').textContent = `${todayVolume}手`;
+    document.getElementById('close-yesterday-volume').textContent = `${yesterdayVolume}手`;
 
     // 设置默认平仓数量
     const volumeInput = document.getElementById('close-volume');
@@ -1145,7 +1096,7 @@ async function smartClosePosition(symbol, direction, volume, todayVolume, yester
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     symbol: symbol,
-                    direction: direction.toLowerCase(),
+                    direction: direction.toLowerCase(), // LONG -> long, SHORT -> short
                     volume: todayCloseVolume,
                     offset_type: 'TODAY',
                     order_type: 'MARKET'

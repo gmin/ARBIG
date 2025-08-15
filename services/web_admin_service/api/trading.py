@@ -353,26 +353,7 @@ async def submit_manual_order(
         logger.error(f"手动交易订单提交失败: {e}")
         raise HTTPException(status_code=500, detail=f"手动交易订单提交失败: {str(e)}")
 
-@router.post("/close_position")
-async def close_position(
-    close_data: dict,
-    service_client: ServiceClient = Depends(get_service_client)
-):
-    """平仓操作"""
-    try:
-        # 标准化参数格式
-        normalized_data = {
-            "symbol": close_data.get("symbol", "au2510"),
-            "direction": close_data.get("direction", "all").lower(),  # 转换为小写
-            "volume": close_data.get("volume", 0),
-            "order_type": close_data.get("order_type", "MARKET")  # 默认市价单
-        }
-
-        # 转发到核心交易服务的平仓接口
-        response = await service_client.post("/real_trading/close_position", data=normalized_data)
-
-        logger.info(f"平仓操作: {close_data} -> {normalized_data}")
-        return response
+# close_position路由已删除，现在使用simple_close
 
     except Exception as e:
         logger.error(f"平仓操作失败: {e}")

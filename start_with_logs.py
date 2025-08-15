@@ -9,11 +9,22 @@ import subprocess
 import time
 import signal
 import threading
+import socket
 from pathlib import Path
 
 # 添加项目根目录到Python路径
 project_root = Path(__file__).parent.absolute()
 sys.path.insert(0, str(project_root))
+
+def check_port_listening(port):
+    """检查端口是否在监听"""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.settimeout(1)
+            result = sock.connect_ex(('localhost', port))
+            return result == 0
+    except:
+        return False
 
 def start_service_with_logs(service_name, command, port):
     """启动服务并显示日志"""
@@ -103,6 +114,9 @@ def main():
         ("策略管理服务", "conda run -n vnpy python services/strategy_service/main.py --port 8002", 8002),
         ("Web管理服务", "conda run -n vnpy python services/web_admin_service/main.py --port 80", 80),
     ]
+
+    # 保存服务信息用于健康检查
+    service_ports = {name: port for name, _, port in services}
     
     for service_name, command, port in services:
         process = start_service_with_logs(service_name, command, port)
@@ -152,13 +166,22 @@ def main():
     
     # 主循环 - 保持程序运行
     try:
+        health_check_count = 0
         while True:
-            # 检查所有进程是否还在运行
-            for service_name, process in processes:
-                if process.poll() is not None:
-                    print(f"⚠️  {service_name} 意外停止")
-            
-            time.sleep(5)
+            # 每5分钟进行一次健康检查
+            health_check_count += 1
+            if health_check_count >= 10:  # 10 * 30秒 = 5分钟
+                print("🔍 进行服务健康检查...")
+                for service_name, port in service_ports.items():
+                    if check_port_listening(port):
+                        print(f"✅ {service_name} 运行正常 (端口 {port})")
+                    else:
+                        print(f"⚠️  {service_name} 可能异常 (端口 {port} 无响应)")
+                health_check_count = 0
+                print()
+
+            # 每30秒检查一次
+            time.sleep(30)
     except KeyboardInterrupt:
         signal_handler(signal.SIGINT, None)
 

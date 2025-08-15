@@ -2,11 +2,13 @@
 
 ## 📋 文档信息
 
-- **文档版本**: v2.1
-- **更新日期**: 2025-07-21
+- **文档版本**: v2.2
+- **更新日期**: 2025-08-15
 - **API版本**: v1
-- **Web管理系统**: `http://localhost:8000`
-- **统一API服务**: `http://localhost:8000/api/v1`
+- **Web管理系统**: `http://localhost`
+- **统一API服务**: `http://localhost/api/v1`
+- **核心交易服务**: `http://localhost:8001`
+- **策略管理服务**: `http://localhost:8002`
 
 ## 🔧 通用规范
 
