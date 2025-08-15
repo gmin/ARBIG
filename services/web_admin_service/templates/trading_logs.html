@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>交易日志 - ARBIG量化交易系统</title>
+    <link rel="stylesheet" href="/static/css/dashboard.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div class="container">
+        <!-- 导航栏 -->
+        <nav class="navbar">
+            <div class="nav-brand">
+                <h1>📊 交易日志</h1>
+            </div>
+            <div class="nav-links">
+                <a href="/" class="nav-link">🏠 首页</a>
+                <a href="/trading" class="nav-link">💹 交易</a>
+                <a href="/strategy" class="nav-link">🎯 策略</a>
+                <a href="/trading_logs" class="nav-link active">📊 日志</a>
+            </div>
+        </nav>
+
+        <!-- 系统状态 -->
+        <div class="status-bar">
+            <div class="status-item">
+                <span class="status-label">系统状态:</span>
+                <span id="system-status" class="status-indicator offline">检查中...</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">当前时间:</span>
+                <span id="current-time">--:--:--</span>
+            </div>
+            <div class="status-item">
+                <button id="refresh-btn" class="btn btn-outline btn-sm">🔄 刷新</button>
+            </div>
+        </div>
+
+        <!-- 日志过滤器 -->
+        <div class="grid grid-1" style="margin-top: 32px;">
+            <div class="card">
+                <div class="card-header">🔍 日志过滤</div>
+                <div class="card-body">
+                    <div class="grid grid-6" style="gap: 16px;">
+                        <div class="form-group">
+                            <label for="filter-strategy">策略名称</label>
+                            <select id="filter-strategy" class="form-control">
+                                <option value="">全部策略</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="filter-type">日志类型</label>
+                            <select id="filter-type" class="form-control">
+                                <option value="">全部类型</option>
+                                <option value="ORDER">订单</option>
+                                <option value="TRADE">成交</option>
+                                <option value="SIGNAL">信号</option>
+                                <option value="ERROR">错误</option>
+                                <option value="INFO">信息</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="filter-start-date">开始日期</label>
+                            <input type="date" id="filter-start-date" class="form-control">
+                        </div>
+                        <div class="form-group">
+                            <label for="filter-end-date">结束日期</label>
+                            <input type="date" id="filter-end-date" class="form-control">
+                        </div>
+                        <div class="form-group">
+                            <label for="filter-limit">显示条数</label>
+                            <select id="filter-limit" class="form-control">
+                                <option value="50">50条</option>
+                                <option value="100" selected>100条</option>
+                                <option value="200">200条</option>
+                                <option value="500">500条</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>&nbsp;</label>
+                            <button id="apply-filter-btn" class="btn btn-primary">🔍 应用过滤</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 日志统计 -->
+        <div class="grid grid-3" style="margin-top: 32px; gap: 24px;">
+            <div class="card">
+                <div class="card-header">📈 今日统计</div>
+                <div class="card-body">
+                    <div id="today-stats" class="stats-grid">
+                        <div class="stat-item">
+                            <div class="stat-value" id="today-orders">--</div>
+                            <div class="stat-label">订单数</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="today-trades">--</div>
+                            <div class="stat-label">成交数</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="today-errors">--</div>
+                            <div class="stat-label">错误数</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">🎯 策略表现</div>
+                <div class="card-body">
+                    <div id="strategy-performance">
+                        <p>选择策略查看表现</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">⚡ 实时状态</div>
+                <div class="card-body">
+                    <div class="status-grid">
+                        <div class="status-item">
+                            <span class="status-label">最新日志:</span>
+                            <span id="latest-log-time">--</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">日志总数:</span>
+                            <span id="total-logs">--</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 交易日志表格 -->
+        <div class="grid grid-1" style="margin-top: 32px;">
+            <div class="card">
+                <div class="card-header">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span>📋 交易日志</span>
+                        <div>
+                            <button id="export-btn" class="btn btn-outline btn-sm">📤 导出</button>
+                            <button id="clear-btn" class="btn btn-outline btn-sm">🗑️ 清理</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="table-container">
+                        <table class="data-table" id="logs-table">
+                            <thead>
+                                <tr>
+                                    <th>时间</th>
+                                    <th>类型</th>
+                                    <th>策略</th>
+                                    <th>品种</th>
+                                    <th>方向</th>
+                                    <th>数量</th>
+                                    <th>价格</th>
+                                    <th>状态</th>
+                                    <th>消息</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="logs-tbody">
+                                <tr>
+                                    <td colspan="10" class="text-center">加载中...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <!-- 分页控制 -->
+                    <div class="pagination-container">
+                        <div class="pagination-info">
+                            <span id="pagination-info">显示 0 条记录</span>
+                        </div>
+                        <div class="pagination-controls">
+                            <button id="prev-page-btn" class="btn btn-outline btn-sm" disabled>上一页</button>
+                            <span id="page-info">第 1 页</span>
+                            <button id="next-page-btn" class="btn btn-outline btn-sm" disabled>下一页</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 日志详情模态框 -->
+        <div id="log-detail-modal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>📋 日志详情</h3>
+                    <span class="close">&times;</span>
+                </div>
+                <div class="modal-body">
+                    <div id="log-detail-content">
+                        <!-- 详情内容将在这里动态生成 -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/trading_logs.js"></script>
+</body>
+</html>

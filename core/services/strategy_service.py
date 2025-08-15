@@ -167,6 +167,12 @@ class StrategyService:
             if strategy_name == 'shfe_quant':
                 from strategies.shfe_quant import SHFEQuantStrategy
                 return SHFEQuantStrategy(strategy_name, self.event_engine, strategy_config)
+            elif strategy_name == 'test_strategy':
+                from strategies.test_strategy import TestStrategy
+                return TestStrategy(strategy_config)
+            elif strategy_name == 'simple_shfe':
+                from strategies.simple_shfe_strategy import SimpleShfeStrategy
+                return SimpleShfeStrategy(strategy_config)
             else:
                 logger.error(f"未知的策略类型: {strategy_name}")
                 return None

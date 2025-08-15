@@ -1017,6 +1017,45 @@ async def strategy_page(request: Request):
         </html>
         """
 
+@app.get("/trading_logs", response_class=HTMLResponse, summary="交易日志页面")
+async def trading_logs_page(request: Request):
+    """交易日志页面"""
+    # 检查模板文件是否存在
+    template_path = Path("services/web_admin_service/templates/trading_logs.html")
+    if template_path.exists():
+        return templates.TemplateResponse("trading_logs.html", {"request": request})
+    else:
+        # 返回简单的交易日志页面
+        return """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>ARBIG交易日志</title>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <link rel="stylesheet" href="/static/css/main.css?v=2.1">
+        </head>
+        <body>
+            <nav class="navbar">
+                <div class="container">
+                    <h1>ARBIG交易日志</h1>
+                    <ul class="nav-links">
+                        <li><a href="/">首页</a></li>
+                        <li><a href="/trading">交易管理</a></li>
+                        <li><a href="/strategy">策略管理</a></li>
+                        <li><a href="/trading_logs" class="active">交易日志</a></li>
+                    </ul>
+                </div>
+            </nav>
+            <div class="container">
+                <h2>交易日志功能开发中...</h2>
+                <p>交易日志系统正在开发中，敬请期待！</p>
+                <p>日志API: <a href="http://localhost:8001/trading_logs" target="_blank">http://localhost:8001/trading_logs</a></p>
+            </div>
+        </body>
+        </html>
+        """
+
 def main():
     """主函数"""
     parser = argparse.ArgumentParser(description='ARBIG Web管理服务')

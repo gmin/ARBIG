@@ -8,8 +8,8 @@ class StrategyManager {
         this.strategies = {};
         this.activeStrategy = null;
         this.strategyStatus = 'STOPPED';
-        this.currentEditingStrategy = null;
-        
+        this.selectedStrategy = null;  // 当前选中的策略
+
         this.init();
     }
 
@@ -39,27 +39,7 @@ class StrategyManager {
             this.runBacktest();
         });
 
-        // 模态框关闭
-        document.querySelector('.close')?.addEventListener('click', () => {
-            this.closeModal();
-        });
-
-        document.getElementById('cancel-params')?.addEventListener('click', () => {
-            this.closeModal();
-        });
-
-        // 参数表单提交
-        document.getElementById('params-form')?.addEventListener('submit', (e) => {
-            e.preventDefault();
-            this.saveStrategyParams();
-        });
-
-        // 点击模态框外部关闭
-        document.getElementById('params-modal')?.addEventListener('click', (e) => {
-            if (e.target.id === 'params-modal') {
-                this.closeModal();
-            }
-        });
+        // 其他事件绑定可以在这里添加
     }
 
     async loadStrategies() {
@@ -67,7 +47,10 @@ class StrategyManager {
             console.log('加载策略列表...');
 
             const response = await fetch('/api/v1/trading/strategies');
+            console.log('API响应状态:', response.status);
+
             const result = await response.json();
+            console.log('API返回数据:', result);
             
             if (result.success) {
                 this.strategies = result.data.strategies;
@@ -75,8 +58,7 @@ class StrategyManager {
                 this.strategyStatus = result.data.status;
                 
                 this.updateStrategyOverview();
-                this.renderStrategyGrid();
-                this.updateBacktestOptions();
+                this.renderStrategyList();
                 
                 console.log('策略列表加载成功:', Object.keys(this.strategies).length, '个策略');
             } else {
@@ -113,58 +95,118 @@ class StrategyManager {
         }
     }
 
-    renderStrategyGrid() {
-        const gridContainer = document.getElementById('strategy-grid');
-        if (!gridContainer) return;
+    renderStrategyList() {
+        console.log('渲染策略列表...');
+        const listContainer = document.getElementById('strategy-list');
+        if (!listContainer) {
+            console.error('找不到strategy-list元素');
+            return;
+        }
 
-        gridContainer.innerHTML = '';
+        console.log('策略数据:', this.strategies);
+        listContainer.innerHTML = '';
 
         Object.entries(this.strategies).forEach(([strategyName, strategy]) => {
-            const strategyCard = this.createStrategyCard(strategyName, strategy);
-            gridContainer.appendChild(strategyCard);
+            console.log('创建策略项目:', strategyName, strategy);
+            const strategyItem = this.createStrategyItem(strategyName, strategy);
+            listContainer.appendChild(strategyItem);
         });
+
+        // 如果没有选中的策略，默认选中第一个
+        if (!this.selectedStrategy && Object.keys(this.strategies).length > 0) {
+            const firstStrategy = Object.keys(this.strategies)[0];
+            console.log('默认选中策略:', firstStrategy);
+            this.selectStrategy(firstStrategy);
+        }
     }
 
-    createStrategyCard(strategyName, strategy) {
-        const card = document.createElement('div');
-        card.className = `card strategy-card ${this.activeStrategy === strategyName ? 'active' : ''}`;
+    createStrategyItem(strategyName, strategy) {
+        const item = document.createElement('div');
+        item.className = `strategy-item ${this.selectedStrategy === strategyName ? 'selected' : ''}`;
 
         const isRunning = this.activeStrategy === strategyName && this.strategyStatus === 'RUNNING';
 
-        card.innerHTML = `
-            <div class="card-header">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <span>🎯 ${strategy.name}</span>
-                    <span class="status-indicator ${strategy.enabled ? 'online' : 'offline'}">
-                        ${strategy.enabled ? '启用' : '禁用'}
-                    </span>
+        item.innerHTML = `
+            <div class="strategy-item-header">
+                <div class="strategy-info">
+                    <h4>${strategy.name}</h4>
+                    <p>${strategy.description}</p>
                 </div>
-            </div>
-            <div class="card-body">
-                <p style="color: var(--text-secondary); margin-bottom: 16px;">${strategy.description}</p>
-
-                <div class="grid grid-2" style="gap: 8px; margin-bottom: 16px;">
-                    ${this.renderParamsPreview(strategy.params)}
-                </div>
-
-                <div class="strategy-actions" style="display: flex; gap: 8px;">
-                    <button class="btn btn-outline btn-sm" onclick="strategyManager.editParams('${strategyName}')">
-                        ⚙️ 编辑参数
-                    </button>
+                <div class="strategy-status">
                     ${isRunning ?
-                        `<button class="btn btn-danger btn-sm" onclick="strategyManager.stopStrategy('${strategyName}')">
-                            ⏹️ 停止策略
-                        </button>` :
-                        `<button class="btn btn-success btn-sm" onclick="strategyManager.startStrategy('${strategyName}')"
-                            ${this.strategyStatus === 'RUNNING' ? 'disabled' : ''}>
-                            ▶️ 启动策略
-                        </button>`
+                        '<span class="status-indicator online">运行中</span>' :
+                        '<span class="status-indicator offline">已停止</span>'
                     }
                 </div>
             </div>
         `;
 
-        return card;
+        item.addEventListener('click', () => {
+            this.selectStrategy(strategyName);
+        });
+
+        return item;
+    }
+
+    selectStrategy(strategyName) {
+        this.selectedStrategy = strategyName;
+
+        // 更新选中状态
+        document.querySelectorAll('.strategy-item').forEach(item => {
+            item.classList.remove('selected');
+        });
+
+        // 找到对应的策略项目并添加选中状态
+        document.querySelectorAll('.strategy-item').forEach(item => {
+            if (item.textContent.includes(this.strategies[strategyName]?.name)) {
+                item.classList.add('selected');
+            }
+        });
+
+        // 显示策略配置
+        this.renderStrategyConfig(strategyName);
+    }
+
+    renderStrategyConfig(strategyName) {
+        const configContainer = document.getElementById('strategy-config');
+        if (!configContainer) return;
+
+        const strategy = this.strategies[strategyName];
+        if (!strategy) return;
+
+        const isRunning = this.activeStrategy === strategyName && this.strategyStatus === 'RUNNING';
+
+        configContainer.innerHTML = `
+            <div class="strategy-config-content">
+                <div class="config-header">
+                    <h3>${strategy.name}</h3>
+                    <div class="config-actions">
+                        ${isRunning ?
+                            `<button class="btn btn-danger" onclick="strategyManager.stopStrategy('${strategyName}')">
+                                ⏹️ 停止策略
+                            </button>` :
+                            `<button class="btn btn-success" onclick="strategyManager.startStrategy('${strategyName}')"
+                                ${this.strategyStatus === 'RUNNING' ? 'disabled' : ''}>
+                                ▶️ 启动策略
+                            </button>`
+                        }
+                    </div>
+                </div>
+
+                <div class="config-body">
+                    <h4>策略参数</h4>
+                    <form id="strategy-params-form" onsubmit="strategyManager.saveStrategyParams(event, '${strategyName}')">
+                        ${this.renderParamsForm(strategy.params)}
+                        <div class="form-actions">
+                            <button type="submit" class="btn btn-primary">💾 保存参数</button>
+                            <button type="button" class="btn btn-outline" onclick="strategyManager.resetParams('${strategyName}')">
+                                🔄 重置参数
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        `;
     }
 
     renderParamsPreview(params) {
@@ -187,17 +229,34 @@ class StrategyManager {
 
     getParamLabel(param) {
         const labels = {
-            'ma_short': '短期均线',
-            'ma_long': '长期均线',
-            'initial_capital': '初始资金',
+            'ma_short': '短期均线周期',
+            'ma_long': '长期均线周期',
+            'signal_interval': '信号间隔(秒)',
+            'trade_volume': '交易手数',
+            'max_position': '最大持仓',
             'stop_loss': '止损比例',
             'take_profit': '止盈比例',
             'rsi_period': 'RSI周期',
-            'rsi_overbought': 'RSI超买',
-            'rsi_oversold': 'RSI超卖',
-            'max_position': '最大持仓'
+            'rsi_overbought': 'RSI超买线',
+            'rsi_oversold': 'RSI超卖线'
         };
         return labels[param] || param;
+    }
+
+    getParamHelp(param) {
+        const helps = {
+            'ma_short': '短期移动平均线的计算周期，建议5-20',
+            'ma_long': '长期移动平均线的计算周期，建议20-60',
+            'signal_interval': '策略生成信号的时间间隔，单位秒',
+            'trade_volume': '每次交易的手数',
+            'max_position': '策略允许的最大持仓手数',
+            'stop_loss': '止损比例，如0.05表示5%',
+            'take_profit': '止盈比例，如0.08表示8%',
+            'rsi_period': 'RSI指标的计算周期',
+            'rsi_overbought': 'RSI超买阈值，通常70-80',
+            'rsi_oversold': 'RSI超卖阈值，通常20-30'
+        };
+        return helps[param] || '';
     }
 
     async startStrategy(strategyName) {
@@ -244,76 +303,67 @@ class StrategyManager {
         }
     }
 
-    editParams(strategyName) {
-        console.log('编辑策略参数:', strategyName);
-        
-        this.currentEditingStrategy = strategyName;
-        const strategy = this.strategies[strategyName];
-        
-        if (!strategy) {
-            this.showNotification('策略不存在', 'error');
-            return;
-        }
-        
-        this.renderParamsForm(strategy.params);
-        this.showModal();
-    }
+    // editParams方法已移除，现在使用内联编辑
 
     renderParamsForm(params) {
-        const container = document.getElementById('params-container');
-        if (!container) return;
-        
-        container.innerHTML = '';
-        
+        let html = '';
+
+        // 排除资金相关参数，因为使用账户资金
+        const excludeParams = ['initial_capital', 'capital', 'balance'];
+
         Object.entries(params).forEach(([key, value]) => {
-            const formGroup = document.createElement('div');
-            formGroup.className = 'form-group';
-            
-            formGroup.innerHTML = `
-                <label for="param-${key}">${this.getParamLabel(key)}:</label>
-                <input 
-                    type="${typeof value === 'number' ? 'number' : 'text'}" 
-                    id="param-${key}" 
-                    name="${key}"
-                    class="form-control" 
-                    value="${value}"
-                    ${typeof value === 'number' ? 'step="any"' : ''}
-                >
+            if (excludeParams.includes(key)) {
+                return; // 跳过资金参数
+            }
+
+            html += `
+                <div class="form-group">
+                    <label for="param-${key}">${this.getParamLabel(key)}</label>
+                    <input
+                        type="${typeof value === 'number' ? 'number' : 'text'}"
+                        id="param-${key}"
+                        name="${key}"
+                        class="form-control"
+                        value="${value}"
+                        ${typeof value === 'number' ? 'step="any"' : ''}
+                    >
+                    <small class="param-help">${this.getParamHelp(key)}</small>
+                </div>
             `;
-            
-            container.appendChild(formGroup);
         });
+
+        return html;
     }
 
-    async saveStrategyParams() {
-        if (!this.currentEditingStrategy) return;
-        
+    async saveStrategyParams(event, strategyName) {
+        event.preventDefault();
+
         try {
-            const formData = new FormData(document.getElementById('params-form'));
+            const formData = new FormData(document.getElementById('strategy-params-form'));
             const params = {};
-            
+
             for (let [key, value] of formData.entries()) {
                 // 尝试转换为数字
                 const numValue = parseFloat(value);
                 params[key] = isNaN(numValue) ? value : numValue;
             }
-            
-            console.log('保存策略参数:', this.currentEditingStrategy, params);
-            
-            const response = await fetch(`/api/v1/trading/strategies/${this.currentEditingStrategy}/params`, {
+
+            console.log('保存策略参数:', strategyName, params);
+
+            const response = await fetch(`/api/v1/trading/strategies/${strategyName}/params`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify(params)
             });
-            
+
             const result = await response.json();
-            
+
             if (result.success) {
                 this.showNotification('参数保存成功', 'success');
-                this.closeModal();
                 await this.loadStrategies(); // 重新加载策略
+                this.renderStrategyConfig(strategyName); // 刷新配置显示
             } else {
                 throw new Error(result.message || '参数保存失败');
             }
@@ -323,48 +373,32 @@ class StrategyManager {
         }
     }
 
-    showModal() {
-        const modal = document.getElementById('params-modal');
-        if (modal) {
-            modal.style.display = 'block';
-        }
+    resetParams(strategyName) {
+        // 重新渲染配置，恢复原始参数
+        this.renderStrategyConfig(strategyName);
+        this.showNotification('参数已重置', 'info');
     }
 
-    closeModal() {
-        const modal = document.getElementById('params-modal');
-        if (modal) {
-            modal.style.display = 'none';
-        }
-        this.currentEditingStrategy = null;
-    }
-
-    updateBacktestOptions() {
-        const select = document.getElementById('backtest-strategy');
-        if (!select) return;
-        
-        select.innerHTML = '<option value="">请选择策略</option>';
-        
-        Object.entries(this.strategies).forEach(([strategyName, strategy]) => {
-            const option = document.createElement('option');
-            option.value = strategyName;
-            option.textContent = strategy.name;
-            select.appendChild(option);
-        });
-    }
+    // 模态框相关方法已移除，现在使用内联编辑
 
     async runBacktest() {
         try {
-            const strategyName = document.getElementById('backtest-strategy').value;
+            const strategyName = this.selectedStrategy;
             const symbol = document.getElementById('backtest-symbol').value;
+            const period = document.getElementById('backtest-period').value;
             const interval = document.getElementById('backtest-interval').value;
-            const count = parseInt(document.getElementById('backtest-count').value);
 
             if (!strategyName) {
-                this.showNotification('请选择策略', 'warning');
+                this.showNotification('请先选择策略', 'warning');
                 return;
             }
 
-            console.log('运行回测:', { strategyName, symbol, interval, count });
+            // 根据时间期间计算数据条数
+            const count = this.calculateDataCount(period, interval);
+
+            console.log('运行回测:', { strategyName, symbol, period, interval, count });
+
+            this.showNotification(`开始回测: ${this.strategies[strategyName].name} (${period})`, 'info');
 
             // 显示加载状态
             const runBtn = document.getElementById('run-backtest-btn');
@@ -452,6 +486,30 @@ class StrategyManager {
             minimumFractionDigits: 0,
             maximumFractionDigits: 0
         }).format(value);
+    }
+
+    calculateDataCount(period, interval) {
+        // 根据时间期间和K线周期计算需要的数据条数
+        const periodMinutes = {
+            '1h': 60,
+            '4h': 240,
+            '1d': 1440,
+            '3d': 4320,
+            '1w': 10080,
+            '1m': 43200
+        };
+
+        const intervalMinutes = {
+            '1m': 1,
+            '5m': 5,
+            '15m': 15,
+            '1h': 60
+        };
+
+        const totalMinutes = periodMinutes[period] || 1440;
+        const barMinutes = intervalMinutes[interval] || 1;
+
+        return Math.min(Math.max(Math.floor(totalMinutes / barMinutes), 10), 1000);
     }
 
     startStatusUpdater() {

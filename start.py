@@ -70,13 +70,14 @@ def start_service(name, command, port, check_port=True):
             return None
     
     try:
-        # 启动服务
+        # 启动服务 - 保留控制台输出
         process = subprocess.Popen(
             command,
             shell=True,
             cwd=project_root,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
+            # 不重定向输出，让日志同时显示在控制台和文件中
+            # stdout=subprocess.PIPE,
+            # stderr=subprocess.STDOUT,
             universal_newlines=True
         )
         
@@ -109,6 +110,8 @@ def show_menu():
     print("0. 👋 退出")
     print("="*60)
 
+
+#python start.py --mode full --auto 
 def main():
     """主函数"""
     parser = argparse.ArgumentParser(description='ARBIG量化交易系统启动器')

@@ -262,7 +262,7 @@ class TradingManager {
                         unrealized_pnl: pos.unrealized_pnl || 0
                     }));
                 } else {
-                    // 兼容旧的对象格式
+                    // 兼容旧的对象格式，包含今昨仓信息
                     Object.keys(result.data).forEach(symbol => {
                         const pos = result.data[symbol];
                         if (pos.long_position > 0) {
@@ -272,7 +272,14 @@ class TradingManager {
                                 volume: pos.long_position,
                                 open_price: pos.long_price,
                                 current_price: pos.current_price || 0,
-                                unrealized_pnl: pos.long_pnl || 0
+                                unrealized_pnl: pos.long_pnl || 0,
+                                today_volume: pos.long_today || 0,
+                                yd_volume: pos.long_yesterday || 0,
+                                position_detail: pos.position_detail?.long || {
+                                    total: pos.long_position,
+                                    today: pos.long_today || 0,
+                                    yesterday: pos.long_yesterday || 0
+                                }
                             });
                         }
                         if (pos.short_position > 0) {
@@ -282,13 +289,22 @@ class TradingManager {
                                 volume: pos.short_position,
                                 open_price: pos.short_price,
                                 current_price: pos.current_price || 0,
-                                unrealized_pnl: pos.short_pnl || 0
+                                unrealized_pnl: pos.short_pnl || 0,
+                                today_volume: pos.short_today || 0,
+                                yd_volume: pos.short_yesterday || 0,
+                                position_detail: pos.position_detail?.short || {
+                                    total: pos.short_position,
+                                    today: pos.short_today || 0,
+                                    yesterday: pos.short_yesterday || 0
+                                }
                             });
                         }
                     });
                 }
             }
 
+            // 保存当前持仓数据供其他函数使用
+            this.currentPositions = positionsArray;
             this.displayPositions(positionsArray);
         } catch (error) {
             console.error('❌ 持仓数据更新失败:', error);
@@ -1053,13 +1069,35 @@ function updateStrategyStatus() {
 let currentClosePosition = null;
 
 // 打开平仓对话框
-function closePosition(symbol, direction, totalVolume) {
-    currentClosePosition = { symbol, direction, totalVolume };
+function closePosition(symbol, direction, totalVolume, positionDetail) {
+    // 从当前持仓数据中获取详细信息
+    const currentPositions = window.tradingManager?.currentPositions || [];
+    const position = currentPositions.find(p =>
+        p.symbol === symbol && p.direction === direction
+    );
+
+    const detail = position?.position_detail || {
+        total: totalVolume,
+        today: 0,
+        yesterday: totalVolume
+    };
+
+    currentClosePosition = {
+        symbol,
+        direction,
+        totalVolume,
+        todayVolume: detail.today,
+        yesterdayVolume: detail.yesterday
+    };
 
     // 填充对话框信息
     document.getElementById('close-symbol').textContent = symbol;
     document.getElementById('close-direction').textContent = direction === 'LONG' ? '多头' : '空头';
     document.getElementById('close-total-volume').textContent = `${totalVolume}手`;
+
+    // 显示今昨仓详情
+    document.getElementById('close-today-volume').textContent = `${detail.today}手`;
+    document.getElementById('close-yesterday-volume').textContent = `${detail.yesterday}手`;
 
     // 设置默认平仓数量
     const volumeInput = document.getElementById('close-volume');
@@ -1090,12 +1128,82 @@ function setCloseVolume(type) {
     }
 }
 
+// 前端智能平仓逻辑
+async function smartClosePosition(symbol, direction, volume, todayVolume, yesterdayVolume) {
+    const orders = [];
+    let remainingVolume = volume;
+
+    console.log(`🎯 前端智能平仓: ${symbol} ${direction} 需平${volume}手, 今仓${todayVolume}手, 昨仓${yesterdayVolume}手`);
+
+    // 第一步：优先平今仓
+    if (todayVolume > 0 && remainingVolume > 0) {
+        const todayCloseVolume = Math.min(remainingVolume, todayVolume);
+
+        try {
+            const response = await fetch('/api/v1/trading/simple_close', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    symbol: symbol,
+                    direction: direction.toLowerCase(),
+                    volume: todayCloseVolume,
+                    offset_type: 'TODAY',
+                    order_type: 'MARKET'
+                })
+            });
+
+            const result = await response.json();
+            if (result.success) {
+                orders.push(result.data);
+                remainingVolume -= todayCloseVolume;
+                console.log(`✅ 平今仓成功: ${todayCloseVolume}手, 剩余: ${remainingVolume}手`);
+            } else {
+                console.warn(`⚠️ 平今仓失败: ${result.message}`);
+            }
+        } catch (error) {
+            console.error(`❌ 平今仓异常:`, error);
+        }
+    }
+
+    // 第二步：平昨仓
+    if (yesterdayVolume > 0 && remainingVolume > 0) {
+        const yesterdayCloseVolume = Math.min(remainingVolume, yesterdayVolume);
+
+        try {
+            const response = await fetch('/api/v1/trading/simple_close', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    symbol: symbol,
+                    direction: direction.toLowerCase(),
+                    volume: yesterdayCloseVolume,
+                    offset_type: 'YESTERDAY',
+                    order_type: 'MARKET'
+                })
+            });
+
+            const result = await response.json();
+            if (result.success) {
+                orders.push(result.data);
+                remainingVolume -= yesterdayCloseVolume;
+                console.log(`✅ 平昨仓成功: ${yesterdayCloseVolume}手, 剩余: ${remainingVolume}手`);
+            } else {
+                console.warn(`⚠️ 平昨仓失败: ${result.message}`);
+            }
+        } catch (error) {
+            console.error(`❌ 平昨仓异常:`, error);
+        }
+    }
+
+    return { orders, remainingVolume };
+}
+
 // 确认平仓
 async function confirmClosePosition() {
     if (!currentClosePosition) return;
 
     const volume = parseInt(document.getElementById('close-volume').value);
-    const { symbol, direction, totalVolume } = currentClosePosition;
+    const { symbol, direction, totalVolume, todayVolume, yesterdayVolume } = currentClosePosition;
 
     // 验证输入
     if (isNaN(volume) || volume <= 0) {
@@ -1111,31 +1219,29 @@ async function confirmClosePosition() {
     // 关闭模态框
     closeModal();
 
-    console.log('📤 平仓操作:', { symbol, direction, volume, totalVolume });
+    console.log('📤 前端控制平仓:', { symbol, direction, volume, todayVolume, yesterdayVolume });
 
     try {
-        const response = await fetch('/api/v1/trading/close_position', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                symbol: symbol,
-                direction: direction,
-                volume: volume
-            })
-        });
+        // 使用前端智能平仓逻辑
+        const result = await smartClosePosition(symbol, direction, volume, todayVolume || 0, yesterdayVolume || 0);
 
-        const result = await response.json();
-        if (result.success) {
-            alert(`✅ 平仓成功: ${symbol} ${direction === 'LONG' ? '多头' : '空头'} ${volume}手`);
-            // 刷新持仓数据
-            if (window.tradingManager) {
-                window.tradingManager.updatePositions();
+        if (result.orders.length > 0) {
+            const successCount = result.orders.length;
+            const totalClosed = volume - result.remainingVolume;
+            alert(`✅ 平仓成功: ${symbol} ${direction === 'LONG' ? '多头' : '空头'} ${totalClosed}手 (发送${successCount}个订单)`);
+
+            if (result.remainingVolume > 0) {
+                alert(`⚠️ 还有${result.remainingVolume}手未能平仓`);
             }
         } else {
-            alert(`❌ 平仓失败: ${result.message || '未知错误'}`);
+            alert(`❌ 平仓失败: 没有订单成功发送`);
         }
+
+        // 刷新持仓数据
+        if (window.tradingManager) {
+            setTimeout(() => window.tradingManager.updatePositions(), 1000);
+        }
+
     } catch (error) {
         console.error('❌ 平仓错误:', error);
         alert('❌ 平仓失败，请检查网络连接');

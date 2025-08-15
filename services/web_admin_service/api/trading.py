@@ -400,6 +400,24 @@ async def close_all_positions(
         logger.error(f"一键平仓失败: {e}")
         raise HTTPException(status_code=500, detail=f"一键平仓失败: {str(e)}")
 
+
+@router.post("/simple_close")
+async def simple_close_position(
+    close_data: dict,
+    service_client: ServiceClient = Depends(get_service_client)
+):
+    """简单平仓操作 - 前端控制逻辑"""
+    try:
+        # 转发到核心交易服务的简单平仓接口
+        response = await service_client.post("/real_trading/simple_close", data=close_data)
+
+        logger.info(f"简单平仓操作: {close_data}")
+        return response
+
+    except Exception as e:
+        logger.error(f"简单平仓操作失败: {e}")
+        raise HTTPException(status_code=500, detail=f"简单平仓操作失败: {str(e)}")
+
 # 策略管理API代理
 @router.get("/strategies")
 async def get_strategies():

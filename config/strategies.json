@@ -30,7 +30,7 @@
     "params": {
       "signal_interval": 30,
       "trade_volume": 1,
-      "max_position": 3,
+      "max_position": 10,
       "initial_capital": 10000
     },
     "enabled": true

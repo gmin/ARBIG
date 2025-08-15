@@ -111,40 +111,6 @@ async def get_positions(symbol: Optional[str] = None):
         logger.error(f"获取持仓信息失败: {e}")
         raise HTTPException(status_code=500, detail=f"获取持仓信息失败: {str(e)}")
 
-@router.get("/positions/debug")
-async def get_positions_debug():
-    """调试：获取原始持仓数据"""
-    try:
-        ctp = get_ctp_integration()
-
-        # 获取原始持仓字典
-        raw_positions = dict(ctp.positions)
-
-        # 转换为可序列化的格式
-        debug_data = {}
-        for key, position in raw_positions.items():
-            debug_data[key] = {
-                "symbol": position.symbol,
-                "direction": position.direction.value,
-                "volume": position.volume,
-                "price": position.price,
-                "pnl": getattr(position, 'pnl', 0),
-                "yd_volume": getattr(position, 'yd_volume', 0)
-            }
-
-        return {
-            "success": True,
-            "data": {
-                "raw_positions": debug_data,
-                "positions_count": len(debug_data),
-                "position_keys": list(debug_data.keys())
-            },
-            "timestamp": datetime.now().isoformat()
-        }
-
-    except Exception as e:
-        logger.error(f"获取调试持仓信息失败: {e}")
-        raise HTTPException(status_code=500, detail=f"获取调试持仓信息失败: {str(e)}")
 
 @router.get("/ticks/debug")
 async def debug_ticks():
@@ -351,9 +317,178 @@ async def cancel_real_order(order_id: str):
         logger.error(f"撤销真实订单失败: {e}")
         raise HTTPException(status_code=500, detail=f"撤销真实订单失败: {str(e)}")
 
+
+def close_today_position(ctp, symbol: str, direction: str, volume: int, price: float, order_type: str):
+    """
+    平今仓函数
+
+    Args:
+        ctp: CTP集成对象
+        symbol: 交易品种
+        direction: 平仓方向 ('long' 或 'short')
+        volume: 平仓手数
+        price: 价格
+        order_type: 订单类型
+
+    Returns:
+        dict: 订单信息，失败时返回None
+    """
+    try:
+        if direction == 'long':
+            # 平多单，发送卖出订单
+            order_id = ctp.send_order(symbol, 'SELL', volume, price, order_type, 'CLOSETODAY')
+            trade_direction = 'SELL'
+        else:
+            # 平空单，发送买入订单
+            order_id = ctp.send_order(symbol, 'BUY', volume, price, order_type, 'CLOSETODAY')
+            trade_direction = 'BUY'
+
+        if order_id:
+            logger.info(f"✅ 平今仓{direction}单成功: {symbol} {volume}手@{price} (订单ID: {order_id})")
+            return {
+                'order_id': order_id,
+                'symbol': symbol,
+                'direction': trade_direction,
+                'volume': volume,
+                'offset': 'CLOSETODAY',
+                'price': price,
+                'order_type': order_type
+            }
+        else:
+            logger.warning(f"❌ 平今仓{direction}单失败: {symbol} {volume}手")
+            return None
+
+    except Exception as e:
+        logger.error(f"平今仓{direction}单异常: {e}")
+        return None
+
+
+def close_yesterday_position(ctp, symbol: str, direction: str, volume: int, price: float, order_type: str):
+    """
+    平昨仓函数
+
+    Args:
+        ctp: CTP集成对象
+        symbol: 交易品种
+        direction: 平仓方向 ('long' 或 'short')
+        volume: 平仓手数
+        price: 价格
+        order_type: 订单类型
+
+    Returns:
+        dict: 订单信息，失败时返回None
+    """
+    try:
+        if direction == 'long':
+            # 平多单，发送卖出订单
+            order_id = ctp.send_order(symbol, 'SELL', volume, price, order_type, 'CLOSEYESTERDAY')
+            trade_direction = 'SELL'
+        else:
+            # 平空单，发送买入订单
+            order_id = ctp.send_order(symbol, 'BUY', volume, price, order_type, 'CLOSEYESTERDAY')
+            trade_direction = 'BUY'
+
+        if order_id:
+            logger.info(f"✅ 平昨仓{direction}单成功: {symbol} {volume}手@{price} (订单ID: {order_id})")
+            return {
+                'order_id': order_id,
+                'symbol': symbol,
+                'direction': trade_direction,
+                'volume': volume,
+                'offset': 'CLOSEYESTERDAY',
+                'price': price,
+                'order_type': order_type
+            }
+        else:
+            logger.warning(f"❌ 平昨仓{direction}单失败: {symbol} {volume}手")
+            return None
+
+    except Exception as e:
+        logger.error(f"平昨仓{direction}单异常: {e}")
+        return None
+
+
+def smart_close_position(ctp, symbol: str, direction: str, volume: int, price: float, order_type: str,
+                        today_volume: int = 0, yesterday_volume: int = 0):
+    """
+    智能平仓函数 - 优先平今仓，再平昨仓
+
+    Args:
+        ctp: CTP集成对象
+        symbol: 交易品种
+        direction: 平仓方向 ('long' 或 'short')
+        volume: 需要平仓的手数
+        price: 价格
+        order_type: 订单类型
+        today_volume: 今仓数量
+        yesterday_volume: 昨仓数量
+
+    Returns:
+        list: 成功发送的订单列表
+    """
+    orders_sent = []
+    remaining_volume = volume
+
+    logger.info(f"🎯 智能平仓: {symbol} {direction} 需平{volume}手, 今仓{today_volume}手, 昨仓{yesterday_volume}手")
+
+    # 第一步：优先平今仓
+    if today_volume > 0 and remaining_volume > 0:
+        today_close_volume = min(remaining_volume, today_volume)
+        order_info = close_today_position(ctp, symbol, direction, today_close_volume, price, order_type)
+
+        if order_info:
+            orders_sent.append(order_info)
+            remaining_volume -= today_close_volume
+            logger.info(f"✅ 今仓平仓成功: {today_close_volume}手, 剩余需平: {remaining_volume}手")
+        else:
+            # 平今仓失败，尝试平昨仓
+            logger.info(f"🔄 平今仓失败，尝试平昨仓: {today_close_volume}手")
+            order_info = close_yesterday_position(ctp, symbol, direction, today_close_volume, price, order_type)
+            if order_info:
+                orders_sent.append(order_info)
+                remaining_volume -= today_close_volume
+                logger.info(f"✅ 重试昨仓平仓成功: {today_close_volume}手")
+
+    # 第二步：平昨仓
+    if yesterday_volume > 0 and remaining_volume > 0:
+        yesterday_close_volume = min(remaining_volume, yesterday_volume)
+        order_info = close_yesterday_position(ctp, symbol, direction, yesterday_close_volume, price, order_type)
+
+        if order_info:
+            orders_sent.append(order_info)
+            remaining_volume -= yesterday_close_volume
+            logger.info(f"✅ 昨仓平仓成功: {yesterday_close_volume}手, 剩余需平: {remaining_volume}手")
+        else:
+            # 平昨仓失败，尝试平今仓
+            logger.info(f"🔄 平昨仓失败，尝试平今仓: {yesterday_close_volume}手")
+            order_info = close_today_position(ctp, symbol, direction, yesterday_close_volume, price, order_type)
+            if order_info:
+                orders_sent.append(order_info)
+                remaining_volume -= yesterday_close_volume
+                logger.info(f"✅ 重试今仓平仓成功: {yesterday_close_volume}手")
+
+    # 第三步：如果仍有剩余，尝试按顺序平仓（容错机制）
+    if remaining_volume > 0:
+        logger.warning(f"⚠️ 仍有{remaining_volume}手未平仓，启用容错机制")
+
+        # 先尝试平今仓
+        order_info = close_today_position(ctp, symbol, direction, remaining_volume, price, order_type)
+        if order_info:
+            orders_sent.append(order_info)
+            logger.info(f"✅ 容错机制-今仓平仓成功: {remaining_volume}手")
+        else:
+            # 再尝试平昨仓
+            order_info = close_yesterday_position(ctp, symbol, direction, remaining_volume, price, order_type)
+            if order_info:
+                orders_sent.append(order_info)
+                logger.info(f"✅ 容错机制-昨仓平仓成功: {remaining_volume}手")
+
+    return orders_sent
+
+
 @router.post("/close_position")
 async def close_position(request: Dict[str, Any]):
-    """平仓操作 - 便捷接口"""
+    """平仓操作 - 重构后的简化版本"""
     try:
         # 验证必需参数
         required_fields = ['symbol']
@@ -366,276 +501,64 @@ async def close_position(request: Dict[str, Any]):
         direction = request.get('direction', 'all').lower()  # 支持指定平仓方向
         price = float(request.get('price', 0))
         order_type = request.get('order_type', 'MARKET').upper()
-        force_offset = request.get('force_offset', None)  # 强制指定今昨仓类型: 'today', 'yesterday'
 
         ctp = get_ctp_integration()
 
         # 获取当前持仓
         position_info = ctp.get_position_info(symbol)
+        if not position_info:
+            raise HTTPException(status_code=404, detail="未找到持仓信息")
 
-        orders_sent = []
+        all_orders_sent = []
 
-        # 根据指定方向平仓
+        logger.info(f"📊 平仓请求: {symbol} {direction} {volume}手 ({order_type})")
+        logger.info(f"📊 当前持仓: 多单{position_info['long_position']}手, 空单{position_info['short_position']}手")
+
+        # 处理多单平仓
         if direction in ['long', 'all'] and position_info['long_position'] > 0:
             close_volume = volume if volume > 0 else position_info['long_position']
             close_volume = min(close_volume, position_info['long_position'])
 
-            # 智能平仓：根据当前时间判断今昨仓优先级
-            current_hour = datetime.now().hour
+            # 获取多单的今昨仓详情
+            long_detail = ctp.get_position_detail(symbol, 'long')
+            today_volume = getattr(long_detail, 'today_position', 0)
+            yesterday_volume = getattr(long_detail, 'yesterday_position', 0)
 
-            order_id = None
-            offset_used = None
+            # 使用智能平仓函数
+            orders = smart_close_position(ctp, symbol, 'long', close_volume, price, order_type,
+                                        today_volume, yesterday_volume)
+            all_orders_sent.extend(orders)
 
-            # 获取仓位详情，判断今昨仓
-            position_detail = ctp.get_position_detail(symbol, 'LONG')
-            today_volume = getattr(position_detail, 'today_position', 0) if position_detail else 0
-            yesterday_volume = getattr(position_detail, 'yesterday_position', 0) if position_detail else 0
-
-            order_id = None
-            offset_used = None
-
-            logger.info(f"多单仓位详情: 今仓{today_volume}手, 昨仓{yesterday_volume}手, 需平{close_volume}手")
-
-            # 如果强制指定了今昨仓类型
-            if force_offset == 'today':
-                # 强制平今仓
-                try:
-                    order_id = ctp.send_order(symbol, 'SELL', close_volume, price, order_type, 'CLOSETODAY')
-                    offset_used = 'CLOSETODAY'
-                    logger.info(f"✅ 强制平今仓多单: {symbol} {close_volume}手")
-                except Exception as e:
-                    logger.warning(f"强制平今仓多单失败: {e}")
-                    pass
-            elif force_offset == 'yesterday':
-                # 强制平昨仓
-                try:
-                    order_id = ctp.send_order(symbol, 'SELL', close_volume, price, order_type, 'CLOSEYESTERDAY')
-                    offset_used = 'CLOSEYESTERDAY'
-                    logger.info(f"✅ 强制平昨仓多单: {symbol} {close_volume}手")
-                except Exception as e:
-                    logger.warning(f"强制平昨仓多单失败: {e}")
-                    pass
-            else:
-                # 智能判断：严格按照今仓优先，昨仓其次的顺序
-                remaining_volume = close_volume
-
-                # 第一步：优先平今仓
-                if today_volume > 0 and remaining_volume > 0:
-                    today_close_volume = min(remaining_volume, today_volume)
-                    try:
-                        order_id = ctp.send_order(symbol, 'SELL', today_close_volume, price, order_type, 'CLOSETODAY')
-                        offset_used = 'CLOSETODAY'
-                        remaining_volume -= today_close_volume
-                        logger.info(f"✅ 平今仓多单: {symbol} {today_close_volume}手 (剩余需平{remaining_volume}手)")
-
-                        orders_sent.append({
-                            'order_id': order_id,
-                            'symbol': symbol,
-                            'direction': 'SELL',
-                            'volume': today_close_volume,
-                            'offset': offset_used,
-                            'price': price,
-                            'order_type': order_type
-                        })
-                    except Exception as e:
-                        logger.warning(f"平今仓多单失败: {e}")
-                        pass
-
-                # 第二步：如果还有剩余需要平仓，平昨仓
-                if remaining_volume > 0 and yesterday_volume > 0:
-                    yesterday_close_volume = min(remaining_volume, yesterday_volume)
-                    try:
-                        order_id2 = ctp.send_order(symbol, 'SELL', yesterday_close_volume, price, order_type, 'CLOSEYESTERDAY')
-                        logger.info(f"✅ 平昨仓多单: {symbol} {yesterday_close_volume}手")
-
-                        orders_sent.append({
-                            'order_id': order_id2,
-                            'symbol': symbol,
-                            'direction': 'SELL',
-                            'volume': yesterday_close_volume,
-                            'offset': 'CLOSEYESTERDAY',
-                            'price': price,
-                            'order_type': order_type
-                        })
-
-                        # 如果有多个订单，使用最后一个作为主订单ID
-                        if not order_id:
-                            order_id = order_id2
-                            offset_used = 'CLOSEYESTERDAY'
-
-                    except Exception as e:
-                        logger.warning(f"平昨仓多单失败: {e}")
-                        pass
-
-            # 如果仓位信息获取失败，使用尝试模式
-            if not order_id:
-                logger.warning(f"无法获取仓位详情或平仓失败，使用尝试模式")
-                # 先尝试平今仓
-                try:
-                    order_id = ctp.send_order(symbol, 'SELL', close_volume, price, order_type, 'CLOSETODAY')
-                    offset_used = 'CLOSETODAY'
-                    logger.info(f"尝试平今仓多单: {symbol} {close_volume}手")
-                except Exception as e:
-                    logger.warning(f"平今仓多单失败: {e}")
-                    pass
-
-                # 如果平今仓失败，尝试平昨仓
-                if not order_id:
-                    try:
-                        order_id = ctp.send_order(symbol, 'SELL', close_volume, price, order_type, 'CLOSEYESTERDAY')
-                        offset_used = 'CLOSEYESTERDAY'
-                        logger.info(f"尝试平昨仓多单: {symbol} {close_volume}手")
-                    except Exception as e:
-                        logger.warning(f"平昨仓多单失败: {e}")
-                        pass
-
-            if order_id:
-                orders_sent.append({
-                    'order_id': order_id,
-                    'direction': 'SELL',
-                    'volume': close_volume,
-                    'type': f'平多({offset_used})'
-                })
-
+        # 处理空单平仓
         if direction in ['short', 'all'] and position_info['short_position'] > 0:
             close_volume = volume if volume > 0 else position_info['short_position']
             close_volume = min(close_volume, position_info['short_position'])
 
-            # 获取仓位详情，判断今昨仓
-            position_detail = ctp.get_position_detail(symbol, 'SHORT')
-            today_volume = getattr(position_detail, 'today_position', 0) if position_detail else 0
-            yesterday_volume = getattr(position_detail, 'yesterday_position', 0) if position_detail else 0
+            # 获取空单的今昨仓详情
+            short_detail = ctp.get_position_detail(symbol, 'short')
+            today_volume = getattr(short_detail, 'today_position', 0)
+            yesterday_volume = getattr(short_detail, 'yesterday_position', 0)
 
-            order_id = None
-            offset_used = None
+            # 使用智能平仓函数
+            orders = smart_close_position(ctp, symbol, 'short', close_volume, price, order_type,
+                                        today_volume, yesterday_volume)
+            all_orders_sent.extend(orders)
 
-            logger.info(f"空单仓位详情: 今仓{today_volume}手, 昨仓{yesterday_volume}手, 需平{close_volume}手")
+        # 检查是否有订单发送成功
+        if not all_orders_sent:
+            raise HTTPException(status_code=400, detail="没有找到可平仓的持仓或平仓失败")
 
-            # 如果强制指定了今昨仓类型
-            if force_offset == 'today':
-                # 强制平今仓
-                try:
-                    order_id = ctp.send_order(symbol, 'BUY', close_volume, price, order_type, 'CLOSETODAY')
-                    offset_used = 'CLOSETODAY'
-                    logger.info(f"✅ 强制平今仓空单: {symbol} {close_volume}手")
-                except Exception as e:
-                    logger.warning(f"强制平今仓空单失败: {e}")
-                    pass
-            elif force_offset == 'yesterday':
-                # 强制平昨仓
-                try:
-                    order_id = ctp.send_order(symbol, 'BUY', close_volume, price, order_type, 'CLOSEYESTERDAY')
-                    offset_used = 'CLOSEYESTERDAY'
-                    logger.info(f"✅ 强制平昨仓空单: {symbol} {close_volume}手")
-                except Exception as e:
-                    logger.warning(f"强制平昨仓空单失败: {e}")
-                    pass
-            else:
-                # 智能判断：严格按照今仓优先，昨仓其次的顺序
-                remaining_volume = close_volume
-
-                # 第一步：优先平今仓
-                if today_volume > 0 and remaining_volume > 0:
-                    today_close_volume = min(remaining_volume, today_volume)
-                    try:
-                        order_id = ctp.send_order(symbol, 'BUY', today_close_volume, price, order_type, 'CLOSETODAY')
-                        offset_used = 'CLOSETODAY'
-                        remaining_volume -= today_close_volume
-                        logger.info(f"✅ 平今仓空单: {symbol} {today_close_volume}手 (剩余需平{remaining_volume}手)")
-
-                        orders_sent.append({
-                            'order_id': order_id,
-                            'symbol': symbol,
-                            'direction': 'BUY',
-                            'volume': today_close_volume,
-                            'offset': offset_used,
-                            'price': price,
-                            'order_type': order_type
-                        })
-                    except Exception as e:
-                        logger.warning(f"平今仓空单失败: {e}")
-                        pass
-
-                # 第二步：如果还有剩余需要平仓，平昨仓
-                if remaining_volume > 0 and yesterday_volume > 0:
-                    yesterday_close_volume = min(remaining_volume, yesterday_volume)
-                    try:
-                        order_id2 = ctp.send_order(symbol, 'BUY', yesterday_close_volume, price, order_type, 'CLOSEYESTERDAY')
-                        logger.info(f"✅ 平昨仓空单: {symbol} {yesterday_close_volume}手")
-
-                        orders_sent.append({
-                            'order_id': order_id2,
-                            'symbol': symbol,
-                            'direction': 'BUY',
-                            'volume': yesterday_close_volume,
-                            'offset': 'CLOSEYESTERDAY',
-                            'price': price,
-                            'order_type': order_type
-                        })
-
-                        # 如果有多个订单，使用最后一个作为主订单ID
-                        if not order_id:
-                            order_id = order_id2
-                            offset_used = 'CLOSEYESTERDAY'
-
-                    except Exception as e:
-                        logger.warning(f"平昨仓空单失败: {e}")
-                        pass
-
-            # 如果仓位信息获取失败，使用尝试模式
-            if not order_id:
-                logger.warning(f"无法获取仓位详情或平仓失败，使用尝试模式")
-                # 先尝试平今仓
-                try:
-                    order_id = ctp.send_order(symbol, 'BUY', close_volume, price, order_type, 'CLOSETODAY')
-                    offset_used = 'CLOSETODAY'
-                    logger.info(f"尝试平今仓空单: {symbol} {close_volume}手")
-                except Exception as e:
-                    logger.warning(f"平今仓空单失败: {e}")
-                    pass
-
-                # 如果平今仓失败，尝试平昨仓
-                if not order_id:
-                    try:
-                        order_id = ctp.send_order(symbol, 'BUY', close_volume, price, order_type, 'CLOSEYESTERDAY')
-                        offset_used = 'CLOSEYESTERDAY'
-                        logger.info(f"尝试平昨仓空单: {symbol} {close_volume}手")
-                    except Exception as e:
-                        logger.warning(f"平昨仓空单失败: {e}")
-                        pass
-
-            if order_id:
-                orders_sent.append({
-                    'order_id': order_id,
-                    'direction': 'BUY',
-                    'volume': close_volume,
-                    'type': f'平空({offset_used})'
-                })
-                logger.info(f"✅ 空单平仓订单发送成功: {order_id} ({offset_used})")
-            else:
-                logger.error(f"❌ 空单平仓失败: 所有平仓方式都被拒绝")
-
-        if not orders_sent:
-            return {
-                "success": True,
-                "message": f"合约 {symbol} 无持仓需要平仓",
-                "data": {
-                    "symbol": symbol,
-                    "position_info": position_info,
-                    "orders_sent": []
-                },
-                "timestamp": datetime.now().isoformat()
-            }
-
-        logger.info(f"✅ 平仓操作成功: {symbol}, 发送了 {len(orders_sent)} 个订单")
+        # 返回结果
+        main_order = all_orders_sent[0] if all_orders_sent else None
 
         return {
             "success": True,
-            "message": f"平仓操作成功，发送了 {len(orders_sent)} 个订单",
+            "message": f"平仓操作成功，发送了 {len(all_orders_sent)} 个订单",
             "data": {
                 "symbol": symbol,
                 "position_info": position_info,
-                "orders_sent": orders_sent
+                "orders_sent": all_orders_sent,
+                "main_order": main_order
             },
             "timestamp": datetime.now().isoformat()
         }
@@ -646,19 +569,87 @@ async def close_position(request: Dict[str, Any]):
         logger.error(f"平仓操作失败: {e}")
         raise HTTPException(status_code=500, detail=f"平仓操作失败: {str(e)}")
 
+
+@router.post("/simple_close")
+async def simple_close_position(request: Dict[str, Any]):
+    """简单平仓接口 - 前端控制逻辑"""
+    try:
+        # 验证必需参数
+        required_fields = ['symbol', 'direction', 'volume', 'offset_type']
+        for field in required_fields:
+            if field not in request:
+                raise HTTPException(status_code=400, detail=f"缺少必需参数: {field}")
+
+        symbol = request['symbol']
+        direction = request['direction'].lower()  # 'long' 或 'short'
+        volume = int(request['volume'])
+        offset_type = request['offset_type'].upper()  # 'TODAY' 或 'YESTERDAY'
+        price = float(request.get('price', 0))
+        order_type = request.get('order_type', 'MARKET').upper()
+
+        if volume <= 0:
+            raise HTTPException(status_code=400, detail="平仓数量必须大于0")
+
+        if offset_type not in ['TODAY', 'YESTERDAY']:
+            raise HTTPException(status_code=400, detail="offset_type必须是TODAY或YESTERDAY")
+
+        ctp = get_ctp_integration()
+
+        # 根据方向和今昨仓类型发送订单
+        if direction == 'long':
+            # 平多单，发送卖出订单
+            trade_direction = 'SELL'
+            offset_flag = 'CLOSETODAY' if offset_type == 'TODAY' else 'CLOSEYESTERDAY'
+        elif direction == 'short':
+            # 平空单，发送买入订单
+            trade_direction = 'BUY'
+            offset_flag = 'CLOSETODAY' if offset_type == 'TODAY' else 'CLOSEYESTERDAY'
+        else:
+            raise HTTPException(status_code=400, detail="direction必须是long或short")
+
+        # 发送订单
+        order_id = ctp.send_order(symbol, trade_direction, volume, price, order_type, offset_flag)
+
+        if not order_id:
+            raise HTTPException(status_code=400, detail="订单发送失败")
+
+        logger.info(f"✅ 简单平仓成功: {symbol} {direction} {volume}手 ({offset_type})")
+
+        return {
+            "success": True,
+            "message": f"平仓订单发送成功",
+            "data": {
+                "order_id": order_id,
+                "symbol": symbol,
+                "direction": trade_direction,
+                "volume": volume,
+                "offset": offset_flag,
+                "price": price,
+                "order_type": order_type
+            },
+            "timestamp": datetime.now().isoformat()
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"简单平仓失败: {e}")
+        raise HTTPException(status_code=500, detail=f"简单平仓失败: {str(e)}")
+
+
 @router.post("/test_connection")
 async def test_ctp_connection():
     """测试CTP连接"""
     try:
         ctp = get_ctp_integration()
-        
+
         # 重新连接
         if not ctp.running:
             if await ctp.initialize():
                 await ctp.connect()
-        
+
         status = ctp.get_status()
-        
+
         return {
             "success": True,
             "message": "CTP连接测试完成",
@@ -673,261 +664,7 @@ async def test_ctp_connection():
             },
             "timestamp": datetime.now().isoformat()
         }
-        
+
     except Exception as e:
         logger.error(f"CTP连接测试失败: {e}")
         raise HTTPException(status_code=500, detail=f"CTP连接测试失败: {str(e)}")
-
-@router.get("/contracts")
-async def get_available_contracts():
-    """获取可用合约列表"""
-    try:
-        ctp = get_ctp_integration()
-        
-        if not ctp.contracts:
-            return {
-                "success": True,
-                "message": "暂无合约数据，请稍后重试",
-                "data": [],
-                "timestamp": datetime.now().isoformat()
-            }
-        
-        # 筛选黄金合约
-        gold_contracts = []
-        for symbol, contract in ctp.contracts.items():
-            if symbol.startswith('au'):
-                gold_contracts.append({
-                    "symbol": contract.symbol,
-                    "name": getattr(contract, 'name', ''),
-                    "exchange": contract.exchange.value,
-                    "size": getattr(contract, 'size', 0),
-                    "pricetick": getattr(contract, 'pricetick', 0),
-                    "min_volume": getattr(contract, 'min_volume', 1)
-                })
-        
-        return {
-            "success": True,
-            "data": {
-                "total_contracts": len(ctp.contracts),
-                "gold_contracts": gold_contracts,
-                "gold_count": len(gold_contracts)
-            },
-            "timestamp": datetime.now().isoformat()
-        }
-        
-    except Exception as e:
-        logger.error(f"获取合约列表失败: {e}")
-        raise HTTPException(status_code=500, detail=f"获取合约列表失败: {str(e)}")
-
-@router.get("/health")
-async def real_trading_health():
-    """真实交易服务健康检查"""
-    try:
-        ctp = get_ctp_integration()
-        status = ctp.get_status()
-        
-        # 判断健康状态
-        is_healthy = (
-            status.get('running', False) and
-            status.get('td_login_status', False) and
-            status.get('md_login_status', False)
-        )
-        
-        return {
-            "status": "healthy" if is_healthy else "unhealthy",
-            "details": status,
-            "timestamp": datetime.now().isoformat()
-        }
-
-    except Exception as e:
-        logger.error(f"真实交易健康检查失败: {e}")
-        return {
-            "status": "error",
-            "error": str(e),
-            "timestamp": datetime.now().isoformat()
-        }
-
-@router.get("/historical_data/{symbol}")
-async def get_historical_data(
-    symbol: str,
-    interval: str = "1m",
-    count: int = 100
-):
-    """获取历史K线数据"""
-    try:
-        ctp = get_ctp_instance()
-        if not ctp:
-            raise HTTPException(status_code=500, detail="CTP服务未初始化")
-
-        # 先尝试获取真实历史数据
-        historical_data = ctp.get_historical_data(symbol, interval, count)
-
-        # 如果获取失败，使用模拟数据
-        if not historical_data:
-            logger.warning(f"CTP历史数据获取失败，使用模拟数据: {symbol}")
-            historical_data = ctp.get_simulated_historical_data(symbol, interval, count)
-
-        return {
-            "success": True,
-            "data": {
-                "symbol": symbol,
-                "interval": interval,
-                "count": len(historical_data),
-                "bars": historical_data,
-                "data_source": "CTP" if historical_data and len(historical_data) > 0 else "SIMULATED"
-            },
-            "timestamp": datetime.now().isoformat()
-        }
-
-    except Exception as e:
-        logger.error(f"获取历史数据失败: {e}")
-        raise HTTPException(status_code=500, detail=f"获取历史数据失败: {str(e)}")
-
-@router.post("/backtest")
-async def run_backtest(backtest_request: dict):
-    """运行策略回测"""
-    try:
-        ctp = get_ctp_instance()
-        if not ctp:
-            raise HTTPException(status_code=500, detail="CTP服务未初始化")
-
-        # 解析回测参数
-        strategy_name = backtest_request.get("strategy_name", "shfe_quant")
-        symbol = backtest_request.get("symbol", "au2510")
-        interval = backtest_request.get("interval", "1m")
-        count = backtest_request.get("count", 100)
-        strategy_params = backtest_request.get("strategy_params", {})
-
-        # 获取历史数据
-        historical_data = ctp.get_historical_data(symbol, interval, count)
-        if not historical_data:
-            historical_data = ctp.get_simulated_historical_data(symbol, interval, count)
-
-        # 运行回测
-        backtest_result = await run_strategy_backtest(
-            strategy_name,
-            historical_data,
-            strategy_params
-        )
-
-        return {
-            "success": True,
-            "data": {
-                "strategy_name": strategy_name,
-                "symbol": symbol,
-                "data_count": len(historical_data),
-                "backtest_result": backtest_result
-            },
-            "timestamp": datetime.now().isoformat()
-        }
-
-    except Exception as e:
-        logger.error(f"回测运行失败: {e}")
-        raise HTTPException(status_code=500, detail=f"回测运行失败: {str(e)}")
-
-async def run_strategy_backtest(strategy_name: str, historical_data: list, strategy_params: dict):
-    """运行策略回测的核心逻辑"""
-    try:
-        # 初始化回测环境
-        initial_capital = strategy_params.get("initial_capital", 100000)  # 初始资金
-        commission_rate = strategy_params.get("commission_rate", 0.0002)  # 手续费率
-
-        # 回测统计
-        trades = []
-        positions = 0
-        capital = initial_capital
-        max_capital = initial_capital
-        max_drawdown = 0
-
-        # 简化的策略逻辑（移动平均策略）
-        ma_short_period = strategy_params.get("ma_short", 5)
-        ma_long_period = strategy_params.get("ma_long", 20)
-
-        prices = [bar['close'] for bar in historical_data]
-
-        for i in range(ma_long_period, len(historical_data)):
-            current_bar = historical_data[i]
-            current_price = current_bar['close']
-
-            # 计算移动平均
-            ma_short = sum(prices[i-ma_short_period:i]) / ma_short_period
-            ma_long = sum(prices[i-ma_long_period:i]) / ma_long_period
-
-            # 交易信号
-            if ma_short > ma_long and positions <= 0:
-                # 买入信号
-                if positions < 0:
-                    # 平空单
-                    profit = (positions * -1) * (current_price - current_price)  # 简化计算
-                    capital += profit
-                    trades.append({
-                        "type": "CLOSE_SHORT",
-                        "price": current_price,
-                        "time": current_bar['datetime'],
-                        "profit": profit
-                    })
-
-                # 开多单
-                positions = 1
-                trades.append({
-                    "type": "OPEN_LONG",
-                    "price": current_price,
-                    "time": current_bar['datetime'],
-                    "profit": 0
-                })
-
-            elif ma_short < ma_long and positions >= 0:
-                # 卖出信号
-                if positions > 0:
-                    # 平多单
-                    profit = positions * (current_price - current_price)  # 简化计算
-                    capital += profit
-                    trades.append({
-                        "type": "CLOSE_LONG",
-                        "price": current_price,
-                        "time": current_bar['datetime'],
-                        "profit": profit
-                    })
-
-                # 开空单
-                positions = -1
-                trades.append({
-                    "type": "OPEN_SHORT",
-                    "price": current_price,
-                    "time": current_bar['datetime'],
-                    "profit": 0
-                })
-
-            # 更新最大资金和回撤
-            if capital > max_capital:
-                max_capital = capital
-
-            current_drawdown = (max_capital - capital) / max_capital
-            if current_drawdown > max_drawdown:
-                max_drawdown = current_drawdown
-
-        # 计算回测结果
-        total_return = (capital - initial_capital) / initial_capital
-        total_trades = len([t for t in trades if 'CLOSE' in t['type']])
-
-        return {
-            "initial_capital": initial_capital,
-            "final_capital": capital,
-            "total_return": round(total_return * 100, 2),  # 百分比
-            "max_drawdown": round(max_drawdown * 100, 2),  # 百分比
-            "total_trades": total_trades,
-            "trades": trades[-10:],  # 只返回最后10笔交易
-            "strategy_params": strategy_params
-        }
-
-    except Exception as e:
-        logger.error(f"回测计算失败: {e}")
-        return {
-            "error": str(e),
-            "initial_capital": strategy_params.get("initial_capital", 100000),
-            "final_capital": 0,
-            "total_return": 0,
-            "max_drawdown": 0,
-            "total_trades": 0,
-            "trades": []
-        }

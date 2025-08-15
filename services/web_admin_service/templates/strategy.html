@@ -67,13 +67,26 @@
             </div>
         </div>
 
-        <!-- 策略列表 -->
-        <div class="grid grid-1" style="margin-top: 32px;">
+        <!-- 策略选择和配置 -->
+        <div class="grid grid-2" style="margin-top: 32px; gap: 32px;">
+            <!-- 左侧：策略列表 -->
             <div class="card">
-                <div class="card-header">🎯 策略列表</div>
+                <div class="card-header">🎯 策略选择</div>
                 <div class="card-body">
-                    <div class="strategy-grid" id="strategy-grid">
-                        <!-- 策略卡片将在这里动态生成 -->
+                    <div class="strategy-list" id="strategy-list">
+                        <!-- 策略选项将在这里动态生成 -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右侧：策略配置 -->
+            <div class="card">
+                <div class="card-header">⚙️ 策略配置</div>
+                <div class="card-body">
+                    <div id="strategy-config" class="strategy-config">
+                        <div class="no-strategy-selected">
+                            <p>请先选择一个策略</p>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -84,30 +97,30 @@
             <div class="card">
                 <div class="card-header">📈 策略回测</div>
                 <div class="card-body">
-                    <div class="grid grid-5" style="gap: 16px; margin-bottom: 24px;">
-                        <div class="form-group">
-                            <label for="backtest-strategy">选择策略</label>
-                            <select id="backtest-strategy" class="form-control">
-                                <option value="">请选择策略</option>
-                            </select>
-                        </div>
+                    <div class="grid grid-4" style="gap: 16px; margin-bottom: 24px;">
                         <div class="form-group">
                             <label for="backtest-symbol">交易品种</label>
                             <input type="text" id="backtest-symbol" class="form-control" value="au2510">
                         </div>
                         <div class="form-group">
-                            <label for="backtest-interval">时间周期</label>
-                            <select id="backtest-interval" class="form-control">
-                                <option value="1m">1分钟</option>
-                                <option value="5m">5分钟</option>
-                                <option value="15m">15分钟</option>
-                                <option value="1h">1小时</option>
-                                <option value="1d">1天</option>
+                            <label for="backtest-period">回测时间期间</label>
+                            <select id="backtest-period" class="form-control">
+                                <option value="1h">最近1小时</option>
+                                <option value="4h">最近4小时</option>
+                                <option value="1d" selected>最近1天</option>
+                                <option value="3d">最近3天</option>
+                                <option value="1w">最近1周</option>
+                                <option value="1m">最近1个月</option>
                             </select>
                         </div>
                         <div class="form-group">
-                            <label for="backtest-count">数据条数</label>
-                            <input type="number" id="backtest-count" class="form-control" value="100" min="10" max="1000">
+                            <label for="backtest-interval">K线周期</label>
+                            <select id="backtest-interval" class="form-control">
+                                <option value="1m" selected>1分钟</option>
+                                <option value="5m">5分钟</option>
+                                <option value="15m">15分钟</option>
+                                <option value="1h">1小时</option>
+                            </select>
                         </div>
                         <div class="form-group">
                             <label>&nbsp;</label>
@@ -147,27 +160,6 @@
         </div>
     </div>
 
-    </div>
-
-    <!-- 策略参数编辑模态框 -->
-    <div id="params-modal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3>⚙️ 编辑策略参数</h3>
-                <span class="close">&times;</span>
-            </div>
-            <div class="modal-body">
-                <form id="params-form">
-                    <div id="params-container">
-                        <!-- 参数输入框将在这里动态生成 -->
-                    </div>
-                    <div class="modal-actions">
-                        <button type="button" class="btn btn-outline" id="cancel-params">取消</button>
-                        <button type="submit" class="btn btn-primary">💾 保存参数</button>
-                    </div>
-                </form>
-            </div>
-        </div>
     </div>
 
     <script src="/static/js/strategy.js"></script>

@@ -136,6 +136,14 @@ try:
 except ImportError as e:
     logger.warning(f"⚠️ 真实交易API路由导入失败: {e}")
 
+# 导入并注册交易日志API路由
+try:
+    from services.trading_service.api.trading_logs import router as trading_logs_router
+    app.include_router(trading_logs_router, prefix="/trading_logs")
+    logger.info("✅ 交易日志API路由注册成功")
+except ImportError as e:
+    logger.warning(f"⚠️ 交易日志API路由导入失败: {e}")
+
 @app.on_event("startup")
 async def startup_event():
     """服务启动事件"""
