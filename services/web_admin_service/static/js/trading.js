@@ -238,50 +238,71 @@ class TradingManager {
             if (!response.ok) throw new Error('持仓数据获取失败');
 
             const result = await response.json();
+            console.log('📊 持仓数据响应:', result);
 
-            // 处理持仓数据格式 - 统一处理今昨仓信息
+            // 处理持仓数据格式
             let positionsArray = [];
-            if (result.success && result.data) {
-                    // 兼容旧的对象格式，包含今昨仓信息
-                    Object.keys(result.data).forEach(symbol => {
-                        const pos = result.data[symbol];
-                        if (pos.long_position > 0) {
-                            positionsArray.push({
-                                symbol: symbol,
-                                direction: 'LONG',
-                                volume: pos.long_position,
-                                open_price: pos.long_price,
-                                current_price: pos.current_price || 0,
-                                unrealized_pnl: pos.long_pnl || 0,
-                                today_volume: pos.long_today || 0,
-                                yd_volume: pos.long_yesterday || 0,
-                                position_detail: pos.position_detail?.long || {
-                                    total: pos.long_position,
-                                    today: pos.long_today || 0,
-                                    yesterday: pos.long_yesterday || 0
-                                }
-                            });
-                        }
-                        if (pos.short_position > 0) {
-                            positionsArray.push({
-                                symbol: symbol,
-                                direction: 'SHORT',
-                                volume: pos.short_position,
-                                open_price: pos.short_price,
-                                current_price: pos.current_price || 0,
-                                unrealized_pnl: pos.short_pnl || 0,
-                                today_volume: pos.short_today || 0,
-                                yd_volume: pos.short_yesterday || 0,
-                                position_detail: pos.position_detail?.short || {
-                                    total: pos.short_position,
-                                    today: pos.short_today || 0,
-                                    yesterday: pos.short_yesterday || 0
-                                }
-                            });
-                        }
-                    });
-                }
+            
+            // 检查是否是数组格式（新的API格式）
+            if (Array.isArray(result)) {
+                positionsArray = result.map(pos => ({
+                    symbol: pos.symbol,
+                    direction: pos.direction,
+                    volume: pos.volume,
+                    open_price: pos.avg_price || pos.open_price || 0,
+                    current_price: pos.current_price || 0,
+                    unrealized_pnl: pos.unrealized_pnl || 0,
+                    today_volume: pos.today_volume || 0,
+                    yd_volume: pos.yd_volume || 0,
+                    position_detail: pos.position_detail || {
+                        total: pos.volume,
+                        today: pos.today_volume || 0,
+                        yesterday: pos.yd_volume || 0
+                    }
+                }));
+            } 
+            // 兼容旧的对象格式
+            else if (result.success && result.data) {
+                Object.keys(result.data).forEach(symbol => {
+                    const pos = result.data[symbol];
+                    if (pos.long_position > 0) {
+                        positionsArray.push({
+                            symbol: symbol,
+                            direction: 'LONG',
+                            volume: pos.long_position,
+                            open_price: pos.long_price,
+                            current_price: pos.current_price || 0,
+                            unrealized_pnl: pos.long_pnl || 0,
+                            today_volume: pos.long_today || 0,
+                            yd_volume: pos.long_yesterday || 0,
+                            position_detail: pos.position_detail?.long || {
+                                total: pos.long_position,
+                                today: pos.long_today || 0,
+                                yesterday: pos.long_yesterday || 0
+                            }
+                        });
+                    }
+                    if (pos.short_position > 0) {
+                        positionsArray.push({
+                            symbol: symbol,
+                            direction: 'SHORT',
+                            volume: pos.short_position,
+                            open_price: pos.short_price,
+                            current_price: pos.current_price || 0,
+                            unrealized_pnl: pos.short_pnl || 0,
+                            today_volume: pos.short_today || 0,
+                            yd_volume: pos.short_yesterday || 0,
+                            position_detail: pos.position_detail?.short || {
+                                total: pos.short_position,
+                                today: pos.short_today || 0,
+                                yesterday: pos.short_yesterday || 0
+                            }
+                        });
+                    }
+                });
             }
+
+            console.log('📊 处理后的持仓数据:', positionsArray);
 
             // 保存当前持仓数据供其他函数使用
             this.currentPositions = positionsArray;
@@ -429,27 +450,38 @@ class TradingManager {
         const controlsElement = document.getElementById('strategy-controls');
         const statusDisplay = document.getElementById('strategy-status-display');
 
-        loadingElement.style.display = 'none';
-        controlsElement.style.display = 'block';
+        // 检查元素是否存在
+        if (loadingElement) loadingElement.style.display = 'none';
+        if (controlsElement) controlsElement.style.display = 'block';
 
         // 显示策略状态
-        const isRunning = status.is_running || false;
-        statusDisplay.innerHTML = `
-            <span class="status-indicator ${isRunning ? 'online' : 'offline'}">
-                <span class="status-dot"></span>
-                ${isRunning ? '运行中' : '已停止'}
-            </span>
-        `;
+        if (statusDisplay) {
+            const isRunning = status.is_running || false;
+            statusDisplay.innerHTML = `
+                <span class="status-indicator ${isRunning ? 'online' : 'offline'}">
+                    <span class="status-dot"></span>
+                    ${isRunning ? '运行中' : '已停止'}
+                </span>
+            `;
+        }
     }
 
     async updateTriggers() {
         try {
             const response = await fetch('/api/v1/trading/strategy/triggers?limit=20');
             if (!response.ok) throw new Error('交易记录获取失败');
-            
+
             const result = await response.json();
+            console.log('📊 交易记录API响应:', result);
+
             if (result.success && result.data) {
-                this.displayTriggers(result.data);
+                // 确保数据是数组格式
+                const triggers = Array.isArray(result.data) ? result.data : [];
+                console.log('📊 交易记录数据:', triggers.length, '条记录');
+                this.displayTriggers(triggers);
+            } else {
+                console.log('❌ 交易记录API返回失败或无数据');
+                this.displayTriggers([]);
             }
         } catch (error) {
             console.error('❌ 交易记录更新失败:', error);
@@ -477,7 +509,16 @@ class TradingManager {
         // 清空表格
         tableBody.innerHTML = '';
 
-        triggers.forEach(trigger => {
+        // 确保triggers是数组
+        const triggerArray = Array.isArray(triggers) ? triggers : [];
+
+        if (triggerArray.length === 0) {
+            contentElement.style.display = 'none';
+            noTriggersElement.style.display = 'block';
+            return;
+        }
+
+        triggerArray.forEach(trigger => {
             const row = document.createElement('tr');
             const time = new Date(trigger.timestamp).toLocaleString();
             
@@ -516,8 +557,10 @@ class TradingManager {
     }
 
     showStrategyError() {
-        const loadingElement = document.getElementById('strategy-status');
-        loadingElement.innerHTML = '<div style="color: var(--error-color);">策略状态加载失败</div>';
+        const loadingElement = document.getElementById('strategy-status-display');
+        if (loadingElement) {
+            loadingElement.innerHTML = '<div style="color: var(--error-color);">策略状态加载失败</div>';
+        }
     }
 
     showTriggersError() {

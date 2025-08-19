@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>回测分析 - ARBIG量化交易系统</title>
+    <link rel="stylesheet" href="/static/css/dashboard.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+    <style>
+        .backtest-card {
+            background: white;
+            border: 1px solid #e1e5e9;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 16px;
+            transition: all 0.2s ease;
+        }
+        
+        .backtest-card:hover {
+            border-color: #007bff;
+            box-shadow: 0 2px 8px rgba(0,123,255,0.15);
+        }
+        
+        .backtest-form {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+        
+        .form-group {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .form-group label {
+            font-weight: 500;
+            margin-bottom: 4px;
+            color: #2c3e50;
+        }
+        
+        .form-group input, .form-group select {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        
+        .result-card {
+            background: #f8f9fa;
+            border: 1px solid #e1e5e9;
+            border-radius: 6px;
+            padding: 16px;
+            margin-bottom: 12px;
+        }
+        
+        .result-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        
+        .result-title {
+            font-weight: 600;
+            color: #2c3e50;
+        }
+        
+        .result-time {
+            font-size: 12px;
+            color: #6c757d;
+        }
+        
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 12px;
+        }
+        
+        .metric-item {
+            text-align: center;
+            padding: 8px;
+            background: white;
+            border-radius: 4px;
+        }
+        
+        .metric-value {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+        
+        .metric-value.positive {
+            color: #28a745;
+        }
+        
+        .metric-value.negative {
+            color: #dc3545;
+        }
+        
+        .metric-label {
+            font-size: 11px;
+            color: #6c757d;
+            text-transform: uppercase;
+        }
+        
+        .empty-state {
+            text-align: center;
+            color: #6c757d;
+            padding: 40px;
+            font-style: italic;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #007bff;
+        }
+        
+        .error-state {
+            text-align: center;
+            color: #dc3545;
+            padding: 20px;
+            background: #f8d7da;
+            border-radius: 4px;
+            margin: 12px 0;
+        }
+        
+        .success-state {
+            text-align: center;
+            color: #155724;
+            padding: 20px;
+            background: #d4edda;
+            border-radius: 4px;
+            margin: 12px 0;
+        }
+        
+        .tab-container {
+            border-bottom: 1px solid #e1e5e9;
+            margin-bottom: 20px;
+        }
+        
+        .tab-nav {
+            display: flex;
+            gap: 0;
+        }
+        
+        .tab-button {
+            padding: 12px 20px;
+            border: none;
+            background: none;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            font-weight: 500;
+            color: #6c757d;
+            transition: all 0.2s ease;
+        }
+        
+        .tab-button.active {
+            color: #007bff;
+            border-bottom-color: #007bff;
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <!-- 导航栏 -->
+    <nav class="navbar">
+        <div class="navbar-content">
+            <a href="/" class="navbar-brand">📊 ARBIG量化交易系统</a>
+            <div class="navbar-center">
+                <ul class="navbar-nav">
+                    <li><a href="/">控制台</a></li>
+                    <li><a href="/trading">交易管理</a></li>
+                    <li><a href="/strategy">策略管理</a></li>
+                    <li><a href="/backtest" class="active">回测分析</a></li>
+                    <li><a href="/api/docs" target="_blank">API文档</a></li>
+                </ul>
+            </div>
+            <div class="navbar-user">
+                <div class="user-info">
+                    <div class="user-avatar">👤</div>
+                    <div class="user-details">
+                        <div class="user-name">交易员</div>
+                        <div class="user-status">在线</div>
+                    </div>
+                </div>
+                <div class="user-menu">
+                    <button class="btn btn-outline" onclick="logout()">退出</button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <!-- 页面标题 -->
+        <div class="page-header">
+            <h1 class="page-title">回测分析</h1>
+            <div class="page-subtitle">策略历史验证、参数优化与性能分析</div>
+        </div>
+
+        <!-- 服务状态 -->
+        <div class="grid grid-4" style="margin-top: 32px;">
+            <div class="card stat-card">
+                <div class="stat-value" id="service-status">检查中...</div>
+                <div class="stat-label">回测服务状态</div>
+            </div>
+            <div class="card stat-card">
+                <div class="stat-value" id="available-strategies">0</div>
+                <div class="stat-label">可用策略数量</div>
+            </div>
+            <div class="card stat-card">
+                <div class="stat-value" id="total-results">0</div>
+                <div class="stat-label">历史回测次数</div>
+            </div>
+            <div class="card stat-card">
+                <div class="stat-value">
+                    <button id="refresh-btn" class="btn btn-primary btn-sm">🔄 刷新</button>
+                    <button id="clear-results-btn" class="btn btn-outline btn-sm" style="margin-left: 8px;">🗑️ 清理</button>
+                </div>
+                <div class="stat-label">操作</div>
+            </div>
+        </div>
+
+        <!-- 标签页导航 -->
+        <div class="tab-container" style="margin-top: 32px;">
+            <div class="tab-nav">
+                <button class="tab-button active" onclick="switchTab('quick-backtest')">⚡ 快速回测</button>
+                <button class="tab-button" onclick="switchTab('advanced-backtest')">🔧 高级回测</button>
+                <button class="tab-button" onclick="switchTab('batch-backtest')">📊 批量回测</button>
+                <button class="tab-button" onclick="switchTab('results')">📈 回测结果</button>
+            </div>
+        </div>
+
+        <!-- 快速回测标签页 -->
+        <div id="quick-backtest" class="tab-content active">
+            <div class="card">
+                <div class="card-header">⚡ 快速回测 - 使用最近7天数据</div>
+                <div class="card-body">
+                    <div class="backtest-form">
+                        <div class="form-group">
+                            <label for="quick-strategy">选择策略</label>
+                            <select id="quick-strategy">
+                                <option value="">请选择策略...</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="quick-days">回测天数</label>
+                            <select id="quick-days">
+                                <option value="3">3天</option>
+                                <option value="7" selected>7天</option>
+                                <option value="15">15天</option>
+                                <option value="30">30天</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="quick-position">最大持仓</label>
+                            <input type="number" id="quick-position" value="5" min="1" max="20">
+                        </div>
+                        <div class="form-group">
+                            <label>&nbsp;</label>
+                            <button id="run-quick-backtest" class="btn btn-primary">🚀 开始快速回测</button>
+                        </div>
+                    </div>
+                    <div id="quick-result" style="margin-top: 20px;"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 高级回测标签页 -->
+        <div id="advanced-backtest" class="tab-content">
+            <div class="card">
+                <div class="card-header">🔧 高级回测 - 自定义参数和时间范围</div>
+                <div class="card-body">
+                    <div class="empty-state">
+                        <h4>🔧 高级回测功能</h4>
+                        <p>提供完整的回测参数配置和时间范围选择</p>
+                        <p><strong>功能特点：</strong></p>
+                        <ul style="text-align: left; margin: 16px 0;">
+                            <li>自定义回测时间范围</li>
+                            <li>灵活的参数配置</li>
+                            <li>详细的性能分析</li>
+                            <li>风险指标计算</li>
+                        </ul>
+                        <div style="margin-top: 16px;">
+                            <button class="btn btn-primary" onclick="window.open('http://localhost:8003/docs', '_blank')">📖 查看API文档</button>
+                            <button class="btn btn-outline" onclick="window.open('http://localhost:8003/redoc', '_blank')" style="margin-left: 8px;">📋 查看详细文档</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 批量回测标签页 -->
+        <div id="batch-backtest" class="tab-content">
+            <div class="card">
+                <div class="card-header">📊 批量回测 - 多策略对比分析</div>
+                <div class="card-body">
+                    <div class="empty-state">
+                        <h4>📊 批量回测功能</h4>
+                        <p>同时回测多个策略，进行性能对比分析</p>
+                        <p><strong>功能特点：</strong></p>
+                        <ul style="text-align: left; margin: 16px 0;">
+                            <li>多策略并行回测</li>
+                            <li>性能对比分析</li>
+                            <li>策略排名统计</li>
+                            <li>综合评估报告</li>
+                        </ul>
+                        <div style="margin-top: 16px;">
+                            <button class="btn btn-primary" onclick="window.open('http://localhost:8003/docs', '_blank')">📖 查看API文档</button>
+                            <button class="btn btn-outline" onclick="loadBacktestResults()" style="margin-left: 8px;">📊 查看历史结果</button>
+                        </div>
+                        <div style="margin-top: 16px;">
+                            <button class="btn btn-primary" onclick="window.open('http://localhost:8003/docs', '_blank')">📖 查看API文档</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 回测结果标签页 -->
+        <div id="results" class="tab-content">
+            <div class="card">
+                <div class="card-header">📈 历史回测结果</div>
+                <div class="card-body">
+                    <div id="results-list">
+                        <div class="loading">正在加载回测结果...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 全局变量
+        let availableStrategies = [];
+        let backtestResults = [];
+
+        // 标签页切换
+        function switchTab(tabId) {
+            // 隐藏所有标签页内容
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.remove('active');
+            });
+
+            // 移除所有按钮的active状态
+            document.querySelectorAll('.tab-button').forEach(button => {
+                button.classList.remove('active');
+            });
+
+            // 显示选中的标签页
+            document.getElementById(tabId).classList.add('active');
+            event.target.classList.add('active');
+
+            // 如果切换到结果页面，加载结果
+            if (tabId === 'results') {
+                loadBacktestResults();
+            }
+        }
+
+        // 加载可用策略
+        async function loadAvailableStrategies() {
+            try {
+                console.log('🔍 加载可用策略...');
+                const response = await fetch('http://localhost:8003/backtest/strategies');
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const result = await response.json();
+                console.log('📊 策略列表响应:', result);
+
+                if (result.success && result.data && result.data.strategies) {
+                    availableStrategies = result.data.strategies;
+
+                    // 更新策略数量
+                    document.getElementById('available-strategies').textContent = availableStrategies.length;
+
+                    // 填充策略选择框
+                    const strategySelect = document.getElementById('quick-strategy');
+                    strategySelect.innerHTML = '<option value="">请选择策略...</option>';
+
+                    availableStrategies.forEach(strategy => {
+                        const option = document.createElement('option');
+                        option.value = strategy;
+                        option.textContent = strategy;
+                        strategySelect.appendChild(option);
+                    });
+
+                    console.log('✅ 策略列表加载完成:', availableStrategies.length, '个策略');
+                } else {
+                    throw new Error('策略列表数据格式错误');
+                }
+
+            } catch (error) {
+                console.error('❌ 加载策略列表失败:', error);
+                document.getElementById('available-strategies').textContent = '0';
+                document.getElementById('service-status').textContent = '服务异常';
+                document.getElementById('service-status').style.color = '#dc3545';
+            }
+        }
+
+        // 检查服务状态
+        async function checkServiceStatus() {
+            try {
+                const response = await fetch('http://localhost:8003/health');
+
+                if (response.ok) {
+                    const result = await response.json();
+                    document.getElementById('service-status').textContent = '正常运行';
+                    document.getElementById('service-status').style.color = '#28a745';
+                    console.log('✅ 回测服务状态正常');
+                } else {
+                    throw new Error('服务响应异常');
+                }
+
+            } catch (error) {
+                console.error('❌ 回测服务检查失败:', error);
+                document.getElementById('service-status').textContent = '服务异常';
+                document.getElementById('service-status').style.color = '#dc3545';
+            }
+        }
+
+        // 运行快速回测
+        async function runQuickBacktest() {
+            const strategyName = document.getElementById('quick-strategy').value;
+            const days = parseInt(document.getElementById('quick-days').value);
+            const maxPosition = parseInt(document.getElementById('quick-position').value);
+
+            if (!strategyName) {
+                alert('请选择要回测的策略');
+                return;
+            }
+
+            const resultDiv = document.getElementById('quick-result');
+            const runButton = document.getElementById('run-quick-backtest');
+
+            try {
+                // 显示加载状态
+                runButton.textContent = '回测中...';
+                runButton.disabled = true;
+                resultDiv.innerHTML = '<div class="loading">正在运行回测，请稍候...</div>';
+
+                console.log('🚀 开始快速回测:', strategyName, days, '天');
+
+                const response = await fetch('http://localhost:8003/backtest/quick', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        strategy_name: strategyName,
+                        strategy_setting: {
+                            max_position: maxPosition
+                        },
+                        days: days
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const result = await response.json();
+                console.log('📊 快速回测结果:', result);
+
+                if (result.success && result.data) {
+                    displayQuickBacktestResult(result.data);
+                    // 更新结果计数
+                    loadBacktestResults();
+                } else {
+                    throw new Error(result.message || '回测失败');
+                }
+
+            } catch (error) {
+                console.error('❌ 快速回测失败:', error);
+                resultDiv.innerHTML = `
+                    <div class="error-state">
+                        <h4>⚠️ 回测功能暂时不可用</h4>
+                        <p>快速回测功能正在维护中，请稍后再试。</p>
+                        <p><strong>错误详情：</strong>${error.message}</p>
+                        <div style="margin-top: 16px;">
+                            <button class="btn btn-outline btn-sm" onclick="window.open('http://localhost:8003/docs', '_blank')">📖 查看API文档</button>
+                            <button class="btn btn-primary btn-sm" onclick="loadBacktestResults()" style="margin-left: 8px;">📊 查看历史结果</button>
+                        </div>
+                    </div>
+                `;
+            } finally {
+                // 恢复按钮状态
+                runButton.textContent = '🚀 开始快速回测';
+                runButton.disabled = false;
+            }
+        }
+
+        // 显示快速回测结果
+        function displayQuickBacktestResult(data) {
+            const resultDiv = document.getElementById('quick-result');
+
+            // 提取关键指标
+            const metrics = data.basic_result || data.result || data;
+            const totalReturn = (metrics.total_return || 0) * 100;
+            const sharpeRatio = metrics.sharpe_ratio || 0;
+            const maxDrawdown = (metrics.max_drawdown || 0) * 100;
+            const winRate = (metrics.win_rate || 0) * 100;
+
+            resultDiv.innerHTML = `
+                <div class="success-state">
+                    <h4>✅ 回测完成</h4>
+                    <p>策略: ${data.strategy_name || '未知'} | 时间: ${new Date().toLocaleString()}</p>
+                </div>
+                <div class="metrics-grid">
+                    <div class="metric-item">
+                        <div class="metric-value ${totalReturn >= 0 ? 'positive' : 'negative'}">${totalReturn.toFixed(2)}%</div>
+                        <div class="metric-label">总收益率</div>
+                    </div>
+                    <div class="metric-item">
+                        <div class="metric-value">${sharpeRatio.toFixed(2)}</div>
+                        <div class="metric-label">夏普比率</div>
+                    </div>
+                    <div class="metric-item">
+                        <div class="metric-value ${maxDrawdown <= 0 ? 'negative' : ''}">${maxDrawdown.toFixed(2)}%</div>
+                        <div class="metric-label">最大回撤</div>
+                    </div>
+                    <div class="metric-item">
+                        <div class="metric-value">${winRate.toFixed(1)}%</div>
+                        <div class="metric-label">胜率</div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // 加载回测结果
+        async function loadBacktestResults() {
+            const resultsDiv = document.getElementById('results-list');
+
+            try {
+                resultsDiv.innerHTML = '<div class="loading">正在加载回测结果...</div>';
+
+                const response = await fetch('http://localhost:8003/backtest/results');
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const result = await response.json();
+                console.log('📊 回测结果响应:', result);
+
+                if (result.success && result.data) {
+                    let resultsArray = [];
+
+                    if (Array.isArray(result.data)) {
+                        resultsArray = result.data;
+                    } else if (result.data.results) {
+                        resultsArray = Object.entries(result.data.results).map(([key, value]) => ({
+                            result_key: key,
+                            ...value
+                        }));
+                    }
+
+                    // 更新结果计数
+                    document.getElementById('total-results').textContent = resultsArray.length;
+
+                    if (resultsArray.length === 0) {
+                        resultsDiv.innerHTML = `
+                            <div class="empty-state">
+                                <h4>💡 暂无回测结果</h4>
+                                <p>还没有进行过回测，请使用快速回测功能开始。</p>
+                            </div>
+                        `;
+                    } else {
+                        displayBacktestResults(resultsArray);
+                    }
+                } else {
+                    throw new Error('回测结果数据格式错误');
+                }
+
+            } catch (error) {
+                console.error('❌ 加载回测结果失败:', error);
+                resultsDiv.innerHTML = `<div class="error-state">加载回测结果失败: ${error.message}</div>`;
+                document.getElementById('total-results').textContent = '0';
+            }
+        }
+
+        // 显示回测结果列表
+        function displayBacktestResults(results) {
+            const resultsDiv = document.getElementById('results-list');
+
+            const resultsHtml = results.map(result => {
+                const metrics = result.basic_result || result.result || result;
+                const totalReturn = (metrics.total_return || 0) * 100;
+                const strategyName = result.strategy_name || result.result_key?.split('_')[0] || '未知策略';
+                const timestamp = result.timestamp ? new Date(result.timestamp).toLocaleString() : '未知时间';
+
+                return `
+                    <div class="result-card">
+                        <div class="result-header">
+                            <div class="result-title">${strategyName}</div>
+                            <div class="result-time">${timestamp}</div>
+                        </div>
+                        <div class="metrics-grid">
+                            <div class="metric-item">
+                                <div class="metric-value ${totalReturn >= 0 ? 'positive' : 'negative'}">${totalReturn.toFixed(2)}%</div>
+                                <div class="metric-label">收益率</div>
+                            </div>
+                            <div class="metric-item">
+                                <div class="metric-value">${(metrics.sharpe_ratio || 0).toFixed(2)}</div>
+                                <div class="metric-label">夏普比率</div>
+                            </div>
+                            <div class="metric-item">
+                                <div class="metric-value">${((metrics.max_drawdown || 0) * 100).toFixed(2)}%</div>
+                                <div class="metric-label">最大回撤</div>
+                            </div>
+                            <div class="metric-item">
+                                <div class="metric-value">${((metrics.win_rate || 0) * 100).toFixed(1)}%</div>
+                                <div class="metric-label">胜率</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            resultsDiv.innerHTML = resultsHtml;
+        }
+
+        // 通用工具函数
+        function logout() {
+            if (confirm('确定要退出吗？')) {
+                window.location.href = '/';
+            }
+        }
+
+        // 页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('🚀 回测分析页面初始化');
+
+            // 绑定事件
+            document.getElementById('run-quick-backtest').addEventListener('click', runQuickBacktest);
+            document.getElementById('refresh-btn').addEventListener('click', function() {
+                console.log('🔄 刷新回测数据');
+                checkServiceStatus();
+                loadAvailableStrategies();
+                loadBacktestResults();
+            });
+
+            // 初始化加载
+            checkServiceStatus();
+            loadAvailableStrategies();
+        });
+    </script>
+</body>
+</html>

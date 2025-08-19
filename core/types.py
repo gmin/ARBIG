@@ -10,7 +10,7 @@ from enum import Enum
 
 # 导入vnpy的数据类型
 from vnpy.trader.object import (
-    TickData, OrderData, TradeData, PositionData, AccountData,
+    TickData, BarData, OrderData, TradeData, PositionData, AccountData,
     OrderRequest, CancelRequest, SubscribeRequest
 )
 from vnpy.trader.constant import (
@@ -20,7 +20,7 @@ from vnpy.trader.constant import (
 # 重新导出vnpy类型，方便使用
 __all__ = [
     # vnpy数据类型
-    'TickData', 'OrderData', 'TradeData', 'PositionData', 'AccountData',
+    'TickData', 'BarData', 'OrderData', 'TradeData', 'PositionData', 'AccountData',
     'OrderRequest', 'CancelRequest', 'SubscribeRequest',
     'Direction', 'OrderType', 'Status', 'Offset', 'Exchange',
     

@@ -49,17 +49,23 @@ class WebAdminService:
     
     def _register_core_services(self):
         """注册核心服务"""
+        # 先清理可能存在的旧服务注册
+        if "trading_service" in self.service_registry.services:
+            logger.info("清理旧的trading_service注册")
+            del self.service_registry.services["trading_service"]
+
         # 注册核心交易服务
         trading_service = ServiceInfo(
             name="trading_service",
             display_name="核心交易服务",
             status=ServiceStatus.STOPPED,
             host="localhost",
-            port=8001,
+            port=8001,  # 恢复为标准端口
             version="2.0.0",
             health_check_url="/health"
         )
         self.service_registry.register_service(trading_service)
+        logger.info(f"注册trading_service: http://localhost:8001")
     
     def start(self) -> bool:
         """启动Web管理服务"""
@@ -340,6 +346,8 @@ async def trading_page(request: Request):
                     <ul class="nav-links">
                         <li><a href="/">首页</a></li>
                         <li><a href="/trading" class="active">交易管理</a></li>
+                        <li><a href="/strategy">策略管理</a></li>
+                        <li><a href="/backtest">回测分析</a></li>
                         <li><a href="/api/docs">API文档</a></li>
                     </ul>
                 </div>
@@ -738,37 +746,81 @@ async def trading_page(request: Request):
 
                 // 加载策略状态
                 async function loadStrategyStatus() {
+                    console.log('🔍 开始加载策略状态...');
+
                     try {
-                        const strategies = await api.get('/api/v1/trading/strategy/status');
+                        // 修改为调用回测服务的策略API
+                        console.log('📡 发送API请求到: http://localhost:8002/backtest/strategies');
+                        const response = await fetch('http://localhost:8002/backtest/strategies');
+
+                        console.log('📊 响应状态:', response.status, response.statusText);
+
+                        if (!response.ok) {
+                            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                        }
+
+                        const result = await response.json();
+                        console.log('📊 API响应:', result);
+
+                        let strategies = [];
+                        if (result.success && result.data && result.data.strategies) {
+                            strategies = result.data.strategies;
+                            console.log('✅ 使用 result.data.strategies');
+                        } else if (result.data && Array.isArray(result.data)) {
+                            strategies = result.data;
+                            console.log('✅ 使用 result.data (数组)');
+                        } else if (Array.isArray(result)) {
+                            strategies = result;
+                            console.log('✅ 使用 result (数组)');
+                        } else {
+                            console.log('❌ 无法解析策略数据:', result);
+                        }
+
+                        console.log('📋 解析后的策略列表:', strategies);
+                        console.log('📊 策略数量:', strategies.length);
+
                         const tbody = document.querySelector('#strategy-table tbody');
+                        if (!tbody) {
+                            console.error('❌ 找不到策略表格元素');
+                            return;
+                        }
 
                         if (strategies.length === 0) {
                             tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #666;">暂无策略</td></tr>';
                             return;
                         }
 
-                        tbody.innerHTML = strategies.map(strategy => `
+                        // 适配回测API的数据格式
+                        tbody.innerHTML = strategies.map(strategyName => `
                             <tr>
-                                <td>${strategy.strategy_name}</td>
+                                <td>${strategyName}</td>
                                 <td>
-                                    <span class="status ${strategy.is_active ? 'online' : 'offline'}">
-                                        ${strategy.is_active ? '运行中' : '已停止'}
+                                    <span class="status neutral">
+                                        可用于回测
                                     </span>
                                 </td>
-                                <td>${strategy.trigger_count_today}</td>
-                                <td>${(strategy.success_rate * 100).toFixed(1)}%</td>
-                                <td>${strategy.last_trigger_time ? Utils.formatRelativeTime(strategy.last_trigger_time) : '--'}</td>
+                                <td>--</td>
+                                <td>--</td>
+                                <td>--</td>
                                 <td>
-                                    ${strategy.is_active ?
-                                        `<button class="btn btn-danger" onclick="stopStrategy('${strategy.strategy_name}')">停止</button>` :
-                                        `<button class="btn btn-success" onclick="startStrategy('${strategy.strategy_name}')">启动</button>`
-                                    }
+                                    <button class="btn btn-primary" onclick="quickBacktest('${strategyName}')">快速回测</button>
+                                    <button class="btn btn-info" onclick="advancedBacktest('${strategyName}')">高级回测</button>
                                 </td>
                             </tr>
                         `).join('');
                     } catch (error) {
-                        console.error('加载策略状态失败:', error);
-                        Utils.showNotification('加载策略状态失败', 'error');
+                        console.error('❌ 加载策略状态失败:', error);
+                        console.error('❌ 错误详情:', error.message);
+
+                        const tbody = document.querySelector('#strategy-table tbody');
+                        if (tbody) {
+                            tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #f56565;">
+                                加载策略失败: ${error.message}<br>
+                                <small>请检查浏览器控制台获取详细信息</small>
+                            </td></tr>`;
+                        }
+
+                        Utils.showNotification('策略加载失败: ' + error.message, 'error');
                     }
                 }
 
@@ -796,6 +848,39 @@ async def trading_page(request: Request):
                             Utils.showNotification('停止策略失败: ' + error.message, 'error');
                         }
                     });
+                }
+
+                // 快速回测
+                async function quickBacktest(strategyName) {
+                    Utils.confirm(`确定要对策略 ${strategyName} 进行快速回测吗？`, async () => {
+                        try {
+                            Utils.showNotification('正在进行快速回测...', 'info');
+                            const response = await fetch(`http://localhost:8002/strategies/${strategyName.toLowerCase().replace(/([A-Z])/g, '_$1').substring(1)}/quick_test`, {
+                                method: 'POST',
+                                headers: {'Content-Type': 'application/json'},
+                                body: JSON.stringify({test_days: 7, max_position: 5})
+                            });
+                            const result = await response.json();
+
+                            if (result.success) {
+                                const metrics = result.key_metrics;
+                                Utils.showNotification(
+                                    `回测完成！收益率: ${(metrics.total_return * 100).toFixed(2)}%, 胜率: ${(metrics.win_rate * 100).toFixed(1)}%`,
+                                    'success'
+                                );
+                            } else {
+                                Utils.showNotification('回测失败: ' + (result.message || '未知错误'), 'error');
+                            }
+                        } catch (error) {
+                            Utils.showNotification('回测失败: ' + error.message, 'error');
+                        }
+                    });
+                }
+
+                // 高级回测
+                async function advancedBacktest(strategyName) {
+                    Utils.showNotification(`正在打开 ${strategyName} 的高级回测页面...`, 'info');
+                    window.open(`http://localhost:8003/docs`, '_blank');
                 }
 
                 // 紧急停止
@@ -981,13 +1066,16 @@ async def trading_page(request: Request):
 
 @app.get("/strategy", response_class=HTMLResponse, summary="策略管理页面")
 async def strategy_page(request: Request):
-    """策略管理页面"""
-    # 检查模板文件是否存在
-    template_path = Path("services/web_admin_service/templates/strategy.html")
-    if template_path.exists():
+    """统一的策略管理页面"""
+    # 使用基础模板（现在包含增强版内容）
+    template_file = templates_dir / "strategy.html" if templates_dir.exists() else None
+
+    if templates and template_file and template_file.exists():
+        logger.info("使用strategy.html模板")
         return templates.TemplateResponse("strategy.html", {"request": request})
     else:
-        # 返回简单的策略管理页面
+        logger.warning("模板文件不存在，使用内置策略管理页面")
+        # 返回完整的策略管理页面
         return """
         <!DOCTYPE html>
         <html>
@@ -1009,13 +1097,224 @@ async def strategy_page(request: Request):
                 </div>
             </nav>
             <div class="container">
-                <h2>策略管理功能开发中...</h2>
-                <p>策略管理服务正在开发中，敬请期待！</p>
-                <p>策略服务API: <a href="http://localhost:8002" target="_blank">http://localhost:8002</a></p>
+                <div class="card">
+                    <div class="card-header">
+                        策略管理
+                        <div style="float: right;">
+                            <button class="btn btn-danger" onclick="emergencyStop()" style="margin-left: 10px;">
+                                🚨 紧急停止
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <table class="data-table" id="strategy-table">
+                            <thead>
+                                <tr>
+                                    <th>策略名称</th>
+                                    <th>状态</th>
+                                    <th>今日触发</th>
+                                    <th>成功率</th>
+                                    <th>最后触发</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td colspan="6" style="text-align: center; color: #666;">加载中...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
+
+            <script>
+                // 加载策略状态
+                async function loadStrategyStatus() {
+                    console.log('🔍 开始加载策略状态...');
+
+                    try {
+                        // 调用回测服务的策略API
+                        console.log('📡 发送API请求到: http://localhost:8002/backtest/strategies');
+                        const response = await fetch('http://localhost:8002/backtest/strategies');
+
+                        console.log('📊 响应状态:', response.status, response.statusText);
+
+                        if (!response.ok) {
+                            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                        }
+
+                        const result = await response.json();
+                        console.log('📊 API响应:', result);
+
+                        let strategies = [];
+                        if (result.success && result.data && result.data.strategies) {
+                            strategies = result.data.strategies;
+                            console.log('✅ 使用 result.data.strategies');
+                        } else if (result.data && Array.isArray(result.data)) {
+                            strategies = result.data;
+                            console.log('✅ 使用 result.data (数组)');
+                        } else if (Array.isArray(result)) {
+                            strategies = result;
+                            console.log('✅ 使用 result (数组)');
+                        } else {
+                            console.log('❌ 无法解析策略数据:', result);
+                        }
+
+                        console.log('📋 解析后的策略列表:', strategies);
+                        console.log('📊 策略数量:', strategies.length);
+
+                        const tbody = document.querySelector('#strategy-table tbody');
+                        if (!tbody) {
+                            console.error('❌ 找不到策略表格元素');
+                            return;
+                        }
+
+                        if (strategies.length === 0) {
+                            tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #666;">暂无策略</td></tr>';
+                            return;
+                        }
+
+                        // 适配回测API的数据格式
+                        tbody.innerHTML = strategies.map(strategyName => `
+                            <tr>
+                                <td>${strategyName}</td>
+                                <td>
+                                    <span class="status neutral">
+                                        可用于回测
+                                    </span>
+                                </td>
+                                <td>--</td>
+                                <td>--</td>
+                                <td>--</td>
+                                <td>
+                                    <button class="btn btn-primary" onclick="quickBacktest('${strategyName}')">快速回测</button>
+                                    <button class="btn btn-info" onclick="advancedBacktest('${strategyName}')">高级回测</button>
+                                </td>
+                            </tr>
+                        `).join('');
+                    } catch (error) {
+                        console.error('❌ 加载策略状态失败:', error);
+                        console.error('❌ 错误详情:', error.message);
+
+                        const tbody = document.querySelector('#strategy-table tbody');
+                        if (tbody) {
+                            tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #f56565;">
+                                加载策略失败: ${error.message}<br>
+                                <small>请检查浏览器控制台获取详细信息</small>
+                            </td></tr>`;
+                        }
+
+                        showNotification('策略加载失败: ' + error.message, 'error');
+                    }
+                }
+
+                // 快速回测
+                async function quickBacktest(strategyName) {
+                    if (confirm(`确定要对策略 ${strategyName} 进行快速回测吗？`)) {
+                        try {
+                            showNotification('正在进行快速回测...', 'info');
+                            const response = await fetch(`http://localhost:8002/strategies/${strategyName.toLowerCase().replace(/([A-Z])/g, '_$1').substring(1)}/quick_test`, {
+                                method: 'POST',
+                                headers: {'Content-Type': 'application/json'},
+                                body: JSON.stringify({test_days: 7, max_position: 5})
+                            });
+                            const result = await response.json();
+
+                            if (result.success) {
+                                const metrics = result.key_metrics;
+                                showNotification(
+                                    `回测完成！收益率: ${(metrics.total_return * 100).toFixed(2)}%, 胜率: ${(metrics.win_rate * 100).toFixed(1)}%`,
+                                    'success'
+                                );
+                            } else {
+                                showNotification('回测失败: ' + (result.message || '未知错误'), 'error');
+                            }
+                        } catch (error) {
+                            showNotification('回测失败: ' + error.message, 'error');
+                        }
+                    }
+                }
+
+                // 高级回测
+                async function advancedBacktest(strategyName) {
+                    showNotification(`正在打开 ${strategyName} 的高级回测页面...`, 'info');
+                    window.open(`http://localhost:8003/docs`, '_blank');
+                }
+
+                // 紧急停止
+                async function emergencyStop() {
+                    if (confirm('⚠️ 确定要执行系统紧急停止吗？这将停止所有策略！')) {
+                        try {
+                            const result = await fetch('/api/v1/trading/emergency_stop', {method: 'POST'});
+                            showNotification('紧急停止执行完成', 'warning');
+                            loadStrategyStatus(); // 重新加载策略状态
+                        } catch (error) {
+                            showNotification('紧急停止失败: ' + error.message, 'error');
+                        }
+                    }
+                }
+
+                // 显示通知
+                function showNotification(message, type = 'info') {
+                    console.log(`[${type.toUpperCase()}] ${message}`);
+                    // 这里可以添加更复杂的通知UI
+                }
+
+                // 页面加载完成后执行
+                document.addEventListener('DOMContentLoaded', function() {
+                    console.log('🚀 策略管理页面加载完成');
+                    loadStrategyStatus();
+                });
+            </script>
         </body>
         </html>
         """
+
+@app.get("/backtest", response_class=HTMLResponse, summary="回测分析页面")
+async def backtest_page(request: Request):
+    """回测分析页面"""
+    # 检查回测模板文件是否存在
+    template_file = templates_dir / "backtest.html" if templates_dir.exists() else None
+
+    if templates and template_file and template_file.exists():
+        logger.info("使用backtest.html模板")
+        return templates.TemplateResponse("backtest.html", {"request": request})
+    else:
+        logger.warning("回测模板文件不存在")
+        return HTMLResponse("""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>回测分析</title>
+            <meta charset="utf-8">
+            <link rel="stylesheet" href="/static/css/main.css?v=2.1">
+        </head>
+        <body>
+            <nav class="navbar">
+                <div class="container">
+                    <h1>ARBIG回测分析</h1>
+                    <ul class="nav-links">
+                        <li><a href="/">首页</a></li>
+                        <li><a href="/trading">交易管理</a></li>
+                        <li><a href="/strategy">策略管理</a></li>
+                        <li><a href="/backtest" class="active">回测分析</a></li>
+                    </ul>
+                </div>
+            </nav>
+            <div class="container">
+                <h2>回测分析功能开发中...</h2>
+                <p>回测分析模板文件不存在。</p>
+            </div>
+        </body>
+        </html>
+        """)
+
+@app.get("/strategy-enhanced", response_class=HTMLResponse, summary="重定向到统一策略页面")
+async def strategy_enhanced_redirect():
+    """重定向旧的增强版策略页面到统一的策略页面"""
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/strategy", status_code=301)
 
 @app.get("/trading_logs", response_class=HTMLResponse, summary="交易日志页面")
 async def trading_logs_page(request: Request):
@@ -1055,6 +1354,23 @@ async def trading_logs_page(request: Request):
         </body>
         </html>
         """
+
+# API路由
+@app.get("/api/v1/trading/strategies/types", summary="获取策略类型列表")
+async def get_strategy_types():
+    """获取所有可用的策略类型"""
+    try:
+        import httpx
+        async with httpx.AsyncClient() as client:
+            response = await client.get("http://localhost:8002/strategies/types")
+            if response.status_code == 200:
+                return response.json()
+            else:
+                logger.error(f"策略服务响应错误: {response.status_code}")
+                return {"success": False, "message": "策略服务不可用"}
+    except Exception as e:
+        logger.error(f"获取策略类型失败: {e}")
+        return {"success": False, "message": str(e)}
 
 def main():
     """主函数"""

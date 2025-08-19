@@ -3,9 +3,10 @@
 提供行情、账户、持仓等数据的API服务
 """
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
 from typing import List, Optional
 import json
+import httpx
 from datetime import datetime
 
 from shared.database.connection import get_db_manager
@@ -405,13 +406,23 @@ async def get_strategies():
     """获取策略列表"""
     try:
         # 直接调用策略管理服务
-        import httpx
         async with httpx.AsyncClient() as client:
             response = await client.get("http://localhost:8002/strategies")
             return response.json()
     except Exception as e:
         logger.error(f"获取策略列表失败: {e}")
         raise HTTPException(status_code=500, detail=f"获取策略列表失败: {str(e)}")
+
+@router.get("/strategies/types")
+async def get_strategy_types():
+    """获取可用策略类型"""
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get("http://localhost:8002/strategies/types")
+            return response.json()
+    except Exception as e:
+        logger.error(f"获取策略类型失败: {e}")
+        raise HTTPException(status_code=500, detail=f"获取策略类型失败: {str(e)}")
 
 @router.post("/strategies/{strategy_name}/start")
 async def start_strategy(strategy_name: str):
@@ -451,6 +462,71 @@ async def update_strategy_params(strategy_name: str, params: dict):
     except Exception as e:
         logger.error(f"更新策略参数失败: {e}")
         raise HTTPException(status_code=500, detail=f"更新策略参数失败: {str(e)}")
+
+@router.post("/strategies/register")
+async def register_strategy(request: Request):
+    """注册新策略实例"""
+    try:
+        # 从请求体中提取JSON数据
+        request_data = await request.json()
+        
+        # 从请求体中提取数据
+        strategy_type = request_data.get('strategy_type')
+        instance_name = request_data.get('instance_name')
+        symbol = request_data.get('symbol')
+        description = request_data.get('description', '')
+        params = request_data.get('params', {})
+        
+        if not strategy_type or not instance_name or not symbol:
+            raise HTTPException(status_code=400, detail="缺少必要参数: strategy_type, instance_name, symbol")
+        
+        # 构建发送给策略服务的数据
+        strategy_data = {
+            "strategy_name": instance_name,
+            "symbol": symbol,
+            "strategy_type": strategy_type,
+            "description": description,
+            "params": params
+        }
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.post("http://localhost:8002/strategies/register", json=strategy_data)
+            return response.json()
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"注册策略失败: {e}")
+        raise HTTPException(status_code=500, detail=f"注册策略失败: {str(e)}")
+
+# 性能统计API已移至回测服务，不再代理策略服务的性能接口
+
+@router.post("/strategies/{strategy_name}/trade")
+async def update_strategy_trade(strategy_name: str, trade_data: dict):
+    """更新策略交易记录"""
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"http://localhost:8002/strategies/{strategy_name}/trade",
+                json=trade_data
+            )
+            return response.json()
+    except Exception as e:
+        logger.error(f"更新策略交易记录失败: {e}")
+        raise HTTPException(status_code=500, detail=f"更新策略交易记录失败: {str(e)}")
+
+@router.post("/strategies/{strategy_name}/position")
+async def update_strategy_position(strategy_name: str, position_data: dict):
+    """更新策略持仓"""
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"http://localhost:8002/strategies/{strategy_name}/position",
+                json=position_data
+            )
+            return response.json()
+    except Exception as e:
+        logger.error(f"更新策略持仓失败: {e}")
+        raise HTTPException(status_code=500, detail=f"更新策略持仓失败: {str(e)}")
 
 @router.post("/backtest")
 async def run_backtest(backtest_request: dict, service_client: ServiceClient = Depends(get_service_client)):
@@ -495,7 +571,15 @@ async def get_positions(
                             "avg_price": pos_data.get("long_price", 0),
                             "current_price": pos_data.get("current_price", 0),
                             "unrealized_pnl": pos_data.get("long_pnl", 0),
-                            "margin": pos_data["long_position"] * pos_data.get("current_price", 0) * 1000 * 0.08  # 8%保证金率
+                            "margin": pos_data["long_position"] * pos_data.get("current_price", 0) * 1000 * 0.08,  # 8%保证金率
+                            # 添加今昨仓信息
+                            "today_volume": pos_data.get("long_today", 0),
+                            "yd_volume": pos_data.get("long_yesterday", 0),
+                            "position_detail": {
+                                "total": pos_data["long_position"],
+                                "today": pos_data.get("long_today", 0),
+                                "yesterday": pos_data.get("long_yesterday", 0)
+                            }
                         })
 
                     # 如果有空单持仓
@@ -507,7 +591,15 @@ async def get_positions(
                             "avg_price": pos_data.get("short_price", 0),
                             "current_price": pos_data.get("current_price", 0),
                             "unrealized_pnl": pos_data.get("short_pnl", 0),
-                            "margin": pos_data["short_position"] * pos_data.get("current_price", 0) * 1000 * 0.08  # 8%保证金率
+                            "margin": pos_data["short_position"] * pos_data.get("current_price", 0) * 1000 * 0.08,  # 8%保证金率
+                            # 添加今昨仓信息
+                            "today_volume": pos_data.get("short_today", 0),
+                            "yd_volume": pos_data.get("short_yesterday", 0),
+                            "position_detail": {
+                                "total": pos_data["short_position"],
+                                "today": pos_data.get("short_today", 0),
+                                "yesterday": pos_data.get("short_yesterday", 0)
+                            }
                         })
 
                 return positions_list
