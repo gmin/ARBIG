@@ -23,7 +23,6 @@ from vnpy.trader.event import (
 )
 
 from core.types import OrderRequest, ServiceStatus
-from core.config_manager import ConfigManager
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -31,14 +30,8 @@ logger = get_logger(__name__)
 class CtpGatewayWrapper:
     """CTP网关封装类"""
     
-    def __init__(self, config_manager: ConfigManager):
-        """
-        初始化CTP网关
-        
-        Args:
-            config_manager: 配置管理器
-        """
-        self.config_manager = config_manager
+    def __init__(self):
+        """初始化CTP网关"""
         self.status = ServiceStatus.STOPPED
         
         # vnpy组件
@@ -104,41 +97,28 @@ class CtpGatewayWrapper:
     def _load_ctp_config(self) -> Dict[str, str]:
         """加载CTP配置"""
         try:
-            # 优先从JSON配置文件读取
+            # 从JSON配置文件读取
             json_config_path = Path("config/ctp_sim.json")
-            if json_config_path.exists():
-                with open(json_config_path, 'r', encoding='utf-8') as f:
-                    json_config = json.load(f)
-                
-                # 转换为vnpy格式
-                setting = {
-                    "用户名": json_config.get("用户名", ""),
-                    "密码": json_config.get("密码", ""),
-                    "经纪商代码": json_config.get("经纪商代码", ""),
-                    "交易服务器": f"tcp://{json_config.get('交易服务器', '')}",
-                    "行情服务器": f"tcp://{json_config.get('行情服务器', '')}",
-                    "产品名称": json_config.get("产品名称", ""),
-                    "授权编码": json_config.get("授权编码", "")
-                }
-                
-                logger.info("从JSON配置文件加载CTP配置")
-                return setting
-            
-            # 从YAML配置加载
-            ctp_config = self.config_manager.get_ctp_config()
+            if not json_config_path.exists():
+                raise FileNotFoundError(f"CTP配置文件不存在: {json_config_path}")
+
+            with open(json_config_path, 'r', encoding='utf-8') as f:
+                json_config = json.load(f)
+
+            # 转换为vnpy格式
             setting = {
-                "用户名": ctp_config.userid,
-                "密码": ctp_config.password,
-                "经纪商代码": ctp_config.brokerid,
-                "交易服务器": f"tcp://{ctp_config.td_address}",
-                "行情服务器": f"tcp://{ctp_config.md_address}",
-                "产品名称": ctp_config.product_info,
-                "授权编码": ctp_config.auth_code
+                "用户名": json_config.get("用户名", ""),
+                "密码": json_config.get("密码", ""),
+                "经纪商代码": json_config.get("经纪商代码", ""),
+                "交易服务器": f"tcp://{json_config.get('交易服务器', '')}",
+                "行情服务器": f"tcp://{json_config.get('行情服务器', '')}",
+                "产品名称": json_config.get("产品名称", ""),
+                "授权编码": json_config.get("授权编码", "")
             }
-            
-            logger.info("从YAML配置文件加载CTP配置")
+
+            logger.info("从JSON配置文件加载CTP配置")
             return setting
-            
+
         except Exception as e:
             logger.error(f"加载CTP配置失败: {e}")
             raise

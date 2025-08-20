@@ -1,0 +1,22 @@
+{
+  "name": "高级SHFE策略",
+  "description": "高级上海期货交易所策略，使用组件化框架",
+  "class_name": "AdvancedSHFEStrategy",
+  "symbol": "au2510",
+  "enabled": false,
+  "params": {
+    "trend_period": 20,
+    "volatility_period": 14,
+    "entry_threshold": 0.02,
+    "exit_threshold": 0.01,
+    "trade_volume": 2,
+    "max_position": 8,
+    "initial_capital": 300000
+  },
+  "risk_control": {
+    "max_daily_loss": 20000,
+    "max_drawdown": 0.08
+  },
+  "created_time": "2025-01-18T10:00:00",
+  "updated_time": "2025-01-18T10:00:00"
+}

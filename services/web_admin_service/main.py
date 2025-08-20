@@ -1372,6 +1372,179 @@ async def get_strategy_types():
         logger.error(f"获取策略类型失败: {e}")
         return {"success": False, "message": str(e)}
 
+@app.get("/api/v1/trading/strategies/config", summary="获取所有策略配置")
+async def get_strategies_config():
+    """获取所有策略的配置"""
+    try:
+        import json
+        from pathlib import Path
+
+        strategies_dir = Path("config/strategies")
+        if not strategies_dir.exists():
+            return {"success": False, "message": "策略配置目录不存在"}
+
+        strategies_config = {}
+
+        # 遍历策略配置目录
+        for config_file in strategies_dir.glob("*.json"):
+            strategy_key = config_file.stem  # 文件名（不含扩展名）
+            try:
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    strategy_config = json.load(f)
+                    # 使用class_name作为key，保持与原来的兼容性
+                    class_name = strategy_config.get('class_name', strategy_key)
+                    strategies_config[class_name] = strategy_config
+            except Exception as e:
+                logger.error(f"读取策略配置文件失败 {config_file}: {e}")
+                continue
+
+        return {
+            "success": True,
+            "data": strategies_config,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"获取策略配置失败: {e}")
+        return {"success": False, "message": str(e)}
+
+@app.post("/api/v1/trading/strategies/config/{strategy_name}", summary="保存单个策略配置")
+async def save_strategy_config(strategy_name: str, config_data: dict):
+    """保存单个策略的配置"""
+    try:
+        import json
+        from pathlib import Path
+        import shutil
+        from datetime import datetime
+
+        # 根据class_name找到对应的配置文件
+        strategies_dir = Path("config/strategies")
+        if not strategies_dir.exists():
+            strategies_dir.mkdir(parents=True, exist_ok=True)
+
+        # 查找对应的配置文件
+        config_file = None
+        for file_path in strategies_dir.glob("*.json"):
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    existing_config = json.load(f)
+                    if existing_config.get('class_name') == strategy_name:
+                        config_file = file_path
+                        break
+            except:
+                continue
+
+        # 如果没找到，创建新文件
+        if config_file is None:
+            # 使用class_name的小写形式作为文件名
+            file_name = strategy_name.lower().replace('strategy', '').replace('_', '_') + '.json'
+            config_file = strategies_dir / file_name
+
+        # 备份原配置文件
+        backup_file = config_file.with_suffix('.json.backup')
+        if config_file.exists():
+            shutil.copy2(config_file, backup_file)
+
+        # 更新时间戳
+        config_data['updated_time'] = datetime.now().isoformat()
+        if 'created_time' not in config_data:
+            config_data['created_time'] = datetime.now().isoformat()
+
+        # 保存配置文件
+        with open(config_file, 'w', encoding='utf-8') as f:
+            json.dump(config_data, f, ensure_ascii=False, indent=2)
+
+        logger.info(f"策略配置已保存: {strategy_name} -> {config_file}")
+        return {
+            "success": True,
+            "message": f"策略 {strategy_name} 配置保存成功",
+            "file": str(config_file),
+            "timestamp": datetime.now().isoformat()
+        }
+
+    except Exception as e:
+        logger.error(f"保存策略配置失败: {e}")
+        # 如果保存失败，尝试恢复备份
+        try:
+            if 'backup_file' in locals() and backup_file.exists():
+                shutil.copy2(backup_file, config_file)
+                logger.info("已恢复备份配置文件")
+        except Exception as restore_error:
+            logger.error(f"恢复备份失败: {restore_error}")
+        return {"success": False, "message": str(e)}
+
+@app.post("/api/v1/trading/strategies/start", summary="启动策略")
+async def start_strategy(request_data: dict):
+    """启动指定策略"""
+    try:
+        import httpx
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                "http://localhost:8002/strategies/start",
+                json=request_data
+            )
+            if response.status_code == 200:
+                return response.json()
+            else:
+                logger.error(f"策略启动失败: {response.status_code}")
+                return {"success": False, "message": "策略启动失败"}
+    except Exception as e:
+        logger.error(f"启动策略失败: {e}")
+        return {"success": False, "message": str(e)}
+
+@app.post("/api/v1/trading/strategies/stop", summary="停止策略")
+async def stop_strategy(request_data: dict):
+    """停止指定策略"""
+    try:
+        import httpx
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                "http://localhost:8002/strategies/stop",
+                json=request_data
+            )
+            if response.status_code == 200:
+                return response.json()
+            else:
+                logger.error(f"策略停止失败: {response.status_code}")
+                return {"success": False, "message": "策略停止失败"}
+    except Exception as e:
+        logger.error(f"停止策略失败: {e}")
+        return {"success": False, "message": str(e)}
+
+def validate_strategy_params(strategy_name: str, params: dict) -> tuple[bool, str]:
+    """验证策略参数"""
+    try:
+        # 通用参数验证
+        if 'initial_capital' in params:
+            if not isinstance(params['initial_capital'], (int, float)) or params['initial_capital'] <= 0:
+                return False, "初始资金必须大于0"
+
+        if 'max_position' in params:
+            if not isinstance(params['max_position'], int) or params['max_position'] <= 0:
+                return False, "最大持仓必须是正整数"
+
+        if 'trade_volume' in params:
+            if not isinstance(params['trade_volume'], int) or params['trade_volume'] <= 0:
+                return False, "交易量必须是正整数"
+
+        # 移动平均策略参数验证
+        if 'ma_short' in params and 'ma_long' in params:
+            if not isinstance(params['ma_short'], int) or params['ma_short'] <= 0:
+                return False, "短期均线周期必须是正整数"
+            if not isinstance(params['ma_long'], int) or params['ma_long'] <= 0:
+                return False, "长期均线周期必须是正整数"
+            if params['ma_short'] >= params['ma_long']:
+                return False, "短期均线周期必须小于长期均线周期"
+
+        # 信号间隔验证
+        if 'signal_interval' in params:
+            if not isinstance(params['signal_interval'], int) or params['signal_interval'] <= 0:
+                return False, "信号间隔必须是正整数"
+
+        return True, "参数验证通过"
+
+    except Exception as e:
+        return False, f"参数验证失败: {str(e)}"
+
 def main():
     """主函数"""
     parser = argparse.ArgumentParser(description='ARBIG Web管理服务')

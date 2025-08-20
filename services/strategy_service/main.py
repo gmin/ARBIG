@@ -348,10 +348,17 @@ async def legacy_status():
     return await root()
 
 if __name__ == "__main__":
-    uvicorn.run(
-        "main:app",
-        host="0.0.0.0",
-        port=8002,
-        reload=True,
-        log_level="info"
-    )
+    logger.info("🚀 准备启动uvicorn服务器...")
+    logger.info("📍 API端点定义完成，开始启动HTTP服务器")
+
+    try:
+        uvicorn.run(
+            "main:app",
+            host="0.0.0.0",
+            port=8002,
+            reload=True,
+            log_level="info"
+        )
+    except Exception as e:
+        logger.error(f"❌ uvicorn启动失败: {e}")
+        raise

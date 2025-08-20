@@ -27,7 +27,6 @@ from shared.models.base import (
 )
 # 移除对旧系统控制器的依赖，使用简化的状态管理
 from core.event_engine import EventEngine
-from core.config_manager import ConfigManager
 from utils.logger import get_logger
 
 logger = get_logger(__name__)

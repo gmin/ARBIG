@@ -1,0 +1,19 @@
+{
+  "name": "测试策略",
+  "description": "用于系统集成测试的极简策略，每30秒随机生成买卖信号",
+  "class_name": "TestStrategy",
+  "symbol": "au2510",
+  "enabled": true,
+  "params": {
+    "signal_interval": 30,
+    "trade_volume": 1,
+    "max_position": 10,
+    "initial_capital": 10000
+  },
+  "risk_control": {
+    "max_daily_loss": 2000,
+    "max_drawdown": 0.15
+  },
+  "created_time": "2025-01-18T10:00:00",
+  "updated_time": "2025-01-18T10:00:00"
+}

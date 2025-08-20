@@ -392,6 +392,115 @@ async def simple_close_position(request: Dict[str, Any]):
         logger.error(f"简单平仓失败: {e}")
         raise HTTPException(status_code=500, detail=f"简单平仓失败: {str(e)}")
 
+@router.post("/strategy_signal")
+async def handle_strategy_signal(request: Dict[str, Any]):
+    """处理策略信号"""
+    try:
+        # 验证必需参数
+        required_fields = ['strategy_name', 'symbol', 'direction', 'action', 'volume']
+        for field in required_fields:
+            if field not in request:
+                raise HTTPException(status_code=400, detail=f"缺少必需参数: {field}")
+
+        strategy_name = request['strategy_name']
+        symbol = request['symbol']
+        direction = request['direction'].upper()
+        action = request['action'].upper()
+        volume = int(request['volume'])
+        price = float(request.get('price', 0))
+        order_type = 'MARKET' if price == 0 else 'LIMIT'
+        order_id = request.get('order_id', f"STRATEGY_{uuid.uuid4().hex[:8].upper()}")
+
+        logger.info(f"📨 收到策略信号: {strategy_name} {action} {direction} {volume}@{price}")
+
+        # 验证参数
+        if direction not in ['LONG', 'SHORT']:
+            raise HTTPException(status_code=400, detail="direction必须是LONG或SHORT")
+
+        if action not in ['BUY', 'SELL', 'OPEN', 'CLOSE']:
+            raise HTTPException(status_code=400, detail="action必须是BUY、SELL、OPEN或CLOSE")
+
+        if volume <= 0:
+            raise HTTPException(status_code=400, detail="volume必须大于0")
+
+        # 转换策略信号为CTP订单
+        ctp = get_ctp_integration()
+
+        # 根据策略信号确定交易方向和开平仓
+        if action in ['BUY', 'OPEN']:
+            if direction == 'LONG':
+                trade_direction = 'BUY'
+                offset = 'OPEN'
+            else:  # SHORT
+                trade_direction = 'SELL'
+                offset = 'OPEN'
+        else:  # SELL, CLOSE
+            if direction == 'LONG':
+                trade_direction = 'SELL'
+                offset = 'AUTO'  # 智能平仓
+            else:  # SHORT
+                trade_direction = 'BUY'
+                offset = 'AUTO'  # 智能平仓
+
+        # 发送订单到CTP
+        ctp_order_id = ctp.send_order(symbol, trade_direction, volume, price, order_type, offset)
+
+        if not ctp_order_id:
+            raise HTTPException(status_code=500, detail="CTP订单发送失败")
+
+        logger.info(f"✅ 策略信号转换为CTP订单成功: {strategy_name} -> {ctp_order_id}")
+
+        return {
+            "success": True,
+            "message": "策略信号处理成功",
+            "data": {
+                "order_id": ctp_order_id,
+                "strategy_name": strategy_name,
+                "symbol": symbol,
+                "direction": direction,
+                "action": action,
+                "volume": volume,
+                "price": price,
+                "order_type": order_type
+            },
+            "timestamp": datetime.now().isoformat()
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"处理策略信号失败: {e}")
+        raise HTTPException(status_code=500, detail=f"处理策略信号失败: {str(e)}")
+
+@router.get("/status")
+async def get_trading_status():
+    """获取交易服务状态"""
+    try:
+        ctp = get_ctp_integration()
+
+        # 检查CTP连接状态
+        ctp_status = "connected" if ctp and hasattr(ctp, 'is_connected') and ctp.is_connected() else "disconnected"
+
+        return {
+            "success": True,
+            "message": "交易服务运行正常",
+            "data": {
+                "service": "交易服务",
+                "status": "running",
+                "ctp_status": ctp_status,
+                "timestamp": datetime.now().isoformat()
+            },
+            "timestamp": datetime.now().isoformat()
+        }
+
+    except Exception as e:
+        logger.error(f"获取交易状态失败: {e}")
+        return {
+            "success": False,
+            "message": f"获取交易状态失败: {str(e)}",
+            "timestamp": datetime.now().isoformat()
+        }
+
 
 @router.post("/test_connection")
 async def test_ctp_connection():

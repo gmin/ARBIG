@@ -1,0 +1,20 @@
+{
+  "name": "双均线策略",
+  "description": "经典的双移动平均线交叉策略",
+  "class_name": "DoubleMaStrategy",
+  "symbol": "au2510",
+  "enabled": false,
+  "params": {
+    "fast_period": 12,
+    "slow_period": 26,
+    "trade_volume": 1,
+    "max_position": 3,
+    "initial_capital": 100000
+  },
+  "risk_control": {
+    "max_daily_loss": 8000,
+    "max_drawdown": 0.12
+  },
+  "created_time": "2025-01-18T10:00:00",
+  "updated_time": "2025-01-18T10:00:00"
+}

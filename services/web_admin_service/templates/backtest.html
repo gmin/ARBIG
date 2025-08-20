@@ -655,6 +655,21 @@
             // 初始化加载
             checkServiceStatus();
             loadAvailableStrategies();
+
+            // 检查URL参数，如果有策略参数则预选
+            const urlParams = new URLSearchParams(window.location.search);
+            const preSelectedStrategy = urlParams.get('strategy');
+            if (preSelectedStrategy) {
+                console.log('🎯 预选策略:', preSelectedStrategy);
+                // 延迟设置，等待策略列表加载完成
+                setTimeout(() => {
+                    const strategySelect = document.getElementById('quick-strategy');
+                    if (strategySelect) {
+                        strategySelect.value = preSelectedStrategy;
+                        console.log('✅ 策略预选完成:', preSelectedStrategy);
+                    }
+                }, 1000);
+            }
         });
     </script>
 </body>

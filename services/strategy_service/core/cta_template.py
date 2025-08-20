@@ -287,8 +287,8 @@ class ARBIGCtaTemplate(ABC):
             volume=volume,
             price=price if price > 0 else None,  # 0价格表示市价单
             signal_type="TRADE",
-            stop_order=stop,
-            timestamp=datetime.now()
+            timestamp=datetime.now(),
+            metadata={"stop_order": stop}  # 将stop_order放入metadata中
         )
         
         # 通过信号发送器发送到交易服务

@@ -16,7 +16,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '../../..'))
 
 from core.types import TickData, BarData
 from services.strategy_service.core.cta_template import ARBIGCtaTemplate
-from vnpy.trader.utility import ArrayManager
+from services.strategy_service.core.data_tools import ArrayManager
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -42,9 +42,9 @@ class TestStrategy(ARBIGCtaTemplate):
     last_signal_time = 0
     signal_count = 0
     
-    def __init__(self, strategy_engine, strategy_name: str, symbol: str, setting: dict):
+    def __init__(self, strategy_name: str, symbol: str, setting: dict, signal_sender):
         """初始化策略"""
-        super().__init__(strategy_engine, strategy_name, symbol, setting)
+        super().__init__(strategy_name, symbol, setting, signal_sender)
         
         # 从设置中获取参数
         self.signal_interval = setting.get('signal_interval', self.signal_interval)
@@ -53,7 +53,11 @@ class TestStrategy(ARBIGCtaTemplate):
         
         # 初始化ArrayManager用于数据管理（虽然这个策略不需要复杂计算）
         self.am = ArrayManager()
-        
+
+        # 紧急风控：手动持仓跟踪
+        self.manual_position = 0  # 手动跟踪持仓
+        self.pending_orders = 0   # 待成交订单数量
+
         logger.info(f"✅ {self.strategy_name} 初始化完成")
         logger.info(f"   交易品种: {self.symbol}")
         logger.info(f"   信号间隔: {self.signal_interval}秒")
@@ -62,12 +66,22 @@ class TestStrategy(ARBIGCtaTemplate):
     
     def on_init(self):
         """策略初始化回调"""
-        self.write_log("测试策略初始化")
+        try:
+            self.write_log("测试策略初始化")
+            logger.info(f"✅ TestStrategy on_init 执行成功: {self.strategy_name}")
+        except Exception as e:
+            logger.error(f"❌ TestStrategy on_init 执行失败: {e}")
+            raise
         
     def on_start(self):
         """策略启动回调"""
-        self.last_signal_time = time.time()
-        self.write_log("🚀 测试策略已启动")
+        try:
+            self.last_signal_time = time.time()
+            self.write_log("🚀 测试策略已启动")
+            logger.info(f"✅ TestStrategy on_start 执行成功: {self.strategy_name}")
+        except Exception as e:
+            logger.error(f"❌ TestStrategy on_start 执行失败: {e}")
+            raise
         
     def on_stop(self):
         """策略停止回调"""
@@ -76,48 +90,66 @@ class TestStrategy(ARBIGCtaTemplate):
     def on_tick(self, tick: TickData):
         """处理tick数据"""
         if not self.trading:
+            self.write_log(f"策略未启动交易，忽略tick数据")
             return
-            
-        # 更新ArrayManager（虽然不使用，但保持vnpy风格）
+
+        # 添加调试日志
+        self.write_log(f"📈 收到tick数据: {tick.symbol} 价格={tick.last_price}")
+
+        # 更新ArrayManager
         self.am.update_tick(tick)
-        
+
         current_time = time.time()
-        
+
         # 检查是否到了生成信号的时间
         if current_time - self.last_signal_time < self.signal_interval:
+            remaining = self.signal_interval - (current_time - self.last_signal_time)
+            self.write_log(f"⏰ 距离下次信号还有 {remaining:.1f} 秒")
             return
-            
+
         # 生成随机信号
+        self.write_log(f"🎯 开始生成交易信号...")
         self._generate_test_signal(tick)
         self.last_signal_time = current_time
+
+    def on_tick_impl(self, tick: TickData):
+        """抽象方法实现 - tick数据处理"""
+        self.on_tick(tick)
         
     def on_bar(self, bar: BarData):
         """处理bar数据"""
         if not self.trading:
             return
-            
+
         # 更新ArrayManager
         self.am.update_bar(bar)
-        
+
         # 确保有足够的数据
         if not self.am.inited:
             return
-            
+
         # 这个测试策略主要基于tick，bar处理可以为空
         pass
+
+    def on_bar_impl(self, bar: BarData):
+        """抽象方法实现 - bar数据处理"""
+        self.on_bar(bar)
         
     def _generate_test_signal(self, tick: TickData):
         """生成测试信号"""
         current_price = tick.last_price
-        
-        # 30%概率不生成信号
-        if random.random() < 0.3:
-            return
+
+        # 100%概率生成信号（移除随机概率限制）
+        # if random.random() < 0.3:
+        #     return
             
         self.signal_count += 1
         
-        # 检查持仓限制
-        if abs(self.pos) >= self.max_position:
+        # 检查持仓限制（使用手动跟踪）
+        total_exposure = abs(self.manual_position) + self.pending_orders
+        self.write_log(f"🔍 风控检查: manual_pos={self.manual_position}, pending={self.pending_orders}, total_exposure={total_exposure}, max={self.max_position}")
+
+        if total_exposure >= self.max_position:
             # 如果已达最大持仓，只能平仓
             if self.pos > 0:
                 self.sell(current_price, self.trade_volume, stop=False)
@@ -147,9 +179,12 @@ class TestStrategy(ARBIGCtaTemplate):
         
     def on_trade(self, trade):
         """处理成交回调"""
+        # 🔧 关键修复：先调用父类方法更新持仓
+        super().on_trade(trade)
+
         self.write_log(f"✅ 成交: {trade.direction} {trade.volume}手 @ {trade.price:.2f}")
         self.write_log(f"   当前持仓: {self.pos}")
-        
+
         # 发送邮件通知（如果配置了）
         if abs(self.pos) >= self.max_position:
             self.send_email(f"测试策略达到最大持仓: {self.pos}")

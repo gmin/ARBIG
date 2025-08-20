@@ -1,0 +1,21 @@
+{
+  "name": "VWAP偏离回归策略",
+  "description": "基于成交量加权平均价格偏离的均值回归策略",
+  "class_name": "VWAPDeviationReversionStrategy",
+  "symbol": "au2510",
+  "enabled": false,
+  "params": {
+    "vwap_period": 20,
+    "deviation_threshold": 0.015,
+    "reversion_threshold": 0.005,
+    "trade_volume": 1,
+    "max_position": 4,
+    "initial_capital": 150000
+  },
+  "risk_control": {
+    "max_daily_loss": 10000,
+    "max_drawdown": 0.1
+  },
+  "created_time": "2025-01-18T10:00:00",
+  "updated_time": "2025-01-18T10:00:00"
+}
