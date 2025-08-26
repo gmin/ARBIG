@@ -132,12 +132,15 @@ app.add_middleware(
 try:
     from api.trading import router as trading_router
     from api.websocket import router as websocket_router
+    from api.statistics import router as statistics_router
 
     app.include_router(trading_router)
     app.include_router(websocket_router)
+    app.include_router(statistics_router)
     logger.info("✅ 交易API路由注册成功")
+    logger.info("✅ 统计API路由注册成功")
 except ImportError as e:
-    logger.warning(f"⚠️ 交易API路由导入失败: {e}")
+    logger.warning(f"⚠️ API路由导入失败: {e}")
 
 # 挂载静态文件（如果存在）
 static_dir = Path(__file__).parent / "static"
@@ -1354,6 +1357,45 @@ async def trading_logs_page(request: Request):
         </body>
         </html>
         """
+
+@app.get("/trading_statistics", response_class=HTMLResponse, summary="实盘交易统计页面")
+async def trading_statistics_page(request: Request):
+    """实盘交易统计页面"""
+    # 检查模板文件是否存在
+    template_file = templates_dir / "trading_statistics.html" if templates_dir.exists() else None
+    if templates and template_file and template_file.exists():
+        return templates.TemplateResponse("trading_statistics.html", {"request": request})
+    else:
+        logger.warning("trading_statistics.html模板文件不存在")
+        return HTMLResponse("""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>实盘交易统计</title>
+            <meta charset="utf-8">
+            <link rel="stylesheet" href="/static/css/dashboard.css">
+        </head>
+        <body>
+            <nav class="navbar">
+                <div class="navbar-content">
+                    <a href="/" class="navbar-brand">📊 ARBIG量化交易系统</a>
+                    <div class="navbar-center">
+                        <ul class="navbar-nav">
+                            <li><a href="/">控制台</a></li>
+                            <li><a href="/trading">交易管理</a></li>
+                            <li><a href="/strategy">策略管理</a></li>
+                            <li><a href="/trading_statistics" class="active">交易统计</a></li>
+                        </ul>
+                    </div>
+                </div>
+            </nav>
+            <div class="container">
+                <h2>实盘交易统计功能开发中...</h2>
+                <p>trading_statistics.html模板文件不存在。</p>
+            </div>
+        </body>
+        </html>
+        """)
 
 # API路由
 @app.get("/api/v1/trading/strategies/types", summary="获取策略类型列表")

@@ -3,7 +3,7 @@
 提供真实的CTP交易功能
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from typing import Dict, Any, Optional
 from datetime import datetime
 import uuid
@@ -164,6 +164,42 @@ async def get_real_tick(symbol: str):
     except Exception as e:
         logger.error(f"获取真实行情失败: {e}")
         raise HTTPException(status_code=500, detail=f"获取真实行情失败: {str(e)}")
+
+@router.get("/trades/{strategy_name}")
+async def get_strategy_trades(
+    strategy_name: str,
+    since: Optional[str] = Query(None, description="查询此时间之后的成交，格式：YYYY-MM-DD HH:MM:SS")
+):
+    """获取策略的成交数据（类似tick数据的轮询方式）"""
+    try:
+        ctp = get_ctp_integration()
+
+        # 解析since参数
+        since_time = None
+        if since:
+            try:
+                since_time = datetime.fromisoformat(since.replace('Z', '+00:00'))
+            except ValueError:
+                raise HTTPException(status_code=400, detail="时间格式错误，应为：YYYY-MM-DD HH:MM:SS")
+
+        # 从CTP集成中获取成交数据
+        trades = ctp.get_trades_by_strategy(strategy_name, since_time)
+
+        return {
+            "success": True,
+            "data": {
+                "strategy_name": strategy_name,
+                "trades": trades,
+                "count": len(trades)
+            },
+            "timestamp": datetime.now().isoformat()
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"获取策略成交数据失败: {e}")
+        raise HTTPException(status_code=500, detail=f"获取策略成交数据失败: {str(e)}")
 
 @router.get("/orders")
 async def get_orders():
@@ -410,6 +446,8 @@ async def handle_strategy_signal(request: Dict[str, Any]):
         price = float(request.get('price', 0))
         order_type = 'MARKET' if price == 0 else 'LIMIT'
         order_id = request.get('order_id', f"STRATEGY_{uuid.uuid4().hex[:8].upper()}")
+
+
 
         logger.info(f"📨 收到策略信号: {strategy_name} {action} {direction} {volume}@{price}")
 

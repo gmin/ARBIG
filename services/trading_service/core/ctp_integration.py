@@ -6,9 +6,9 @@ CTP网关集成模块
 import asyncio
 import time
 import json
-from typing import Dict, Any, Optional, Callable
+from typing import Dict, Any, Optional, Callable, List
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from vnpy.event import EventEngine
 from vnpy.trader.engine import MainEngine
@@ -52,6 +52,8 @@ class CtpIntegration:
         self.order_callbacks: list[Callable] = []
         self.trade_callbacks: list[Callable] = []
         self.account_callbacks: list[Callable] = []
+
+
         
         # 运行状态
         self.running = False
@@ -259,8 +261,23 @@ class CtpIntegration:
     def _on_tick(self, event):
         """处理行情数据"""
         tick = event.data
+
+        # 📈 关键调试：验证tick回调是否被触发（每10秒打印一次，避免日志过多）
+        current_time = time.time()
+        if not hasattr(self, '_last_tick_log_time'):
+            self._last_tick_log_time = 0
+
+        if current_time - self._last_tick_log_time > 10:  # 每10秒打印一次
+            logger.info(f"📈📈📈 [交易服务] CTP行情回调被触发！📈📈📈")
+            logger.info(f"📈 [交易服务] 合约: {tick.symbol}")
+            logger.info(f"📈 [交易服务] 最新价: {tick.last_price}")
+            logger.info(f"📈 [交易服务] 买一价: {tick.bid_price_1}")
+            logger.info(f"📈 [交易服务] 卖一价: {tick.ask_price_1}")
+            logger.info(f"📈 [交易服务] 成交量: {tick.volume}")
+            self._last_tick_log_time = current_time
+
         self.ticks[tick.symbol] = tick
-        
+
         # 转换为标准格式
         tick_data = {
             'symbol': tick.symbol,
@@ -275,7 +292,7 @@ class CtpIntegration:
             'low_price': tick.low_price,
             'open_price': tick.open_price
         }
-        
+
         # 调用回调函数
         for callback in self.tick_callbacks:
             try:
@@ -286,20 +303,43 @@ class CtpIntegration:
     def _on_order(self, event):
         """处理订单更新"""
         order = event.data
+
+        # 🔥 关键调试：验证订单回调是否被触发
+        logger.info(f"📋📋📋 [交易服务] CTP订单回调被触发！📋📋📋")
+        logger.info(f"📋 [交易服务] 订单ID: {order.orderid}")
+        logger.info(f"📋 [交易服务] 合约: {getattr(order, 'symbol', 'N/A')}")
+        logger.info(f"📋 [交易服务] 状态: {getattr(order, 'status', 'N/A')}")
+        logger.info(f"📋 [交易服务] 方向: {getattr(order, 'direction', 'N/A')}")
+        logger.info(f"📋 [交易服务] 数量: {getattr(order, 'volume', 'N/A')}")
+        logger.info(f"📋 [交易服务] 已成交: {getattr(order, 'traded', 'N/A')}")
+
         self.orders[order.orderid] = order
-        
+
         # 调用回调函数
         for callback in self.order_callbacks:
             try:
                 callback(order)
             except Exception as e:
                 logger.error(f"订单回调执行失败: {e}")
+
+        logger.info(f"📋📋📋 [交易服务] CTP订单回调处理完成！📋📋📋")
     
     def _on_trade(self, event):
         """处理成交回报"""
         trade = event.data
-        self.trades[trade.tradeid] = trade
 
+        # 🔥 关键调试：验证成交回调是否被触发
+        logger.info(f"🔥🔥🔥 [交易服务] CTP成交回调被触发！🔥🔥🔥")
+        logger.info(f"🔥 [交易服务] 成交ID: {trade.tradeid}")
+        logger.info(f"🔥 [交易服务] 订单ID: {getattr(trade, 'orderid', 'N/A')}")
+        logger.info(f"🔥 [交易服务] 合约: {getattr(trade, 'symbol', 'N/A')}")
+        logger.info(f"🔥 [交易服务] 方向: {getattr(trade, 'direction', 'N/A')}")
+        logger.info(f"🔥 [交易服务] 数量: {getattr(trade, 'volume', 'N/A')}")
+        logger.info(f"🔥 [交易服务] 价格: {getattr(trade, 'price', 'N/A')}")
+
+        # 存储成交数据
+        self.trades[trade.tradeid] = trade
+        logger.info(f"🔥 [交易服务] 成交数据已存储，当前总成交数: {len(self.trades)}")
 
         # 调用回调函数
         for callback in self.trade_callbacks:
@@ -307,6 +347,8 @@ class CtpIntegration:
                 callback(trade)
             except Exception as e:
                 logger.error(f"成交回调执行失败: {e}")
+
+        logger.info(f"🔥🔥🔥 [交易服务] CTP成交回调处理完成！🔥🔥🔥")
     
     def _on_account(self, event):
         """处理账户更新"""
@@ -700,7 +742,40 @@ class CtpIntegration:
             'low_price': tick.low_price,
             'open_price': tick.open_price
         }
-    
+
+    def get_trades_by_strategy(self, strategy_name: str, since_time: Optional[datetime] = None) -> List[Dict[str, Any]]:
+        """获取成交数据（交易服务不做任何过滤，返回所有原始数据）"""
+        trades = []
+
+        logger.info(f"🔍 [交易服务] 查询成交数据，CTP总成交数: {len(self.trades)}")
+
+        for trade_id, trade in self.trades.items():
+            try:
+                # 🔧 交易服务只负责数据转换，不做任何业务逻辑过滤
+                order_id = getattr(trade, 'orderid', '') or getattr(trade, 'orderref', '')
+
+                # 构造标准格式的成交数据
+                trade_data = {
+                    'trade_id': trade_id,
+                    'order_id': order_id,
+                    'symbol': getattr(trade, 'symbol', ''),
+                    'direction': str(getattr(trade, 'direction', '')).upper(),
+                    'offset': str(getattr(trade, 'offset', 'OPEN')).upper(),
+                    'price': float(getattr(trade, 'price', 0.0)),
+                    'volume': int(getattr(trade, 'volume', 0)),
+                    'datetime': datetime.now().isoformat(),  # 简化时间处理
+                }
+
+                trades.append(trade_data)
+                logger.debug(f"🔍 [交易服务] 成交数据: {trade_id} -> 订单ID: {order_id}")
+
+            except Exception as e:
+                logger.warning(f"[交易服务] 处理成交数据失败: {e}")
+                continue
+
+        logger.info(f"🔍 [交易服务] 返回 {len(trades)} 笔成交数据")
+        return trades
+
     def get_account_info(self) -> Optional[Dict[str, Any]]:
         """获取账户信息"""
         if not self.account:
@@ -1167,7 +1242,8 @@ class CtpIntegration:
     def add_trade_callback(self, callback: Callable):
         """添加成交回调"""
         self.trade_callbacks.append(callback)
-    
+
+
     def add_account_callback(self, callback: Callable):
         """添加账户回调"""
         self.account_callbacks.append(callback)

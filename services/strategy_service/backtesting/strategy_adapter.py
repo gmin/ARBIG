@@ -5,7 +5,7 @@
 
 import sys
 import os
-from typing import Dict, Any, Type
+from typing import Dict, Any, Type, Optional
 
 # 添加项目根目录到路径
 sys.path.append(os.path.join(os.path.dirname(__file__), '../../..'))

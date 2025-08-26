@@ -443,6 +443,7 @@
                 <div class="stat-value">
                     <button id="refresh-btn" class="btn btn-primary btn-sm">🔄 刷新</button>
                     <button id="add-strategy-btn" class="btn btn-success btn-sm" style="margin-left: 8px;">➕ 添加策略</button>
+                    <button id="trading-stats-btn" class="btn btn-info btn-sm" style="margin-left: 8px;">📊 实盘交易统计</button>
                 </div>
                 <div class="stat-label">操作</div>
             </div>
@@ -501,6 +502,257 @@
             if (confirm('确定要退出吗？')) {
                 window.location.href = '/';
             }
+        }
+
+        function openTradingStatistics() {
+            // 直接在当前窗口打开交易统计页面
+            // 使用内嵌的方式显示统计数据
+            showTradingStatisticsModal();
+        }
+
+        function showTradingStatisticsModal() {
+            // 创建模态框显示交易统计
+            const modal = document.createElement('div');
+            modal.style.cssText =
+                'position: fixed;' +
+                'top: 0;' +
+                'left: 0;' +
+                'width: 100%;' +
+                'height: 100%;' +
+                'background: rgba(0,0,0,0.8);' +
+                'z-index: 10000;' +
+                'display: flex;' +
+                'justify-content: center;' +
+                'align-items: center;';
+
+            modal.innerHTML =
+                '<div style="' +
+                    'background: white;' +
+                    'width: 90%;' +
+                    'height: 90%;' +
+                    'border-radius: 10px;' +
+                    'padding: 20px;' +
+                    'overflow-y: auto;' +
+                    'position: relative;' +
+                '">' +
+                    '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">' +
+                        '<h2>📊 实盘交易统计</h2>' +
+                        '<button onclick="this.closest(\'.modal\').remove()" style="' +
+                            'background: #f44336;' +
+                            'color: white;' +
+                            'border: none;' +
+                            'padding: 8px 16px;' +
+                            'border-radius: 5px;' +
+                            'cursor: pointer;' +
+                        '">✕ 关闭</button>' +
+                    '</div>' +
+                    '<div id="statistics-content">' +
+                        '<div style="text-align: center; padding: 40px;">' +
+                            '<div style="font-size: 48px; margin-bottom: 20px;">📊</div>' +
+                            '<h3>正在加载交易统计数据...</h3>' +
+                            '<p>请稍候，正在从策略服务获取数据</p>' +
+                        '</div>' +
+                    '</div>' +
+                '</div>';
+
+            modal.className = 'modal';
+            document.body.appendChild(modal);
+
+            // 加载统计数据
+            loadTradingStatisticsData();
+        }
+
+        async function loadTradingStatisticsData() {
+            try {
+                // 使用现有的API获取数据
+                const statusResponse = await fetch('http://localhost:8002/');
+                const statusData = await statusResponse.json();
+
+                const strategiesResponse = await fetch('http://localhost:8002/strategies');
+                const strategiesData = await strategiesResponse.json();
+
+                // 构造统计数据格式
+                const overviewData = {
+                    success: true,
+                    data: {
+                        summary: {
+                            total_strategies: statusData.engine_status.total_strategies,
+                            active_strategies: statusData.engine_status.active_strategies,
+                            total_trades: statusData.engine_status.total_signals,
+                            total_pnl: 0, // 暂时没有盈亏数据
+                            net_pnl: 0,
+                            overall_win_rate: statusData.engine_status.success_rate,
+                            winning_strategies: 0
+                        }
+                    }
+                };
+
+                const rankingData = {
+                    success: true,
+                    data: {
+                        rankings: Object.entries(strategiesData.data || {}).map(([name, strategy], index) => ({
+                            strategy_name: name,
+                            net_pnl: strategy.total_pnl || 0,
+                            win_rate: 0, // 暂时没有胜率数据
+                            total_trades: strategy.total_trades || 0,
+                            max_drawdown: 0 // 暂时没有回撤数据
+                        }))
+                    }
+                };
+
+                const realtimeData = {
+                    success: true,
+                    data: {
+                        engine_status: {
+                            running: statusData.engine_status.running,
+                            data_processing: statusData.engine_status.running
+                        },
+                        market_status: statusData.engine_status.running ? 'trading' : 'closed',
+                        current_positions: Object.entries(strategiesData.data || {}).reduce((acc, [name, strategy]) => {
+                            if (strategy.pos && strategy.pos !== 0) {
+                                acc[name] = {
+                                    position: strategy.pos,
+                                    symbol: strategy.symbol || 'unknown'
+                                };
+                            }
+                            return acc;
+                        }, {})
+                    }
+                };
+
+                // 渲染统计数据
+                renderTradingStatistics(overviewData, rankingData, realtimeData);
+
+            } catch (error) {
+                console.error('加载统计数据失败:', error);
+                document.getElementById('statistics-content').innerHTML =
+                    '<div style="text-align: center; padding: 40px; color: #f44336;">' +
+                        '<div style="font-size: 48px; margin-bottom: 20px;">❌</div>' +
+                        '<h3>加载统计数据失败</h3>' +
+                        '<p>错误信息: ' + error.message + '</p>' +
+                        '<button onclick="loadTradingStatisticsData()" style="' +
+                            'background: #2196F3;' +
+                            'color: white;' +
+                            'border: none;' +
+                            'padding: 10px 20px;' +
+                            'border-radius: 5px;' +
+                            'cursor: pointer;' +
+                            'margin-top: 10px;' +
+                        '">🔄 重试</button>' +
+                    '</div>';
+            }
+        }
+
+        function renderTradingStatistics(overview, ranking, realtime) {
+            const content = document.getElementById('statistics-content');
+
+            // 简化版本，只显示基本统计信息
+            let html = '<div style="padding: 20px;">';
+
+            // 总览统计
+            html += '<h3>📊 交易总览</h3>';
+            html += '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 30px;">';
+
+            if (overview.success) {
+                const summary = overview.data.summary;
+                html += '<div style="background: #667eea; color: white; padding: 15px; border-radius: 8px;">';
+                html += '<h4>总策略数</h4>';
+                html += '<div style="font-size: 20px; font-weight: bold;">' + summary.total_strategies + '</div>';
+                html += '<small>活跃: ' + summary.active_strategies + '</small>';
+                html += '</div>';
+
+                html += '<div style="background: #4CAF50; color: white; padding: 15px; border-radius: 8px;">';
+                html += '<h4>总盈亏</h4>';
+                html += '<div style="font-size: 20px; font-weight: bold;">' + formatCurrency(summary.total_pnl) + '</div>';
+                html += '<small>净盈亏: ' + formatCurrency(summary.net_pnl) + '</small>';
+                html += '</div>';
+
+                html += '<div style="background: #FF9800; color: white; padding: 15px; border-radius: 8px;">';
+                html += '<h4>总交易数</h4>';
+                html += '<div style="font-size: 20px; font-weight: bold;">' + summary.total_trades + '</div>';
+                html += '<small>胜率: ' + (summary.overall_win_rate * 100).toFixed(1) + '%</small>';
+                html += '</div>';
+            } else {
+                html += '<div style="background: #666; color: white; padding: 15px; border-radius: 8px; text-align: center;">';
+                html += '<h4>数据加载失败</h4>';
+                html += '</div>';
+            }
+
+            html += '</div>';
+
+            // 策略排名
+            html += '<h3>🏆 策略性能排名</h3>';
+            html += '<div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px;">';
+
+            if (ranking.success && ranking.data.rankings.length > 0) {
+                html += '<table style="width: 100%; border-collapse: collapse;">';
+                html += '<thead><tr style="background: #e9ecef;">';
+                html += '<th style="padding: 8px; text-align: left;">排名</th>';
+                html += '<th style="padding: 8px; text-align: left;">策略名称</th>';
+                html += '<th style="padding: 8px; text-align: right;">净盈亏</th>';
+                html += '<th style="padding: 8px; text-align: right;">胜率</th>';
+                html += '<th style="padding: 8px; text-align: right;">交易数</th>';
+                html += '</tr></thead><tbody>';
+
+                ranking.data.rankings.forEach(function(strategy, index) {
+                    html += '<tr style="border-bottom: 1px solid #dee2e6;">';
+                    html += '<td style="padding: 8px;">' + (index + 1) + '</td>';
+                    html += '<td style="padding: 8px;"><strong>' + strategy.strategy_name + '</strong></td>';
+                    html += '<td style="padding: 8px; text-align: right; color: ' + (strategy.net_pnl >= 0 ? '#4CAF50' : '#f44336') + ';">';
+                    html += formatCurrency(strategy.net_pnl) + '</td>';
+                    html += '<td style="padding: 8px; text-align: right;">' + (strategy.win_rate * 100).toFixed(1) + '%</td>';
+                    html += '<td style="padding: 8px; text-align: right;">' + strategy.total_trades + '</td>';
+                    html += '</tr>';
+                });
+                html += '</tbody></table>';
+            } else {
+                html += '<p style="text-align: center; color: #666;">暂无策略数据</p>';
+            }
+            html += '</div>';
+
+            // 实时状态
+            html += '<h3>📡 实时状态</h3>';
+            html += '<div style="background: #f8f9fa; padding: 15px; border-radius: 8px;">';
+
+            if (realtime.success) {
+                html += '<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">';
+                html += '<div>';
+                html += '<h4>引擎状态</h4>';
+                html += '<p>运行状态: <span style="color: ' + (realtime.data.engine_status.running ? '#4CAF50' : '#f44336') + ';">';
+                html += (realtime.data.engine_status.running ? '运行中' : '已停止') + '</span></p>';
+                html += '<p>数据处理: <span style="color: ' + (realtime.data.engine_status.data_processing ? '#4CAF50' : '#FF9800') + ';">';
+                html += (realtime.data.engine_status.data_processing ? '正常' : '停止') + '</span></p>';
+                html += '</div>';
+
+                html += '<div>';
+                html += '<h4>当前持仓</h4>';
+                if (realtime.data.current_positions && Object.keys(realtime.data.current_positions).length > 0) {
+                    Object.entries(realtime.data.current_positions).forEach(function([strategy, pos]) {
+                        html += '<p><strong>' + strategy + '</strong>: ';
+                        html += '<span style="color: ' + (pos.position > 0 ? '#4CAF50' : pos.position < 0 ? '#f44336' : '#666') + ';">';
+                        html += pos.position + ' 手 (' + pos.symbol + ')</span></p>';
+                    });
+                } else {
+                    html += '<p style="color: #666;">暂无持仓</p>';
+                }
+                html += '</div>';
+                html += '</div>';
+            } else {
+                html += '<p style="color: #f44336;">实时数据获取失败</p>';
+            }
+
+            html += '</div>';
+            html += '</div>';
+
+            content.innerHTML = html;
+        }
+
+        function formatCurrency(value) {
+            return new Intl.NumberFormat('zh-CN', {
+                style: 'currency',
+                currency: 'CNY',
+                minimumFractionDigits: 2
+            }).format(value);
         }
 
         // 实盘统计功能
@@ -1534,6 +1786,15 @@
             if (addBtn) {
                 addBtn.addEventListener('click', function() {
                     alert('添加策略功能开发中...');
+                });
+            }
+
+            // 绑定实盘交易统计按钮
+            const tradingStatsBtn = document.getElementById('trading-stats-btn');
+            if (tradingStatsBtn) {
+                tradingStatsBtn.addEventListener('click', function() {
+                    console.log('🔄 打开实盘交易统计页面');
+                    openTradingStatistics();
                 });
             }
 

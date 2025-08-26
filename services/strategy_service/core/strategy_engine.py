@@ -18,7 +18,7 @@ import requests
 # 添加项目根目录到路径
 sys.path.append(os.path.join(os.path.dirname(__file__), '../../..'))
 
-from core.types import TickData, BarData, OrderData, TradeData, Exchange
+from core.types import TickData, BarData, OrderData, TradeData, Exchange, Direction
 from utils.logger import get_logger
 from .cta_template import ARBIGCtaTemplate, StrategyStatus
 from .signal_sender import SignalSender
@@ -52,6 +52,8 @@ class StrategyEngine:
         self.strategies: Dict[str, ARBIGCtaTemplate] = {}
         self.strategy_configs: Dict[str, Dict[str, Any]] = {}
         self.active_strategies: List[str] = []
+
+        # 🔧 已删除：processed_trade_ids - 不再需要成交去重
         
         # 性能统计
         self.performance_stats: Dict[str, StrategyPerformance] = {}
@@ -76,7 +78,9 @@ class StrategyEngine:
         self.total_signals = 0
         self.successful_signals = 0
         self.failed_signals = 0
-        
+
+        # 🔧 简化：不需要复杂的跟踪机制
+
         logger.info("策略执行引擎初始化完成")
     
     def _load_available_strategies(self):
@@ -448,14 +452,14 @@ class StrategyEngine:
             self.data_thread = threading.Thread(target=self._data_processing_loop)
             self.data_thread.daemon = True
             self.data_thread.start()
-            
+
             logger.info("策略执行引擎启动成功")
             return True
             
         except Exception as e:
             logger.error(f"策略引擎启动异常: {e}")
             return False
-    
+
     def stop_engine(self) -> None:
         """停止策略引擎"""
         try:
@@ -480,10 +484,12 @@ class StrategyEngine:
         
         while self.running:
             try:
-                # 模拟获取市场数据
-                # 在实际实现中，这里应该从交易服务获取实时数据
+                # 获取实时行情数据
                 self._fetch_market_data()
-                
+
+                # 🔧 移除成交数据轮询：现在使用实时持仓查询机制
+                # 不再需要持续轮询成交数据来维护持仓
+
                 # 休眠1秒
                 threading.Event().wait(1.0)
                 
@@ -574,7 +580,31 @@ class StrategyEngine:
 
         except Exception as e:
             logger.error(f"市场数据获取异常: {e}")
-    
+
+    def _fetch_trade_data(self) -> None:
+        """🔧 已废弃：成交数据轮询功能
+
+        原因：现在使用实时持仓查询机制，不再需要通过成交数据维护持仓
+        - 行情回调专注信号生成
+        - 信号处理时主动查询持仓
+        - 成交回调用于异步更新缓存（如果需要的话）
+        """
+        # 🔧 功能已移除：不再轮询成交数据
+        logger.debug(f"� [策略服务] 成交数据轮询已禁用，使用实时持仓查询机制")
+        pass
+
+    # 🔧 已删除：_process_trade_data 方法
+    # 原因：不再轮询成交数据，使用实时持仓查询机制
+
+    # 🔧 已删除：_match_order_to_strategy 方法
+    # 原因：不再需要成交数据匹配，使用实时持仓查询机制
+
+    # 🔧 已删除：_create_trade_data 和 _dispatch_trade_to_strategy 方法
+    # 原因：不再轮询和处理成交数据，使用实时持仓查询机制
+
+    # 🔧 已删除：_update_strategy_position 方法
+    # 原因：不再通过成交回调更新持仓，策略自己在交易前查询持仓
+
     def _on_tick(self, tick: TickData) -> None:
         """处理Tick数据"""
         try:
@@ -618,31 +648,46 @@ class StrategyEngine:
     def _on_trade(self, trade: TradeData) -> None:
         """处理成交数据"""
         try:
+            # 🔥 关键调试：验证策略引擎的成交回调是否被触发
+            logger.info(f"🔥🔥🔥 [策略服务] 策略引擎._on_trade 被调用！🔥🔥🔥")
+            logger.info(f"� 成交详情: {trade.symbol} {trade.direction.value} {trade.volume}手 @ {trade.price}")
+            logger.info(f"🔥 成交ID: {trade.tradeid}")
+            logger.info(f"🔥 当前活跃策略: {self.active_strategies}")
+
             symbol = trade.symbol
-            logger.info(f"💰 收到成交数据: {symbol} {trade.direction.value} {trade.volume}@{trade.price}")
 
             # 分发给相关策略
             for strategy_name in self.active_strategies:
                 strategy = self.strategies[strategy_name]
                 if strategy.symbol == symbol:
-                    logger.info(f"🎯 分发成交给策略: {strategy_name}")
+                    logger.info(f"🎯🎯🎯 [策略服务] 分发成交给策略: {strategy_name} 🎯🎯🎯")
                     strategy.on_trade(trade)
+                    logger.info(f"🎯 [策略服务] 策略 {strategy_name} 成交处理完成")
+                else:
+                    logger.debug(f"[策略服务] 策略 {strategy_name} 合约不匹配: {strategy.symbol} != {symbol}")
+
+            logger.info(f"🔥🔥🔥 [策略服务] 策略引擎._on_trade 处理完成！🔥🔥🔥")
 
         except Exception as e:
             logger.error(f"成交数据处理异常: {e}")
 
     def _on_order(self, order: OrderData) -> None:
-        """处理订单数据"""
+        """简化的订单数据处理 - 只处理关键状态"""
         try:
-            symbol = order.symbol
-            logger.info(f"📋 收到订单数据: {symbol} {order.order_id} {order.status.value}")
+            # 只处理关键的订单状态
+            if hasattr(order, 'status'):
+                status = order.status.value
+                if status in ["ALLTRADED", "REJECTED", "CANCELLED"]:
+                    symbol = order.symbol
+                    logger.info(f"📋 关键订单状态: {symbol} {order.order_id} - {status}")
 
-            # 分发给相关策略
-            for strategy_name in self.active_strategies:
-                strategy = self.strategies[strategy_name]
-                if strategy.symbol == symbol:
-                    logger.info(f"🎯 分发订单给策略: {strategy_name}")
-                    strategy.on_order(order)
+                    # 分发给相关策略
+                    for strategy_name in self.active_strategies:
+                        strategy = self.strategies[strategy_name]
+                        if strategy.symbol == symbol:
+                            logger.info(f"🎯 分发关键订单状态给策略: {strategy_name}")
+                            strategy.on_order(order)
+                # 其他状态（如SUBMITTING, PARTTRADED等）被忽略
 
         except Exception as e:
             logger.error(f"订单数据处理异常: {e}")
@@ -716,8 +761,8 @@ class StrategyEngine:
             trade = TradeData(
                 symbol=trade_data.get("symbol", ""),
                 exchange=Exchange.SHFE,  # 默认上期所
-                order_id=trade_data.get("order_id", ""),
-                trade_id=trade_data.get("trade_id", ""),
+                orderid=trade_data.get("order_id", ""),  # vnpy使用orderid
+                tradeid=trade_data.get("trade_id", ""),  # vnpy使用tradeid
                 direction=Direction.LONG if trade_data.get("direction", "").upper() == "LONG" else Direction.SHORT,
                 offset=trade_data.get("offset", "OPEN"),
                 price=float(trade_data.get("price", 0.0)),
@@ -735,10 +780,20 @@ class StrategyEngine:
             logger.error(f"处理成交回调失败: {e}")
 
     def handle_order_callback(self, order_data: Dict[str, Any]):
-        """处理来自交易服务的订单回调"""
+        """简化的订单回调处理 - 只处理关键状态"""
         try:
-            # 创建OrderData对象
+            # 预先检查是否为关键状态
+            status_str = order_data.get("status", "SUBMITTING")
+            if status_str not in ["ALLTRADED", "REJECTED", "CANCELLED"]:
+                # 忽略非关键状态，减少处理开销
+                logger.debug(f"🔧 忽略非关键订单状态: {status_str}")
+                return
+
+            # 创建OrderData对象（只为关键状态）
             from core.types import Direction, Status
+
+            # 解析状态
+            status = getattr(Status, status_str, Status.SUBMITTING)
 
             order = OrderData(
                 symbol=order_data.get("symbol", ""),
@@ -750,12 +805,12 @@ class StrategyEngine:
                 price=float(order_data.get("price", 0.0)),
                 volume=int(order_data.get("volume", 0)),
                 traded=int(order_data.get("traded", 0)),
-                status=Status.SUBMITTING,  # 默认状态
+                status=status,  # 使用实际状态
                 datetime=datetime.now(),
                 gateway_name="CTP"
             )
 
-            logger.info(f"🔄 处理交易服务订单回调: {order.symbol} {order.order_id} {order.status.value}")
+            logger.info(f"🔄 处理关键订单状态: {order.symbol} {order.order_id} - {status_str}")
 
             # 调用内部订单处理
             self._on_order(order)

@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>实盘交易统计 - ARBIG量化交易系统</title>
+    <link rel="stylesheet" href="/static/css/dashboard.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>">
+    <style>
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .stat-card.positive {
+            background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+        }
+        .stat-card.negative {
+            background: linear-gradient(135deg, #f44336 0%, #da190b 100%);
+        }
+        .chart-container {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .strategy-row {
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        .strategy-row:hover {
+            background-color: #f8f9fa;
+        }
+        .status-badge {
+            font-size: 0.8em;
+        }
+        .refresh-btn {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 1000;
+        }
+
+        /* 页面内导航样式 */
+        .page-nav {
+            background: white;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .nav-buttons .btn {
+            margin-right: 10px;
+            margin-bottom: 5px;
+        }
+
+        .nav-buttons .btn.active {
+            background-color: var(--primary-color);
+            color: white;
+        }
+
+        /* 表格样式调整 */
+        .table {
+            background: white;
+        }
+
+        .table th {
+            background-color: #f8f9fa;
+            border-top: none;
+        }
+    </style>
+</head>
+<body>
+    <!-- 导航栏 -->
+    <nav class="navbar">
+        <div class="navbar-content">
+            <a href="/" class="navbar-brand">📊 ARBIG量化交易系统</a>
+            <div class="navbar-center">
+                <ul class="navbar-nav">
+                    <li><a href="/">控制台</a></li>
+                    <li><a href="/trading">交易管理</a></li>
+                    <li><a href="/strategy">策略管理</a></li>
+                    <li><a href="/trading_statistics" class="active">交易统计</a></li>
+                    <li><a href="/api/docs" target="_blank">API文档</a></li>
+                </ul>
+            </div>
+            <div class="navbar-user">
+                <div class="user-info">
+                    <div class="user-avatar">👤</div>
+                    <div class="user-details">
+                        <div class="user-name">交易员</div>
+                        <div class="user-status">在线</div>
+                    </div>
+                </div>
+                <div class="user-menu">
+                    <button class="btn btn-outline" onclick="logout()">退出</button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- 主容器 -->
+    <div class="container">
+        <!-- 页面标题 -->
+        <div class="page-header">
+            <h1 class="page-title">实盘交易统计</h1>
+            <p class="page-subtitle">实时监控策略交易表现和信号分析</p>
+        </div>
+
+        <!-- 页面内导航 -->
+        <div class="page-nav">
+            <div class="nav-buttons">
+                <button type="button" class="btn btn-outline" onclick="scrollToSection('overview')">
+                    📊 总览
+                </button>
+                <button type="button" class="btn btn-outline" onclick="scrollToSection('charts')">
+                    📈 图表
+                </button>
+                <button type="button" class="btn btn-outline" onclick="scrollToSection('signals')">
+                    🎯 信号分析
+                </button>
+                <button type="button" class="btn btn-outline" onclick="scrollToSection('ranking')">
+                    🏆 策略排名
+                </button>
+                <button type="button" class="btn btn-outline" onclick="scrollToSection('realtime')">
+                    📡 实时状态
+                </button>
+                <div style="float: right;">
+                    <button class="btn btn-primary" onclick="refreshData()">
+                        🔄 刷新数据
+                    </button>
+                    <button class="btn btn-outline" onclick="exportData()">
+                        📥 导出数据
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 总览统计卡片 -->
+        <div class="grid grid-4" id="overview-cards" data-section="overview">
+            <div class="card stat-card">
+                <div class="stat-value" id="total-strategies">
+                    <span class="stat-number">-</span>
+                    <span class="stat-label">总策略数</span>
+                </div>
+                <div class="stat-info">
+                    <span class="stat-change">活跃: <span id="active-strategies">-</span></span>
+                </div>
+            </div>
+            <div class="card stat-card" id="pnl-card">
+                <div class="stat-value" id="total-pnl-display">
+                    <span class="stat-number" id="total-pnl">-</span>
+                    <span class="stat-label">总盈亏</span>
+                </div>
+                <div class="stat-info">
+                    <span class="stat-change">净盈亏: <span id="net-pnl">-</span></span>
+                </div>
+            </div>
+            <div class="card stat-card">
+                <div class="stat-value" id="total-trades-display">
+                    <span class="stat-number" id="total-trades">-</span>
+                    <span class="stat-label">总交易数</span>
+                </div>
+                <div class="stat-info">
+                    <span class="stat-change">胜率: <span id="win-rate">-</span>%</span>
+                </div>
+            </div>
+            <div class="card stat-card">
+                <div class="stat-value" id="winning-strategies-display">
+                    <span class="stat-number" id="winning-strategies">-</span>
+                    <span class="stat-label">盈利策略</span>
+                </div>
+                <div class="stat-info">
+                    <span class="stat-change">占比: <span id="winning-ratio">-</span>%</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 图表区域 -->
+        <div class="grid grid-2" id="charts" data-section="charts">
+            <div class="card">
+                <div class="card-header">
+                    <h3>📈 净值曲线</h3>
+                </div>
+                <div class="card-content">
+                    <canvas id="equityChart" height="300"></canvas>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-header">
+                    <h3>🥧 策略盈亏分布</h3>
+                </div>
+                <div class="card-content">
+                    <canvas id="pnlChart" height="300"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- 信号分析区域 -->
+        <div class="grid grid-2" id="signals" data-section="signals">
+            <div class="card">
+                <div class="card-header">
+                    <h3>🎯 信号触发分析</h3>
+                </div>
+                <div class="card-content">
+                    <canvas id="signalChart" height="200"></canvas>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-header">
+                    <h3>⏰ 信号频率分布</h3>
+                </div>
+                <div class="card-content">
+                    <canvas id="frequencyChart" height="200"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- 策略排名表格 -->
+        <div class="card" id="ranking" data-section="ranking">
+            <div class="card-header">
+                <h3>🏆 策略性能排名</h3>
+            </div>
+            <div class="card-content">
+                <div class="table-responsive">
+                    <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>排名</th>
+                                    <th>策略名称</th>
+                                    <th>净盈亏</th>
+                                    <th>胜率</th>
+                                    <th>交易数</th>
+                                    <th>信号数</th>
+                                    <th>最大回撤</th>
+                                    <th>夏普比率</th>
+                                    <th>状态</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="strategy-ranking">
+                                <tr>
+                                    <td colspan="9" class="text-center">
+                                        <i class="fas fa-spinner fa-spin"></i> 加载中...
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+        <!-- 实时数据 -->
+        <div class="card" id="realtime" data-section="realtime">
+            <div class="card-header">
+                <h3>📡 实时状态</h3>
+            </div>
+            <div class="card-content">
+                <div class="grid grid-2">
+                    <div>
+                        <h4>引擎状态</h4>
+                        <p>运行状态: <span id="engine-running" class="status-indicator">-</span></p>
+                        <p>数据处理: <span id="data-processing" class="status-indicator">-</span></p>
+                        <p>市场状态: <span id="market-status" class="status-indicator">-</span></p>
+                    </div>
+                    <div>
+                        <h4>当前持仓</h4>
+                        <div id="current-positions">
+                            <p>加载中...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    </div>
+
+    <!-- 刷新按钮 -->
+    <button class="btn btn-primary btn-lg refresh-btn" onclick="refreshData()">
+        <i class="fas fa-sync-alt"></i>
+    </button>
+
+    <script src="/static/js/dashboard.js"></script>
+    <script>
+        let equityChart = null;
+        let pnlChart = null;
+        let signalChart = null;
+        let frequencyChart = null;
+
+        // 页面加载时初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            refreshData();
+            // 每30秒自动刷新
+            setInterval(refreshData, 30000);
+        });
+
+        async function refreshData() {
+            try {
+                await Promise.all([
+                    loadOverview(),
+                    loadRanking(),
+                    loadRealtime(),
+                    loadSignalAnalysis()
+                ]);
+            } catch (error) {
+                console.error('刷新数据失败:', error);
+                showAlert('数据刷新失败: ' + error.message, 'danger');
+            }
+        }
+
+        async function loadOverview() {
+            const response = await fetch('/api/statistics/overview');
+            const data = await response.json();
+            
+            if (data.success) {
+                const summary = data.data.summary;
+                
+                document.querySelector('#total-strategies .stat-number').textContent = summary.total_strategies;
+                document.getElementById('active-strategies').textContent = summary.active_strategies;
+                document.querySelector('#total-pnl').textContent = formatCurrency(summary.total_pnl);
+                document.getElementById('net-pnl').textContent = formatCurrency(summary.net_pnl);
+                document.querySelector('#total-trades').textContent = summary.total_trades;
+                document.getElementById('win-rate').textContent = (summary.overall_win_rate * 100).toFixed(1);
+                document.querySelector('#winning-strategies').textContent = summary.winning_strategies;
+                document.getElementById('winning-ratio').textContent =
+                    summary.total_strategies > 0 ?
+                    ((summary.winning_strategies / summary.total_strategies) * 100).toFixed(1) : '0';
+
+                // 设置盈亏卡片状态
+                const pnlCard = document.getElementById('pnl-card');
+                if (summary.net_pnl > 0) {
+                    pnlCard.classList.add('positive');
+                } else if (summary.net_pnl < 0) {
+                    pnlCard.classList.add('negative');
+                }
+            }
+        }
+
+        async function loadRanking() {
+            const response = await fetch('/api/statistics/performance/ranking');
+            const data = await response.json();
+
+            if (data.success) {
+                const tbody = document.getElementById('strategy-ranking');
+                tbody.innerHTML = '';
+
+                // 为每个策略获取信号数据
+                for (let index = 0; index < data.data.rankings.length; index++) {
+                    const strategy = data.data.rankings[index];
+
+                    // 获取信号数据
+                    let signalCount = '-';
+                    try {
+                        const signalResponse = await fetch(`/api/statistics/signals/${strategy.strategy_name}`);
+                        const signalData = await signalResponse.json();
+                        if (signalData.success) {
+                            signalCount = signalData.data.total_signals || 0;
+                        }
+                    } catch (e) {
+                        console.warn(`获取策略 ${strategy.strategy_name} 信号数据失败:`, e);
+                    }
+
+                    const row = document.createElement('tr');
+                    row.className = 'strategy-row';
+                    row.onclick = () => viewStrategyDetail(strategy.strategy_name);
+
+                    row.innerHTML = `
+                        <td>${index + 1}</td>
+                        <td><strong>${strategy.strategy_name}</strong></td>
+                        <td class="${strategy.net_pnl >= 0 ? 'text-success' : 'text-danger'}">
+                            ${formatCurrency(strategy.net_pnl)}
+                        </td>
+                        <td>${(strategy.win_rate * 100).toFixed(1)}%</td>
+                        <td>${strategy.total_trades}</td>
+                        <td><span class="badge bg-info">${signalCount}</span></td>
+                        <td class="text-danger">${(strategy.max_drawdown * 100).toFixed(2)}%</td>
+                        <td>${strategy.sharpe_ratio.toFixed(2)}</td>
+                        <td><span class="badge bg-success">运行中</span></td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-primary" onclick="event.stopPropagation(); viewStrategyDetail('${strategy.strategy_name}')">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-info" onclick="event.stopPropagation(); viewSignalAnalysis('${strategy.strategy_name}')">
+                                <i class="fas fa-bullseye"></i>
+                            </button>
+                        </td>
+                    `;
+                    tbody.appendChild(row);
+                }
+            }
+        }
+
+        async function loadRealtime() {
+            const response = await fetch('/api/statistics/realtime');
+            const data = await response.json();
+            
+            if (data.success) {
+                const realtime = data.data;
+                
+                // 引擎状态
+                document.getElementById('engine-running').textContent = realtime.engine_status.running ? '运行中' : '已停止';
+                document.getElementById('engine-running').className = 
+                    `badge ${realtime.engine_status.running ? 'bg-success' : 'bg-danger'}`;
+                
+                document.getElementById('data-processing').textContent = realtime.engine_status.data_processing ? '正常' : '停止';
+                document.getElementById('data-processing').className = 
+                    `badge ${realtime.engine_status.data_processing ? 'bg-success' : 'bg-warning'}`;
+                
+                document.getElementById('market-status').textContent = realtime.market_status;
+                document.getElementById('market-status').className = 
+                    `badge ${realtime.market_status === 'trading' ? 'bg-success' : 'bg-secondary'}`;
+                
+                // 当前持仓
+                const positionsDiv = document.getElementById('current-positions');
+                positionsDiv.innerHTML = '';
+                
+                if (Object.keys(realtime.current_positions).length === 0) {
+                    positionsDiv.innerHTML = '<p class="text-muted">暂无持仓</p>';
+                } else {
+                    Object.entries(realtime.current_positions).forEach(([strategy, pos]) => {
+                        const posDiv = document.createElement('div');
+                        posDiv.innerHTML = `
+                            <strong>${strategy}</strong>: 
+                            <span class="${pos.position > 0 ? 'text-success' : pos.position < 0 ? 'text-danger' : 'text-muted'}">
+                                ${pos.position} 手 (${pos.symbol})
+                            </span>
+                        `;
+                        positionsDiv.appendChild(posDiv);
+                    });
+                }
+            }
+        }
+
+        function formatCurrency(value) {
+            return new Intl.NumberFormat('zh-CN', {
+                style: 'currency',
+                currency: 'CNY',
+                minimumFractionDigits: 2
+            }).format(value);
+        }
+
+        async function loadSignalAnalysis() {
+            // 获取第一个策略的信号分析作为示例
+            const overviewResponse = await fetch('/api/statistics/overview');
+            const overviewData = await overviewResponse.json();
+
+            if (overviewData.success && Object.keys(overviewData.data.strategies).length > 0) {
+                const firstStrategy = Object.keys(overviewData.data.strategies)[0];
+
+                try {
+                    const response = await fetch(`/api/statistics/signals/${firstStrategy}/analysis`);
+                    const data = await response.json();
+
+                    if (data.success && data.data.analysis) {
+                        drawSignalCharts(data.data.analysis);
+                    }
+                } catch (e) {
+                    console.warn('加载信号分析失败:', e);
+                }
+            }
+        }
+
+        function drawSignalCharts(analysis) {
+            // 绘制信号动作分布图
+            if (signalChart) signalChart.destroy();
+            const signalCtx = document.getElementById('signalChart').getContext('2d');
+
+            const actions = Object.keys(analysis.action_distribution || {});
+            const actionCounts = Object.values(analysis.action_distribution || {});
+
+            signalChart = new Chart(signalCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: actions,
+                    datasets: [{
+                        data: actionCounts,
+                        backgroundColor: ['#4CAF50', '#f44336', '#FF9800', '#2196F3']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom'
+                        }
+                    }
+                }
+            });
+
+            // 绘制信号频率分布图
+            if (frequencyChart) frequencyChart.destroy();
+            const frequencyCtx = document.getElementById('frequencyChart').getContext('2d');
+
+            const hours = Object.keys(analysis.signal_frequency || {}).sort((a, b) => parseInt(a) - parseInt(b));
+            const frequencies = hours.map(hour => analysis.signal_frequency[hour]);
+
+            frequencyChart = new Chart(frequencyCtx, {
+                type: 'bar',
+                data: {
+                    labels: hours.map(h => `${h}:00`),
+                    datasets: [{
+                        label: '信号数量',
+                        data: frequencies,
+                        backgroundColor: '#2196F3',
+                        borderColor: '#1976D2',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                stepSize: 1
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function viewStrategyDetail(strategyName) {
+            // 跳转到策略详情页面
+            window.open(`/strategy_detail?name=${strategyName}`, '_blank');
+        }
+
+        function viewSignalAnalysis(strategyName) {
+            // 显示信号分析详情
+            fetch(`/api/statistics/signals/${strategyName}/analysis`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        showSignalAnalysisModal(strategyName, data.data);
+                    } else {
+                        showAlert('获取信号分析失败: ' + data.message, 'warning');
+                    }
+                })
+                .catch(error => {
+                    showAlert('获取信号分析失败: ' + error.message, 'danger');
+                });
+        }
+
+        function showSignalAnalysisModal(strategyName, analysisData) {
+            const analysis = analysisData.analysis || {};
+            const recentSignals = analysisData.recent_signals || [];
+
+            let modalContent = `
+                <div class="modal fade" id="signalAnalysisModal" tabindex="-1">
+                    <div class="modal-dialog modal-lg">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title">
+                                    <i class="fas fa-bullseye"></i> ${strategyName} - 信号分析
+                                </h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <h6>信号统计</h6>
+                                        <p>总信号数: <strong>${analysis.total_signals || 0}</strong></p>
+                                        <p>动作分布:</p>
+                                        <ul>
+            `;
+
+            Object.entries(analysis.action_distribution || {}).forEach(([action, count]) => {
+                modalContent += `<li>${action}: ${count}</li>`;
+            });
+
+            modalContent += `
+                                        </ul>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <h6>触发原因</h6>
+                                        <ul>
+            `;
+
+            Object.entries(analysis.trigger_reasons || {}).forEach(([reason, count]) => {
+                modalContent += `<li>${reason}: ${count}</li>`;
+            });
+
+            modalContent += `
+                                        </ul>
+                                    </div>
+                                </div>
+
+                                <h6>最近信号</h6>
+                                <div class="table-responsive">
+                                    <table class="table table-sm">
+                                        <thead>
+                                            <tr>
+                                                <th>时间</th>
+                                                <th>动作</th>
+                                                <th>价格</th>
+                                                <th>原因</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+            `;
+
+            recentSignals.forEach(signal => {
+                const time = new Date(signal.timestamp * 1000).toLocaleString();
+                modalContent += `
+                    <tr>
+                        <td>${time}</td>
+                        <td><span class="badge ${signal.action === 'BUY' ? 'bg-success' : 'bg-danger'}">${signal.action}</span></td>
+                        <td>${signal.price?.toFixed(2) || '-'}</td>
+                        <td>${signal.reason || '-'}</td>
+                    </tr>
+                `;
+            });
+
+            modalContent += `
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            // 移除旧的模态框
+            const oldModal = document.getElementById('signalAnalysisModal');
+            if (oldModal) oldModal.remove();
+
+            // 添加新的模态框
+            document.body.insertAdjacentHTML('beforeend', modalContent);
+
+            // 显示模态框
+            const modal = new bootstrap.Modal(document.getElementById('signalAnalysisModal'));
+            modal.show();
+        }
+
+        function scrollToSection(sectionId) {
+            const element = document.getElementById(sectionId);
+            if (element) {
+                element.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'start'
+                });
+
+                // 高亮对应的导航按钮
+                document.querySelectorAll('.btn-group .btn').forEach(btn => {
+                    btn.classList.remove('active');
+                });
+                event.target.classList.add('active');
+            }
+        }
+
+        function exportData() {
+            // 导出统计数据
+            showAlert('数据导出功能开发中...', 'info');
+        }
+
+        function showAlert(message, type = 'info') {
+            // 简单的提示功能
+            const alertDiv = document.createElement('div');
+            alertDiv.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
+            alertDiv.style.top = '80px';  // 调整位置避免被导航栏遮挡
+            alertDiv.style.right = '20px';
+            alertDiv.style.zIndex = '9999';
+            alertDiv.innerHTML = `
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            document.body.appendChild(alertDiv);
+
+            setTimeout(() => {
+                alertDiv.remove();
+            }, 5000);
+        }
+
+        // 页面滚动时高亮当前区域的导航按钮
+        window.addEventListener('scroll', function() {
+            const sections = document.querySelectorAll('[data-section]');
+            const navButtons = document.querySelectorAll('.btn-group .btn');
+
+            let currentSection = '';
+            sections.forEach(section => {
+                const rect = section.getBoundingClientRect();
+                if (rect.top <= 200 && rect.bottom >= 200) {
+                    currentSection = section.getAttribute('data-section');
+                }
+            });
+
+            navButtons.forEach(btn => {
+                btn.classList.remove('active');
+                if (btn.getAttribute('onclick')?.includes(currentSection)) {
+                    btn.classList.add('active');
+                }
+            });
+        });
+    </script>
+</body>
+</html>
