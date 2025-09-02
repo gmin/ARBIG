@@ -132,12 +132,6 @@ class ARBIGCtaTemplate(ABC):
             self.active = True
             self.trading = True  # 策略微服务中默认允许交易
             self.status = StrategyStatus.RUNNING
-
-            # 🔧 重置持仓和成交记录，避免历史数据影响
-            self.pos = 0
-            self.trades.clear()
-            logger.info(f"🔄 策略启动时重置持仓: {self.strategy_name}")
-
             self.on_init()
             self.on_start()
             logger.info(f"策略启动成功: {self.strategy_name}")
@@ -293,8 +287,7 @@ class ARBIGCtaTemplate(ABC):
             volume=volume,
             price=price if price > 0 else None,  # 0价格表示市价单
             signal_type="TRADE",
-            timestamp=datetime.now(),
-            metadata={"stop_order": stop}  # 将stop_order放入metadata中
+            timestamp=datetime.now()
         )
         
         # 通过信号发送器发送到交易服务
@@ -363,30 +356,23 @@ class ARBIGCtaTemplate(ABC):
     def on_trade(self, trade: TradeData) -> None:
         """
         成交回调
-
+        
         Args:
             trade: 成交数据
         """
-        # 🔥 父类日志：记录成交回调
-        logger.info(f"🔥🔥🔥 父类 ARBIGCtaTemplate.on_trade 被调用！🔥🔥🔥")
-        logger.info(f"🔥 父类 - 策略: {self.strategy_name}")
-        logger.info(f"🔥 父类 - 成交详情: {trade.direction} {trade.volume}手 @ {trade.price}")
-        logger.info(f"🔥 父类 - 成交前持仓: {self.pos}")
-
-        # 🔧 成交去重：避免重复处理相同成交
-        if trade.tradeid in self.trades:
-            logger.warning(f"⚠️ 成交已处理过，跳过: {trade.tradeid}")
-            return
-
-        self.trades[trade.tradeid] = trade
-
-        # 🔧 不再自己计算持仓，而是查询真实持仓
-        logger.info(f"🔧 成交数据: direction={trade.direction}, offset='{trade.offset}', volume={trade.volume}")
-        logger.info(f"🔧 成交发生，将查询真实持仓更新策略持仓")
-
-        # 🔧 查询真实持仓（异步调用，这里先记录，实际更新由策略引擎处理）
-        logger.info(f"🔧 成交处理完成，等待持仓更新")
-        logger.info(f"🔥🔥🔥 父类 ARBIGCtaTemplate.on_trade 处理完成！🔥🔥🔥")
+        self.trades[trade.trade_id] = trade
+        
+        # 更新持仓
+        if trade.direction == Direction.LONG:
+            if trade.offset == "OPEN":
+                self.pos += trade.volume
+            else:  # CLOSE
+                self.pos -= trade.volume
+        else:  # SHORT
+            if trade.offset == "OPEN":
+                self.pos -= trade.volume
+            else:  # CLOSE
+                self.pos += trade.volume
         
         # 更新统计
         self.total_trades += 1

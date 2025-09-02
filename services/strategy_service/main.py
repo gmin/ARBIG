@@ -109,14 +109,6 @@ if STRATEGY_BACKTEST_AVAILABLE and strategy_backtest_router:
     app.include_router(strategy_backtest_router)
     logger.info("策略轻量回测API路由注册成功")
 
-# 注册交易统计API
-try:
-    from api.trading_statistics import router as statistics_router
-    app.include_router(statistics_router)
-    logger.info("交易统计API路由注册成功")
-except Exception as e:
-    logger.error(f"交易统计API路由注册失败: {e}")
-
 # ==================== API 端点 ====================
 
 @app.get("/")
@@ -356,17 +348,10 @@ async def legacy_status():
     return await root()
 
 if __name__ == "__main__":
-    logger.info("🚀 准备启动uvicorn服务器...")
-    logger.info("📍 API端点定义完成，开始启动HTTP服务器")
-
-    try:
-        uvicorn.run(
-            "main:app",
-            host="0.0.0.0",
-            port=8002,
-            reload=True,
-            log_level="info"
-        )
-    except Exception as e:
-        logger.error(f"❌ uvicorn启动失败: {e}")
-        raise
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=8002,
+        reload=True,
+        log_level="info"
+    )

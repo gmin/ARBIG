@@ -242,18 +242,15 @@ async def close_position(position_id: int, service_client: ServiceClient = Depen
 async def get_main_contract():
     """获取主力合约配置"""
     try:
-        from config.config import get_main_contract, get_supported_contracts, CONFIG
-
+        from core.config_manager import ConfigManager
+        config_mgr = ConfigManager()
+        
         return {
-            "success": True,
-            "data": {
-                "main_contract": get_main_contract(),
-                "supported_contracts": get_supported_contracts(),
-                "contract_multiplier": CONFIG.get('contract_multiplier', 1000),
-                "market_data_config": CONFIG.get('market_data', {})
-            }
+            "main_contract": config_mgr.get_main_contract(),
+            "contract_multiplier": config_mgr.get_contract_multiplier(),
+            "market_data_config": config_mgr.get_market_data_config()
         }
-
+        
     except Exception as e:
         logger.error(f"获取主力合约配置失败: {e}")
         raise HTTPException(status_code=500, detail=f"获取配置失败: {str(e)}")

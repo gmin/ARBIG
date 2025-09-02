@@ -1,7 +1,32 @@
 """
-上海期货量化策略 - vnpy风格版本
-基于ARBIGCtaTemplate实现的综合量化交易策略
-包含趋势跟踪、均值回归、突破等多种策略类型
+多模式自适应策略 - 综合量化交易策略
+
+## 策略概述
+这是一个功能强大的自适应量化策略，能够根据市场环境自动切换不同的交易模式。
+策略集成了趋势跟踪、均值回归、突破交易等多种经典策略类型，通过智能算法选择最适合当前市场的交易方式。
+
+## 支持的交易模式
+- 📈 **趋势跟踪模式**：适用于单边上涨或下跌行情
+- 📊 **均值回归模式**：适用于震荡整理行情
+- 🚀 **突破交易模式**：适用于重要阻力支撑位突破
+
+## 核心技术指标
+- **双均线系统**：MA5/MA20识别趋势方向和强度
+- **RSI指标**：14周期RSI判断超买超卖状态
+- **布林带指标**：20周期布林带识别价格通道和突破
+- **风控系统**：5%止损 + 8%止盈 + 动态持仓管理
+
+## 智能决策机制
+1. **市场环境识别**：自动判断当前市场是趋势性还是震荡性
+2. **模式自动切换**：根据市场环境选择最优交易模式
+3. **信号强度评估**：多因子评分系统，只在高置信度时交易
+4. **动态风控调整**：根据市场波动性调整风控参数
+
+## 适用场景
+- ✅ 全天候交易（适应不同市场环境）
+- ✅ 中长线持仓（持仓周期：小时级到日级）
+- ✅ 大资金账户（支持灵活的仓位管理）
+- ✅ 专业交易员使用（需要理解多种策略逻辑）
 """
 
 import time
@@ -17,7 +42,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '../../..'))
 
 from core.types import TickData, BarData
 from services.strategy_service.core.cta_template import ARBIGCtaTemplate
-from vnpy.trader.utility import ArrayManager
+from services.strategy_service.core.data_tools import ArrayManager
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -37,7 +62,7 @@ class MarketDirection(Enum):
     NEUTRAL = "NEUTRAL"
 
 
-class SHFEQuantStrategy(ARBIGCtaTemplate):
+class MultiModeAdaptiveStrategy(ARBIGCtaTemplate):
     """
     上海期货量化策略 - vnpy风格实现
     
@@ -48,24 +73,32 @@ class SHFEQuantStrategy(ARBIGCtaTemplate):
     4. 风险控制
     """
     
-    # 策略参数
-    strategy_type = "trend"       # 策略类型
-    ma_short = 5                  # 短期均线
-    ma_long = 20                  # 长期均线
-    rsi_period = 14              # RSI周期
-    rsi_overbought = 70          # RSI超买线
-    rsi_oversold = 30            # RSI超卖线
+    # ==================== 策略参数配置 ====================
     
-    bollinger_period = 20        # 布林带周期
-    bollinger_std = 2.0          # 布林带标准差
+    # 核心策略模式
+    strategy_type = "trend"       # 策略类型：trend(趋势)|mean_reversion(均值回归)|breakout(突破)
     
-    stop_loss_pct = 0.05         # 止损比例
-    take_profit_pct = 0.08       # 止盈比例
+    # 技术指标参数
+    ma_short = 5                  # 短期均线周期：用于快速趋势识别
+    ma_long = 20                  # 长期均线周期：用于主趋势确认
+    rsi_period = 14              # RSI计算周期：标准14周期RSI
+    rsi_overbought = 70          # RSI超买阈值：高于此值视为超买
+    rsi_oversold = 30            # RSI超卖阈值：低于此值视为超卖
     
-    trade_volume = 1             # 基础交易手数
-    max_position = 10            # 最大持仓
+    # 布林带参数  
+    bollinger_period = 20        # 布林带计算周期：标准20周期
+    bollinger_std = 2.0          # 布林带标准差倍数：2倍标准差
     
-    min_signal_interval = 300    # 最小信号间隔(秒)
+    # 风控参数
+    stop_loss_pct = 0.05         # 止损比例：5%固定止损
+    take_profit_pct = 0.08       # 止盈比例：8%目标止盈
+    
+    # 交易参数
+    trade_volume = 1             # 基础交易手数：每次交易的标准手数
+    max_position = 10            # 最大持仓限制：绝对持仓上限
+    
+    # 时间控制
+    min_signal_interval = 300    # 最小信号间隔：5分钟，避免过度交易
     
     # 策略变量
     current_direction = MarketDirection.NEUTRAL
@@ -74,9 +107,9 @@ class SHFEQuantStrategy(ARBIGCtaTemplate):
     last_signal_time = 0
     signal_count = 0
     
-    def __init__(self, strategy_engine, strategy_name: str, symbol: str, setting: dict):
+    def __init__(self, strategy_name: str, symbol: str, setting: dict, signal_sender=None, **kwargs):
         """初始化策略"""
-        super().__init__(strategy_engine, strategy_name, symbol, setting)
+        super().__init__(strategy_name, symbol, setting, signal_sender)
         
         # 从设置中获取参数
         self.strategy_type = setting.get('strategy_type', self.strategy_type)
@@ -135,6 +168,9 @@ class SHFEQuantStrategy(ARBIGCtaTemplate):
         # 检查风险控制
         self._check_risk_control(tick.last_price)
         
+        # 调用具体实现
+        self.on_tick_impl(tick)
+        
     def on_bar(self, bar: BarData):
         """处理bar数据"""
         if not self.trading:
@@ -157,6 +193,9 @@ class SHFEQuantStrategy(ARBIGCtaTemplate):
         
         # 生成交易信号
         self._generate_trading_signal(bar)
+        
+        # 调用具体实现
+        self.on_bar_impl(bar)
         
     def _update_market_direction(self, bar: BarData):
         """更新市场方向判断"""
@@ -425,10 +464,20 @@ class SHFEQuantStrategy(ARBIGCtaTemplate):
             },
             "last_price": self.am.close_array[-1] if len(self.am.close_array) > 0 else 0
         }
+    
+    def on_tick_impl(self, tick: TickData) -> None:
+        """Tick数据处理实现"""
+        # 具体的tick处理逻辑已在on_tick中实现
+        pass
+    
+    def on_bar_impl(self, bar: BarData) -> None:
+        """Bar数据处理实现"""
+        # 具体的bar处理逻辑已在on_bar中实现
+        pass
 
 
 # 策略工厂函数
-def create_strategy(strategy_engine, strategy_name: str, symbol: str, setting: dict) -> SHFEQuantStrategy:
+def create_strategy(strategy_name: str, symbol: str, setting: dict, signal_sender=None) -> MultiModeAdaptiveStrategy:
     """创建上海期货量化策略实例"""
     
     # 默认设置
@@ -451,12 +500,12 @@ def create_strategy(strategy_engine, strategy_name: str, symbol: str, setting: d
     # 合并设置
     merged_setting = {**default_setting, **setting}
     
-    return SHFEQuantStrategy(strategy_engine, strategy_name, symbol, merged_setting)
+    return MultiModeAdaptiveStrategy(strategy_name, symbol, merged_setting, signal_sender)
 
 
 # 策略配置模板
 STRATEGY_TEMPLATE = {
-    "class_name": "SHFEQuantStrategy",
+    "class_name": "MultiModeAdaptiveStrategy",
     "file_name": "shfe_quant_strategy.py",
     "description": "上海期货综合量化策略，支持趋势、均值回归、突破等多种策略类型",
     "parameters": {

@@ -26,7 +26,6 @@ from shared.models.base import (
     RunningMode, ServiceInfo, ServiceStatus
 )
 # 移除对旧系统控制器的依赖，使用简化的状态管理
-from core.event_engine import EventEngine
 from utils.logger import get_logger
 
 logger = get_logger(__name__)

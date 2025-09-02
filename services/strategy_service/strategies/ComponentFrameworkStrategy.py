@@ -24,7 +24,7 @@ from utils.logger import get_logger
 logger = get_logger(__name__)
 
 
-class AdvancedSHFEStrategy(ARBIGCtaTemplate):
+class ComponentFrameworkStrategy(ARBIGCtaTemplate):
     """
     高级SHFE策略 - 组件化实现
     
@@ -73,9 +73,9 @@ class AdvancedSHFEStrategy(ARBIGCtaTemplate):
     last_decision_time = 0
     decision_count = 0
     
-    def __init__(self, strategy_engine, strategy_name: str, symbol: str, setting: dict):
+    def __init__(self, strategy_name: str, symbol: str, setting: dict, signal_sender=None, **kwargs):
         """初始化策略"""
-        super().__init__(strategy_engine, strategy_name, symbol, setting)
+        super().__init__(strategy_name, symbol, setting, signal_sender)
         
         # 从设置中获取参数
         self.signal_config.update(setting.get('signal_config', {}))
@@ -123,6 +123,9 @@ class AdvancedSHFEStrategy(ARBIGCtaTemplate):
         if len(self.price_history) > 200:
             self.price_history = self.price_history[-200:]
         
+        # 调用具体实现
+        self.on_tick_impl(tick)
+        
     def on_bar(self, bar: BarData):
         """处理bar数据"""
         if not self.trading:
@@ -142,6 +145,9 @@ class AdvancedSHFEStrategy(ARBIGCtaTemplate):
             
         # 生成交易决策
         self._make_trading_decision(bar)
+        
+        # 调用具体实现
+        self.on_bar_impl(bar)
         
     def _make_trading_decision(self, bar: BarData):
         """生成交易决策"""
@@ -287,10 +293,20 @@ class AdvancedSHFEStrategy(ARBIGCtaTemplate):
             "decision_stats": decision_stats,
             "last_price": self.am.close_array[-1] if len(self.am.close_array) > 0 else 0
         }
+    
+    def on_tick_impl(self, tick: TickData) -> None:
+        """Tick数据处理实现"""
+        # 具体的tick处理逻辑已在on_tick中实现
+        pass
+    
+    def on_bar_impl(self, bar: BarData) -> None:
+        """Bar数据处理实现"""
+        # 具体的bar处理逻辑已在on_bar中实现
+        pass
 
 
 # 策略工厂函数
-def create_strategy(strategy_engine, strategy_name: str, symbol: str, setting: dict) -> AdvancedSHFEStrategy:
+def create_strategy(strategy_name: str, symbol: str, setting: dict, signal_sender=None) -> ComponentFrameworkStrategy:
     """创建高级SHFE策略实例"""
     
     # 默认设置
@@ -325,12 +341,12 @@ def create_strategy(strategy_engine, strategy_name: str, symbol: str, setting: d
     # 合并设置
     merged_setting = {**default_setting, **setting}
     
-    return AdvancedSHFEStrategy(strategy_engine, strategy_name, symbol, merged_setting)
+    return ComponentFrameworkStrategy(strategy_name, symbol, merged_setting, signal_sender)
 
 
 # 策略配置模板
 STRATEGY_TEMPLATE = {
-    "class_name": "AdvancedSHFEStrategy",
+    "class_name": "ComponentFrameworkStrategy",
     "file_name": "advanced_shfe_strategy.py",
     "description": "高级SHFE策略，使用组件化框架，支持复杂决策逻辑",
     "parameters": {

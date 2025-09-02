@@ -241,30 +241,30 @@ def get_adapted_strategies():
                 "display_name": "VWAPDeviationReversion",
                 "description": "VWAP偏离回归策略"
             },
-            "DoubleMaStrategy.py": {
-                "class_name": "DoubleMaStrategy",
-                "display_name": "DoubleMa",
-                "description": "双均线策略"
+            "MaCrossoverTrendStrategy.py": {
+                "class_name": "MaCrossoverTrendStrategy",
+                "display_name": "MaCrossoverTrend",
+                "description": "均线交叉趋势策略"
             },
-            "TestStrategy.py": {
-                "class_name": "TestStrategy",
-                "display_name": "Test",
-                "description": "测试策略"
+            "SystemIntegrationTestStrategy.py": {
+                "class_name": "SystemIntegrationTestStrategy",
+                "display_name": "SystemIntegrationTest",
+                "description": "系统集成测试策略"
             },
-            "AdvancedSHFEStrategy.py": {
-                "class_name": "AdvancedSHFEStrategy",
-                "display_name": "AdvancedSHFE",
-                "description": "高级SHFE策略"
+            "ComponentFrameworkStrategy.py": {
+                "class_name": "ComponentFrameworkStrategy",
+                "display_name": "ComponentFramework",
+                "description": "组件框架策略"
             },
-            "SimpleSHFEStrategy.py": {
-                "class_name": "SimpleSHFEStrategy",
-                "display_name": "SimpleSHFE",
-                "description": "简单SHFE策略"
+            "MaRsiComboStrategy.py": {
+                "class_name": "MaRsiComboStrategy",
+                "display_name": "MaRsiCombo",
+                "description": "MA-RSI组合策略"
             },
-            "SHFEQuantStrategy.py": {
-                "class_name": "SHFEQuantStrategy",
-                "display_name": "SHFEQuant",
-                "description": "SHFE量化策略"
+            "MultiModeAdaptiveStrategy.py": {
+                "class_name": "MultiModeAdaptiveStrategy",
+                "display_name": "MultiModeAdaptive",
+                "description": "多模式自适应策略"
             }
         }
 

@@ -5,6 +5,8 @@
 
 import asyncio
 import threading
+import time
+import requests
 from typing import Dict, Any, Optional, List, Type
 from datetime import datetime, timedelta
 import json
@@ -13,12 +15,11 @@ import os
 import importlib
 import importlib.util
 from pathlib import Path
-import requests
 
 # 添加项目根目录到路径
 sys.path.append(os.path.join(os.path.dirname(__file__), '../../..'))
 
-from core.types import TickData, BarData, OrderData, TradeData, Exchange, Direction
+from core.types import TickData, BarData, OrderData, TradeData
 from utils.logger import get_logger
 from .cta_template import ARBIGCtaTemplate, StrategyStatus
 from .signal_sender import SignalSender
@@ -53,8 +54,9 @@ class StrategyEngine:
         self.strategy_configs: Dict[str, Dict[str, Any]] = {}
         self.active_strategies: List[str] = []
 
-        # 🔧 已删除：processed_trade_ids - 不再需要成交去重
-        
+        # 🔧 订阅品种管理 - 默认订阅主要品种
+        self.subscribed_symbols: set = {"au2510"}  # 默认订阅黄金主力合约
+
         # 性能统计
         self.performance_stats: Dict[str, StrategyPerformance] = {}
         
@@ -78,9 +80,7 @@ class StrategyEngine:
         self.total_signals = 0
         self.successful_signals = 0
         self.failed_signals = 0
-
-        # 🔧 简化：不需要复杂的跟踪机制
-
+        
         logger.info("策略执行引擎初始化完成")
     
     def _load_available_strategies(self):
@@ -276,7 +276,10 @@ class StrategyEngine:
                 "symbol": symbol,
                 "setting": setting.copy()
             }
-            
+
+
+            logger.info(f"🔧 策略引擎实例ID: {id(self)}, 订阅品种集合ID: {id(self.subscribed_symbols)}")
+
             # 初始化数据工具
             if symbol not in self.bar_generators:
                 self.bar_generators[symbol] = BarGenerator(
@@ -319,25 +322,28 @@ class StrategyEngine:
                 return True
             
             # 启动策略
+            logger.info(f"🔧 正在启动策略: {strategy_name}")
             strategy.start()
 
-            # 添加调试日志
-            logger.info(f"策略启动后状态: {strategy.status}, 期望状态: {StrategyStatus.RUNNING}")
-            logger.info(f"状态比较结果: {strategy.status == StrategyStatus.RUNNING}")
-            logger.info(f"策略状态类型: {type(strategy.status)}, 期望状态类型: {type(StrategyStatus.RUNNING)}")
+            logger.info(f"🔧 策略启动后状态: {strategy.status}")
+            logger.info(f"🔧 状态值: {strategy.status.value}")
+            logger.info(f"🔧 RUNNING状态值: {StrategyStatus.RUNNING.value}")
+            logger.info(f"🔧 值比较结果: {strategy.status.value == StrategyStatus.RUNNING.value}")
 
-            # 强制添加到活跃策略列表进行测试
-            if strategy_name not in self.active_strategies:
-                self.active_strategies.append(strategy_name)
-                logger.info(f"🔧 强制添加策略到活跃列表: {strategy_name}")
-
-            if strategy.status == StrategyStatus.RUNNING:
-                logger.info(f"策略启动成功: {strategy_name}")
-                return True
+            if strategy.status.value == StrategyStatus.RUNNING.value:
+                try:
+                    if strategy_name not in self.active_strategies:
+                        self.active_strategies.append(strategy_name)
+                        logger.info(f"🔧 策略添加到启动列表: {strategy_name}")
+                    logger.info(f"🔧 当前启动策略列表: {self.active_strategies}")
+                    logger.info(f"策略启动成功: {strategy_name}")
+                    return True
+                except Exception as e:
+                    logger.error(f"🔧 添加策略到启动列表异常: {e}")
+                    return False
             else:
-                logger.error(f"策略启动失败: {strategy_name}, 当前状态: {strategy.status}")
-                # 但仍然返回True，因为我们已经强制添加到活跃列表
-                return True
+                logger.error(f"🔧 策略启动失败: {strategy_name}, 状态: {strategy.status}")
+                return False
                 
         except Exception as e:
             logger.error(f"策略启动异常 {strategy_name}: {e}")
@@ -431,8 +437,8 @@ class StrategyEngine:
     
     def start_engine(self) -> bool:
         """
-        启动策略引擎
-        
+        启动策略引擎 - 带重试机制
+
         Returns:
             是否启动成功
         """
@@ -440,26 +446,47 @@ class StrategyEngine:
             if self.running:
                 logger.warning("策略引擎已在运行")
                 return True
-            
-            # 检查交易服务连接（宽松模式）
-            if not self.signal_sender.health_check():
-                logger.warning("无法连接到交易服务，但引擎仍将启动（稍后会重试连接）")
-                # 不返回False，允许引擎启动
-            
+
+            # 🔧 等待交易服务就绪 - 重试机制
+            logger.info("等待交易服务就绪...")
+            max_retries = 30  # 最多等待30秒
+            retry_interval = 1  # 每秒重试一次
+
+            for attempt in range(max_retries):
+                if self.signal_sender.health_check():
+                    logger.info(f"交易服务连接成功 (尝试 {attempt + 1}/{max_retries})")
+                    break
+                else:
+                    if attempt < max_retries - 1:
+                        logger.info(f"等待交易服务... ({attempt + 1}/{max_retries})")
+                        time.sleep(retry_interval)
+                    else:
+                        logger.error("等待交易服务超时，引擎启动失败")
+                        return False
+
             self.running = True
-            
+
             # 启动数据处理线程
+            logger.info("🔧 创建数据处理线程...")
             self.data_thread = threading.Thread(target=self._data_processing_loop)
             self.data_thread.daemon = True
+
+            logger.info("🔧 启动数据处理线程...")
             self.data_thread.start()
+
+            # 验证线程是否启动
+            if self.data_thread.is_alive():
+                logger.info("🔧 数据处理线程启动成功")
+            else:
+                logger.error("🔧 数据处理线程启动失败")
 
             logger.info("策略执行引擎启动成功")
             return True
-            
+
         except Exception as e:
             logger.error(f"策略引擎启动异常: {e}")
             return False
-
+    
     def stop_engine(self) -> None:
         """停止策略引擎"""
         try:
@@ -480,150 +507,130 @@ class StrategyEngine:
     
     def _data_processing_loop(self) -> None:
         """数据处理循环"""
-        logger.info("数据处理线程启动")
-        
+        logger.info("🔧 数据处理线程启动")
+
+        loop_count = 0
         while self.running:
             try:
-                # 获取实时行情数据
-                self._fetch_market_data()
+                loop_count += 1
+                if loop_count % 10 == 1:  # 每10秒输出一次状态
+                    logger.info(f"🔧 数据处理循环运行中... (第{loop_count}次)")
+                    logger.info(f"🔧 当前启动策略数量: {len(self.active_strategies)}")
+                    logger.info(f"🔧 启动策略列表: {self.active_strategies}")
 
-                # 🔧 移除成交数据轮询：现在使用实时持仓查询机制
-                # 不再需要持续轮询成交数据来维护持仓
+                # 获取市场数据
+                logger.info(f"🔧 调用_fetch_market_data, 启动策略: {len(self.active_strategies)}")
+                self._fetch_market_data()
 
                 # 休眠1秒
                 threading.Event().wait(1.0)
-                
+
             except Exception as e:
                 logger.error(f"数据处理循环异常: {e}")
                 threading.Event().wait(5.0)  # 出错后等待5秒
-        
-        logger.info("数据处理线程结束")
+
+        logger.info("🔧 数据处理线程结束")
     
     def _fetch_market_data(self) -> None:
-        """从交易服务获取实时市场数据"""
+        """获取实时行情数据"""
         try:
-            # 获取所有活跃策略的交易品种
-            symbols = set()
-            for strategy_name in self.active_strategies:
-                if strategy_name in self.strategies:
-                    symbols.add(self.strategies[strategy_name].symbol)
+            # 🔧 检查是否有启动的策略
+            if not self.active_strategies:
+                logger.info("🔧 没有启动的策略，跳过行情分发")
+                return
 
-            logger.info(f"🔄 获取市场数据，活跃策略: {self.active_strategies}, 品种: {symbols}")
+            # 🔧 固定获取主要品种行情
+            symbols_to_fetch = ["au2510"]  # 主要品种
+            logger.info(f"🔧 开始获取行情数据，品种: {symbols_to_fetch}, 启动策略: {len(self.active_strategies)}个")
 
-            # 为每个品种获取最新tick数据
-            for symbol in symbols:
-                try:
-                    # 从交易服务获取实时tick数据
-                    response = requests.get(
-                        f"{self.trading_service_url}/real_trading/tick/{symbol}",
-                        timeout=2.0
-                    )
+            # 🔧 从交易服务获取实时tick数据
+            for symbol in symbols_to_fetch:
+                logger.debug(f"🔧 正在获取 {symbol} 的tick数据...")
 
-                    if response.status_code == 200:
-                        tick_data = response.json()
-                        if tick_data.get("success") and tick_data.get("data"):
-                            data = tick_data["data"]
-                            logger.info(f"✅ 获取到 {symbol} tick数据: 价格={data.get('last_price')}")
+                response = requests.get(
+                    f"{self.trading_service_url}/real_trading/tick/{symbol}",
+                    timeout=1.0
+                )
 
-                            # 创建TickData对象
-                            tick = TickData(
-                                symbol=data.get("symbol", symbol),
-                                exchange=Exchange.SHFE,
-                                datetime=datetime.now(),
-                                name=data.get("name", ""),
-                                volume=data.get("volume", 0),
-                                turnover=data.get("turnover", 0.0),
-                                open_interest=data.get("open_interest", 0),
-                                last_price=data.get("last_price", 0.0),
-                                last_volume=data.get("last_volume", 0),
-                                limit_up=data.get("limit_up", 0.0),
-                                limit_down=data.get("limit_down", 0.0),
-                                open_price=data.get("open_price", 0.0),
-                                high_price=data.get("high_price", 0.0),
-                                low_price=data.get("low_price", 0.0),
-                                pre_close=data.get("pre_close", 0.0),
-                                bid_price_1=data.get("bid_price_1", 0.0),
-                                bid_price_2=data.get("bid_price_2", 0.0),
-                                bid_price_3=data.get("bid_price_3", 0.0),
-                                bid_price_4=data.get("bid_price_4", 0.0),
-                                bid_price_5=data.get("bid_price_5", 0.0),
-                                ask_price_1=data.get("ask_price_1", 0.0),
-                                ask_price_2=data.get("ask_price_2", 0.0),
-                                ask_price_3=data.get("ask_price_3", 0.0),
-                                ask_price_4=data.get("ask_price_4", 0.0),
-                                ask_price_5=data.get("ask_price_5", 0.0),
-                                bid_volume_1=data.get("bid_volume_1", 0),
-                                bid_volume_2=data.get("bid_volume_2", 0),
-                                bid_volume_3=data.get("bid_volume_3", 0),
-                                bid_volume_4=data.get("bid_volume_4", 0),
-                                bid_volume_5=data.get("bid_volume_5", 0),
-                                ask_volume_1=data.get("ask_volume_1", 0),
-                                ask_volume_2=data.get("ask_volume_2", 0),
-                                ask_volume_3=data.get("ask_volume_3", 0),
-                                ask_volume_4=data.get("ask_volume_4", 0),
-                                ask_volume_5=data.get("ask_volume_5", 0),
-                                localtime=datetime.now(),
-                                gateway_name="CTP"
-                            )
+                if response.status_code == 200:
+                    tick_data = response.json()
+                    logger.debug(f"🔧 获取到 {symbol} 响应: success={tick_data.get('success')}")
 
-                            # 分发tick数据给策略
-                            self._on_tick(tick)
+                    if tick_data.get("success") and tick_data.get("data"):
+                        # 🔧 创建TickData对象并分发给策略
+                        tick_info = tick_data["data"]
+                        logger.info(f"📈 收到tick数据: {symbol} 价格={tick_info.get('last_price')}")
 
-                except requests.exceptions.Timeout:
-                    # 超时不记录错误，避免日志过多
-                    pass
-                except requests.exceptions.ConnectionError:
-                    # 连接错误也不记录，避免日志过多
-                    pass
-                except Exception as e:
-                    logger.warning(f"获取 {symbol} tick数据失败: {e}")
+                        tick = self._create_tick_data(tick_info)
+
+                        # 分发给所有订阅该品种的策略
+                        logger.debug(f"🔧 分发tick数据给 {len(self.strategies)} 个策略")
+                        self._on_tick(tick)
+
+                        # 🔧 启用1分钟K线生成 - 支持MA和RSI计算
+                        if symbol in self.bar_generators:
+                            logger.debug(f"🔧 更新K线生成器: {symbol}")
+                            self.bar_generators[symbol].update_tick(tick)
+                    else:
+                        logger.warning(f"🔧 {symbol} tick数据无效: {tick_data}")
+
+                else:
+                    logger.warning(f"🔧 获取 {symbol} tick数据失败: {response.status_code}")
 
         except Exception as e:
-            logger.error(f"市场数据获取异常: {e}")
+            logger.error(f"🔧 行情数据获取异常: {e}")
 
-    def _fetch_trade_data(self) -> None:
-        """🔧 已废弃：成交数据轮询功能
+    def _create_tick_data(self, tick_info: dict) -> TickData:
+        """创建TickData对象"""
+        try:
+            from core.types import TickData
+            from vnpy.trader.constant import Exchange
 
-        原因：现在使用实时持仓查询机制，不再需要通过成交数据维护持仓
-        - 行情回调专注信号生成
-        - 信号处理时主动查询持仓
-        - 成交回调用于异步更新缓存（如果需要的话）
-        """
-        # 🔧 功能已移除：不再轮询成交数据
-        logger.debug(f"� [策略服务] 成交数据轮询已禁用，使用实时持仓查询机制")
-        pass
+            # 🔧 创建TickData对象
+            tick = TickData(
+                symbol=tick_info.get("symbol", ""),
+                exchange=Exchange.SHFE,
+                datetime=datetime.fromisoformat(tick_info.get("datetime", datetime.now().isoformat())),
+                name=tick_info.get("name", ""),
+                volume=int(tick_info.get("volume", 0)),
+                open_interest=int(tick_info.get("open_interest", 0)),
+                last_price=float(tick_info.get("last_price", 0.0)),
+                last_volume=int(tick_info.get("last_volume", 0)),
+                limit_up=float(tick_info.get("limit_up", 0.0)),
+                limit_down=float(tick_info.get("limit_down", 0.0)),
+                open_price=float(tick_info.get("open_price", 0.0)),
+                high_price=float(tick_info.get("high_price", 0.0)),
+                low_price=float(tick_info.get("low_price", 0.0)),
+                pre_close=float(tick_info.get("pre_close", 0.0)),
+                bid_price_1=float(tick_info.get("bid_price_1", 0.0)),
+                ask_price_1=float(tick_info.get("ask_price_1", 0.0)),
+                bid_volume_1=int(tick_info.get("bid_volume_1", 0)),
+                ask_volume_1=int(tick_info.get("ask_volume_1", 0)),
+                gateway_name="CTP"
+            )
 
-    # 🔧 已删除：_process_trade_data 方法
-    # 原因：不再轮询成交数据，使用实时持仓查询机制
+            return tick
 
-    # 🔧 已删除：_match_order_to_strategy 方法
-    # 原因：不再需要成交数据匹配，使用实时持仓查询机制
-
-    # 🔧 已删除：_create_trade_data 和 _dispatch_trade_to_strategy 方法
-    # 原因：不再轮询和处理成交数据，使用实时持仓查询机制
-
-    # 🔧 已删除：_update_strategy_position 方法
-    # 原因：不再通过成交回调更新持仓，策略自己在交易前查询持仓
+        except Exception as e:
+            logger.error(f"创建TickData失败: {e}")
+            raise
 
     def _on_tick(self, tick: TickData) -> None:
         """处理Tick数据"""
         try:
             symbol = tick.symbol
             self.tick_data[symbol] = tick
-
-            logger.info(f"📈 收到tick数据: {symbol} 价格={tick.last_price}, 活跃策略数={len(self.active_strategies)}")
-
-            # 更新K线生成器 (暂时注释掉，避免gateway_name问题)
-            # if symbol in self.bar_generators:
-            #     self.bar_generators[symbol].update_tick(tick)
-
+            
+            # 更新K线生成器
+            if symbol in self.bar_generators:
+                self.bar_generators[symbol].update_tick(tick)
+            
             # 分发给相关策略
             for strategy_name in self.active_strategies:
                 strategy = self.strategies[strategy_name]
                 if strategy.symbol == symbol:
-                    logger.info(f"🎯 分发tick给策略: {strategy_name}")
                     strategy.on_tick(tick)
-
+                    
         except Exception as e:
             logger.error(f"Tick数据处理异常: {e}")
     
@@ -644,54 +651,7 @@ class StrategyEngine:
                     
         except Exception as e:
             logger.error(f"Bar数据处理异常: {e}")
-
-    def _on_trade(self, trade: TradeData) -> None:
-        """处理成交数据"""
-        try:
-            # 🔥 关键调试：验证策略引擎的成交回调是否被触发
-            logger.info(f"🔥🔥🔥 [策略服务] 策略引擎._on_trade 被调用！🔥🔥🔥")
-            logger.info(f"� 成交详情: {trade.symbol} {trade.direction.value} {trade.volume}手 @ {trade.price}")
-            logger.info(f"🔥 成交ID: {trade.tradeid}")
-            logger.info(f"🔥 当前活跃策略: {self.active_strategies}")
-
-            symbol = trade.symbol
-
-            # 分发给相关策略
-            for strategy_name in self.active_strategies:
-                strategy = self.strategies[strategy_name]
-                if strategy.symbol == symbol:
-                    logger.info(f"🎯🎯🎯 [策略服务] 分发成交给策略: {strategy_name} 🎯🎯🎯")
-                    strategy.on_trade(trade)
-                    logger.info(f"🎯 [策略服务] 策略 {strategy_name} 成交处理完成")
-                else:
-                    logger.debug(f"[策略服务] 策略 {strategy_name} 合约不匹配: {strategy.symbol} != {symbol}")
-
-            logger.info(f"🔥🔥🔥 [策略服务] 策略引擎._on_trade 处理完成！🔥🔥🔥")
-
-        except Exception as e:
-            logger.error(f"成交数据处理异常: {e}")
-
-    def _on_order(self, order: OrderData) -> None:
-        """简化的订单数据处理 - 只处理关键状态"""
-        try:
-            # 只处理关键的订单状态
-            if hasattr(order, 'status'):
-                status = order.status.value
-                if status in ["ALLTRADED", "REJECTED", "CANCELLED"]:
-                    symbol = order.symbol
-                    logger.info(f"📋 关键订单状态: {symbol} {order.order_id} - {status}")
-
-                    # 分发给相关策略
-                    for strategy_name in self.active_strategies:
-                        strategy = self.strategies[strategy_name]
-                        if strategy.symbol == symbol:
-                            logger.info(f"🎯 分发关键订单状态给策略: {strategy_name}")
-                            strategy.on_order(order)
-                # 其他状态（如SUBMITTING, PARTTRADED等）被忽略
-
-        except Exception as e:
-            logger.error(f"订单数据处理异常: {e}")
-
+    
     def get_strategy_status(self, strategy_name: str) -> Optional[Dict[str, Any]]:
         """
         获取策略状态
@@ -751,72 +711,6 @@ class StrategyEngine:
         self.performance_stats[strategy_name].add_trade(trade_record)
         
         logger.info(f"策略 {strategy_name} 交易记录已更新: {trade_record.direction} {trade_record.volume}@{trade_record.price}")
-
-    def handle_trade_callback(self, trade_data: Dict[str, Any]):
-        """处理来自交易服务的成交回调"""
-        try:
-            # 创建TradeData对象
-            from core.types import Direction, Offset
-
-            trade = TradeData(
-                symbol=trade_data.get("symbol", ""),
-                exchange=Exchange.SHFE,  # 默认上期所
-                orderid=trade_data.get("order_id", ""),  # vnpy使用orderid
-                tradeid=trade_data.get("trade_id", ""),  # vnpy使用tradeid
-                direction=Direction.LONG if trade_data.get("direction", "").upper() == "LONG" else Direction.SHORT,
-                offset=trade_data.get("offset", "OPEN"),
-                price=float(trade_data.get("price", 0.0)),
-                volume=int(trade_data.get("volume", 0)),
-                datetime=datetime.now(),
-                gateway_name="CTP"
-            )
-
-            logger.info(f"🔄 处理交易服务成交回调: {trade.symbol} {trade.direction.value} {trade.volume}@{trade.price}")
-
-            # 调用内部成交处理
-            self._on_trade(trade)
-
-        except Exception as e:
-            logger.error(f"处理成交回调失败: {e}")
-
-    def handle_order_callback(self, order_data: Dict[str, Any]):
-        """简化的订单回调处理 - 只处理关键状态"""
-        try:
-            # 预先检查是否为关键状态
-            status_str = order_data.get("status", "SUBMITTING")
-            if status_str not in ["ALLTRADED", "REJECTED", "CANCELLED"]:
-                # 忽略非关键状态，减少处理开销
-                logger.debug(f"🔧 忽略非关键订单状态: {status_str}")
-                return
-
-            # 创建OrderData对象（只为关键状态）
-            from core.types import Direction, Status
-
-            # 解析状态
-            status = getattr(Status, status_str, Status.SUBMITTING)
-
-            order = OrderData(
-                symbol=order_data.get("symbol", ""),
-                exchange=Exchange.SHFE,
-                order_id=order_data.get("order_id", ""),
-                type=order_data.get("type", "LIMIT"),
-                direction=Direction.LONG if order_data.get("direction", "").upper() == "LONG" else Direction.SHORT,
-                offset=order_data.get("offset", "OPEN"),
-                price=float(order_data.get("price", 0.0)),
-                volume=int(order_data.get("volume", 0)),
-                traded=int(order_data.get("traded", 0)),
-                status=status,  # 使用实际状态
-                datetime=datetime.now(),
-                gateway_name="CTP"
-            )
-
-            logger.info(f"🔄 处理关键订单状态: {order.symbol} {order.order_id} - {status_str}")
-
-            # 调用内部订单处理
-            self._on_order(order)
-
-        except Exception as e:
-            logger.error(f"处理订单回调失败: {e}")
     
     def update_strategy_position(self, strategy_name: str, position: int):
         """更新策略持仓"""

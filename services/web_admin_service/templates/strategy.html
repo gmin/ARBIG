@@ -63,99 +63,6 @@
         .status-badge.running {
             background: #d4edda;
             color: #155724;
-            animation: pulse 2s infinite;
-        }
-
-        @keyframes pulse {
-            0% { opacity: 1; }
-            50% { opacity: 0.7; }
-            100% { opacity: 1; }
-        }
-
-        /* 参数输入框样式 */
-        .param-input {
-            width: 100px;
-            padding: 4px 8px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            font-size: 14px;
-        }
-
-        .param-input:focus {
-            outline: none;
-            border-color: #007bff;
-            box-shadow: 0 0 0 2px rgba(0,123,255,0.25);
-        }
-
-        .param-help {
-            margin-top: 10px;
-            padding: 10px;
-            background-color: #f8f9fa;
-            border-left: 4px solid #007bff;
-            border-radius: 4px;
-            font-size: 12px;
-            color: #6c757d;
-        }
-
-        .param-help h6 {
-            margin: 0 0 8px 0;
-            color: #495057;
-            font-weight: 600;
-        }
-
-        .param-help ul {
-            margin: 0;
-            padding-left: 16px;
-        }
-
-        .param-help li {
-            margin-bottom: 4px;
-        }
-
-        /* 开关样式 */
-        .switch {
-            position: relative;
-            display: inline-block;
-            width: 50px;
-            height: 24px;
-        }
-
-        .switch input {
-            opacity: 0;
-            width: 0;
-            height: 0;
-        }
-
-        .slider {
-            position: absolute;
-            cursor: pointer;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background-color: #ccc;
-            transition: .4s;
-            border-radius: 24px;
-        }
-
-        .slider:before {
-            position: absolute;
-            content: "";
-            height: 18px;
-            width: 18px;
-            left: 3px;
-            bottom: 3px;
-            background-color: white;
-            transition: .4s;
-            border-radius: 50%;
-        }
-
-        input:checked + .slider {
-            background-color: #28a745;
-        }
-
-        input:checked + .slider:before {
-            transform: translateX(26px);
         }
         
         .status-badge.stopped {
@@ -418,7 +325,7 @@
     <div class="container">
         <!-- 页面标题 -->
         <div class="page-header">
-            <h1 class="page-title">策略管理</h1>
+            <h1 class="page-title">策略管理 <small style="font-size: 12px; color: #666;">(v2.1-20250818)</small></h1>
             <div class="page-subtitle">量化策略配置、监控与性能分析</div>
         </div>
 
@@ -443,7 +350,6 @@
                 <div class="stat-value">
                     <button id="refresh-btn" class="btn btn-primary btn-sm">🔄 刷新</button>
                     <button id="add-strategy-btn" class="btn btn-success btn-sm" style="margin-left: 8px;">➕ 添加策略</button>
-                    <button id="trading-stats-btn" class="btn btn-info btn-sm" style="margin-left: 8px;">📊 实盘交易统计</button>
                 </div>
                 <div class="stat-label">操作</div>
             </div>
@@ -504,357 +410,8 @@
             }
         }
 
-        function openTradingStatistics() {
-            // 直接在当前窗口打开交易统计页面
-            // 使用内嵌的方式显示统计数据
-            showTradingStatisticsModal();
-        }
-
-        function showTradingStatisticsModal() {
-            // 创建模态框显示交易统计
-            const modal = document.createElement('div');
-            modal.style.cssText =
-                'position: fixed;' +
-                'top: 0;' +
-                'left: 0;' +
-                'width: 100%;' +
-                'height: 100%;' +
-                'background: rgba(0,0,0,0.8);' +
-                'z-index: 10000;' +
-                'display: flex;' +
-                'justify-content: center;' +
-                'align-items: center;';
-
-            modal.innerHTML =
-                '<div style="' +
-                    'background: white;' +
-                    'width: 90%;' +
-                    'height: 90%;' +
-                    'border-radius: 10px;' +
-                    'padding: 20px;' +
-                    'overflow-y: auto;' +
-                    'position: relative;' +
-                '">' +
-                    '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">' +
-                        '<h2>📊 实盘交易统计</h2>' +
-                        '<button onclick="this.closest(\'.modal\').remove()" style="' +
-                            'background: #f44336;' +
-                            'color: white;' +
-                            'border: none;' +
-                            'padding: 8px 16px;' +
-                            'border-radius: 5px;' +
-                            'cursor: pointer;' +
-                        '">✕ 关闭</button>' +
-                    '</div>' +
-                    '<div id="statistics-content">' +
-                        '<div style="text-align: center; padding: 40px;">' +
-                            '<div style="font-size: 48px; margin-bottom: 20px;">📊</div>' +
-                            '<h3>正在加载交易统计数据...</h3>' +
-                            '<p>请稍候，正在从策略服务获取数据</p>' +
-                        '</div>' +
-                    '</div>' +
-                '</div>';
-
-            modal.className = 'modal';
-            document.body.appendChild(modal);
-
-            // 加载统计数据
-            loadTradingStatisticsData();
-        }
-
-        async function loadTradingStatisticsData() {
-            try {
-                // 使用现有的API获取数据
-                const statusResponse = await fetch('http://localhost:8002/');
-                const statusData = await statusResponse.json();
-
-                const strategiesResponse = await fetch('http://localhost:8002/strategies');
-                const strategiesData = await strategiesResponse.json();
-
-                // 构造统计数据格式
-                const overviewData = {
-                    success: true,
-                    data: {
-                        summary: {
-                            total_strategies: statusData.engine_status.total_strategies,
-                            active_strategies: statusData.engine_status.active_strategies,
-                            total_trades: statusData.engine_status.total_signals,
-                            total_pnl: 0, // 暂时没有盈亏数据
-                            net_pnl: 0,
-                            overall_win_rate: statusData.engine_status.success_rate,
-                            winning_strategies: 0
-                        }
-                    }
-                };
-
-                const rankingData = {
-                    success: true,
-                    data: {
-                        rankings: Object.entries(strategiesData.data || {}).map(([name, strategy], index) => ({
-                            strategy_name: name,
-                            net_pnl: strategy.total_pnl || 0,
-                            win_rate: 0, // 暂时没有胜率数据
-                            total_trades: strategy.total_trades || 0,
-                            max_drawdown: 0 // 暂时没有回撤数据
-                        }))
-                    }
-                };
-
-                const realtimeData = {
-                    success: true,
-                    data: {
-                        engine_status: {
-                            running: statusData.engine_status.running,
-                            data_processing: statusData.engine_status.running
-                        },
-                        market_status: statusData.engine_status.running ? 'trading' : 'closed',
-                        current_positions: Object.entries(strategiesData.data || {}).reduce((acc, [name, strategy]) => {
-                            if (strategy.pos && strategy.pos !== 0) {
-                                acc[name] = {
-                                    position: strategy.pos,
-                                    symbol: strategy.symbol || 'unknown'
-                                };
-                            }
-                            return acc;
-                        }, {})
-                    }
-                };
-
-                // 渲染统计数据
-                renderTradingStatistics(overviewData, rankingData, realtimeData);
-
-            } catch (error) {
-                console.error('加载统计数据失败:', error);
-                document.getElementById('statistics-content').innerHTML =
-                    '<div style="text-align: center; padding: 40px; color: #f44336;">' +
-                        '<div style="font-size: 48px; margin-bottom: 20px;">❌</div>' +
-                        '<h3>加载统计数据失败</h3>' +
-                        '<p>错误信息: ' + error.message + '</p>' +
-                        '<button onclick="loadTradingStatisticsData()" style="' +
-                            'background: #2196F3;' +
-                            'color: white;' +
-                            'border: none;' +
-                            'padding: 10px 20px;' +
-                            'border-radius: 5px;' +
-                            'cursor: pointer;' +
-                            'margin-top: 10px;' +
-                        '">🔄 重试</button>' +
-                    '</div>';
-            }
-        }
-
-        function renderTradingStatistics(overview, ranking, realtime) {
-            const content = document.getElementById('statistics-content');
-
-            // 简化版本，只显示基本统计信息
-            let html = '<div style="padding: 20px;">';
-
-            // 总览统计
-            html += '<h3>📊 交易总览</h3>';
-            html += '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 30px;">';
-
-            if (overview.success) {
-                const summary = overview.data.summary;
-                html += '<div style="background: #667eea; color: white; padding: 15px; border-radius: 8px;">';
-                html += '<h4>总策略数</h4>';
-                html += '<div style="font-size: 20px; font-weight: bold;">' + summary.total_strategies + '</div>';
-                html += '<small>活跃: ' + summary.active_strategies + '</small>';
-                html += '</div>';
-
-                html += '<div style="background: #4CAF50; color: white; padding: 15px; border-radius: 8px;">';
-                html += '<h4>总盈亏</h4>';
-                html += '<div style="font-size: 20px; font-weight: bold;">' + formatCurrency(summary.total_pnl) + '</div>';
-                html += '<small>净盈亏: ' + formatCurrency(summary.net_pnl) + '</small>';
-                html += '</div>';
-
-                html += '<div style="background: #FF9800; color: white; padding: 15px; border-radius: 8px;">';
-                html += '<h4>总交易数</h4>';
-                html += '<div style="font-size: 20px; font-weight: bold;">' + summary.total_trades + '</div>';
-                html += '<small>胜率: ' + (summary.overall_win_rate * 100).toFixed(1) + '%</small>';
-                html += '</div>';
-            } else {
-                html += '<div style="background: #666; color: white; padding: 15px; border-radius: 8px; text-align: center;">';
-                html += '<h4>数据加载失败</h4>';
-                html += '</div>';
-            }
-
-            html += '</div>';
-
-            // 策略排名
-            html += '<h3>🏆 策略性能排名</h3>';
-            html += '<div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px;">';
-
-            if (ranking.success && ranking.data.rankings.length > 0) {
-                html += '<table style="width: 100%; border-collapse: collapse;">';
-                html += '<thead><tr style="background: #e9ecef;">';
-                html += '<th style="padding: 8px; text-align: left;">排名</th>';
-                html += '<th style="padding: 8px; text-align: left;">策略名称</th>';
-                html += '<th style="padding: 8px; text-align: right;">净盈亏</th>';
-                html += '<th style="padding: 8px; text-align: right;">胜率</th>';
-                html += '<th style="padding: 8px; text-align: right;">交易数</th>';
-                html += '</tr></thead><tbody>';
-
-                ranking.data.rankings.forEach(function(strategy, index) {
-                    html += '<tr style="border-bottom: 1px solid #dee2e6;">';
-                    html += '<td style="padding: 8px;">' + (index + 1) + '</td>';
-                    html += '<td style="padding: 8px;"><strong>' + strategy.strategy_name + '</strong></td>';
-                    html += '<td style="padding: 8px; text-align: right; color: ' + (strategy.net_pnl >= 0 ? '#4CAF50' : '#f44336') + ';">';
-                    html += formatCurrency(strategy.net_pnl) + '</td>';
-                    html += '<td style="padding: 8px; text-align: right;">' + (strategy.win_rate * 100).toFixed(1) + '%</td>';
-                    html += '<td style="padding: 8px; text-align: right;">' + strategy.total_trades + '</td>';
-                    html += '</tr>';
-                });
-                html += '</tbody></table>';
-            } else {
-                html += '<p style="text-align: center; color: #666;">暂无策略数据</p>';
-            }
-            html += '</div>';
-
-            // 实时状态
-            html += '<h3>📡 实时状态</h3>';
-            html += '<div style="background: #f8f9fa; padding: 15px; border-radius: 8px;">';
-
-            if (realtime.success) {
-                html += '<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">';
-                html += '<div>';
-                html += '<h4>引擎状态</h4>';
-                html += '<p>运行状态: <span style="color: ' + (realtime.data.engine_status.running ? '#4CAF50' : '#f44336') + ';">';
-                html += (realtime.data.engine_status.running ? '运行中' : '已停止') + '</span></p>';
-                html += '<p>数据处理: <span style="color: ' + (realtime.data.engine_status.data_processing ? '#4CAF50' : '#FF9800') + ';">';
-                html += (realtime.data.engine_status.data_processing ? '正常' : '停止') + '</span></p>';
-                html += '</div>';
-
-                html += '<div>';
-                html += '<h4>当前持仓</h4>';
-                if (realtime.data.current_positions && Object.keys(realtime.data.current_positions).length > 0) {
-                    Object.entries(realtime.data.current_positions).forEach(function([strategy, pos]) {
-                        html += '<p><strong>' + strategy + '</strong>: ';
-                        html += '<span style="color: ' + (pos.position > 0 ? '#4CAF50' : pos.position < 0 ? '#f44336' : '#666') + ';">';
-                        html += pos.position + ' 手 (' + pos.symbol + ')</span></p>';
-                    });
-                } else {
-                    html += '<p style="color: #666;">暂无持仓</p>';
-                }
-                html += '</div>';
-                html += '</div>';
-            } else {
-                html += '<p style="color: #f44336;">实时数据获取失败</p>';
-            }
-
-            html += '</div>';
-            html += '</div>';
-
-            content.innerHTML = html;
-        }
-
-        function formatCurrency(value) {
-            return new Intl.NumberFormat('zh-CN', {
-                style: 'currency',
-                currency: 'CNY',
-                minimumFractionDigits: 2
-            }).format(value);
-        }
-
         // 实盘统计功能
         let runningStrategies = [];
-        let allStrategiesData = null; // 缓存策略数据，避免重复请求
-
-        // 参数标签转换函数
-        function getParamLabel(paramKey) {
-            const labelMap = {
-                // 资金和仓位相关
-                'initial_capital': '初始资金 (元)',
-                'max_position': '最大持仓 (手)',
-                'trade_volume': '交易量 (手)',
-
-                // 时间和周期相关
-                'signal_interval': '信号间隔 (秒)',
-                'ma_short': '短期均线周期 (1分钟K线数量)',
-                'ma_long': '长期均线周期 (1分钟K线数量)',
-                'fast_period': '快速周期 (1分钟K线数量)',
-                'slow_period': '慢速周期 (1分钟K线数量)',
-                'trend_period': '趋势周期 (1分钟K线数量)',
-                'volatility_period': '波动率周期 (1分钟K线数量)',
-                'vwap_period': 'VWAP周期 (1分钟K线数量)',
-
-                // 订单和比例相关
-                'min_order_size': '最小订单量 (手)',
-                'follow_ratio': '跟随比例 (0-1)',
-
-                // 阈值相关
-                'entry_threshold': '入场阈值 (价格变动比例)',
-                'exit_threshold': '出场阈值 (价格变动比例)',
-                'deviation_threshold': '偏离阈值 (价格偏离比例)',
-                'reversion_threshold': '回归阈值 (价格回归比例)',
-
-                // 风控相关
-                'max_daily_loss': '最大日亏损 (元)',
-                'max_drawdown': '最大回撤 (资金回撤比例)',
-                'stop_loss_ratio': '止损比例 (0-1)',
-                'take_profit_ratio': '止盈比例 (0-1)'
-            };
-            return labelMap[paramKey] || paramKey;
-        }
-
-        // 获取参数建议值和说明
-        function getParamHint(paramKey) {
-            const hintMap = {
-                'initial_capital': '建议≥50000，新手推荐100000',
-                'max_position': '新手建议1-2手，有经验可3-5手',
-                'trade_volume': '新手建议1手，稳健起步',
-                'signal_interval': '30秒适中，60秒更稳健',
-                'ma_short': '常用5-12，数值越小越敏感',
-                'ma_long': '常用20-30，需大于短期均线',
-                'fast_period': '常用12，快速反应市场变化',
-                'slow_period': '常用26，平滑价格波动',
-                'trend_period': '常用20，判断趋势方向',
-                'volatility_period': '常用14，计算市场波动',
-                'vwap_period': '常用20，成交量加权平均',
-                'min_order_size': '建议1-5手，控制风险',
-                'follow_ratio': '0.3-0.7，跟随程度适中',
-                'entry_threshold': '0.01-0.03，1%-3%变动',
-                'exit_threshold': '0.005-0.02，0.5%-2%变动',
-                'deviation_threshold': '0.01-0.02，1%-2%偏离',
-                'reversion_threshold': '0.005-0.01，0.5%-1%回归',
-                'max_daily_loss': '建议≤初始资金的10%',
-                'max_drawdown': '0.05-0.15，5%-15%回撤',
-                'stop_loss_ratio': '0.02-0.05，2%-5%止损',
-                'take_profit_ratio': '0.03-0.08，3%-8%止盈'
-            };
-            return hintMap[paramKey] || '请根据策略需要设置';
-        }
-
-        // 统一加载策略数据（只请求一次）
-        async function loadAllStrategiesData() {
-            if (allStrategiesData) {
-                console.log('📊 使用缓存的策略数据');
-                return allStrategiesData;
-            }
-
-            try {
-                console.log('🔍 加载策略数据...');
-                const response = await fetch('/api/v1/trading/strategies/types');
-
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                }
-
-                const result = await response.json();
-                console.log('📊 策略数据API响应:', result);
-
-                if (result && result.success && result.data) {
-                    allStrategiesData = result.data;
-                    console.log('✅ 策略数据加载完成:', Object.keys(allStrategiesData).length, '个策略');
-                    return allStrategiesData;
-                } else {
-                    throw new Error('策略数据格式错误');
-                }
-
-            } catch (error) {
-                console.error('❌ 加载策略数据失败:', error);
-                throw error;
-            }
-        }
 
         // 加载运行中的策略到下拉框
         async function loadRunningStrategies() {
@@ -887,9 +444,9 @@
                         });
                         console.log('✅ 运行中策略加载完成:', runningStrategies.length, '个策略');
                     } else {
-                        console.log('⚠️ 暂无运行中的策略，使用可用策略列表');
-                        // 如果没有运行中的策略，使用可用策略列表
-                        await populateStrategyDropdown();
+                        console.log('⚠️ 暂无运行中的策略，加载可用策略列表');
+                        // 如果没有运行中的策略，加载可用策略列表
+                        await loadAvailableStrategiesForSelection();
                     }
                 } else {
                     throw new Error('策略状态数据格式错误');
@@ -903,148 +460,59 @@
             }
         }
 
-        // 填充策略下拉框（使用共享数据）
-        async function populateStrategyDropdown() {
+        // 加载可用策略列表作为选择项
+        async function loadAvailableStrategiesForSelection() {
             try {
-                console.log('🔍 填充策略下拉框...');
+                console.log('🔍 开始加载可用策略列表...');
 
-                // 使用共享的策略数据
-                const strategiesData = await loadAllStrategiesData();
+                // 从策略服务获取可用策略类型列表
+                const response = await fetch('/api/v1/trading/strategies/types');
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const result = await response.json();
+                console.log('📊 可用策略API完整响应:', result);
+
                 const strategySelect = document.getElementById('live-strategy-select');
+                console.log('📊 下拉框当前选项数:', strategySelect.options.length);
 
-                if (strategiesData && Object.keys(strategiesData).length > 0) {
-                    Object.values(strategiesData).forEach((strategy, index) => {
+                if (result && result.success && result.data) {
+                    const availableStrategies = Object.values(result.data);
+                    console.log('📊 获取到的策略列表:', availableStrategies);
+
+                    if (availableStrategies.length > 0) {
+                        availableStrategies.forEach((strategy, index) => {
+                            const option = document.createElement('option');
+                            option.value = strategy.class_name;
+                            option.textContent = strategy.class_name + ' (可用)';
+                            strategySelect.appendChild(option);
+                            console.log(`📊 添加策略选项 ${index + 1}:`, strategy.class_name);
+                        });
+                        console.log('✅ 可用策略加载完成:', availableStrategies.length, '个策略');
+                        console.log('📊 下拉框最终选项数:', strategySelect.options.length);
+                    } else {
+                        console.log('⚠️ 策略列表为空');
                         const option = document.createElement('option');
-                        option.value = strategy.class_name;
-                        option.textContent = strategy.class_name + ' (可用)';
+                        option.value = '';
+                        option.textContent = '暂无可用策略';
+                        option.disabled = true;
                         strategySelect.appendChild(option);
-                        console.log(`📊 添加策略选项 ${index + 1}:`, strategy.class_name);
-                    });
-                    console.log('✅ 下拉框填充完成:', Object.keys(strategiesData).length, '个策略');
+                    }
                 } else {
-                    const option = document.createElement('option');
-                    option.value = '';
-                    option.textContent = '暂无可用策略';
-                    option.disabled = true;
-                    strategySelect.appendChild(option);
+                    console.error('❌ 数据格式错误:', result);
+                    throw new Error('可用策略数据格式错误');
                 }
 
             } catch (error) {
-                console.error('❌ 填充下拉框失败:', error);
+                console.error('❌ 加载可用策略失败:', error);
                 const strategySelect = document.getElementById('live-strategy-select');
                 const option = document.createElement('option');
                 option.value = '';
                 option.textContent = '加载失败: ' + error.message;
                 option.disabled = true;
                 strategySelect.appendChild(option);
-            }
-        }
-
-
-
-        // 启动策略
-        async function startStrategy(strategyName) {
-            if (confirm(`确定要启动策略 ${strategyName} 吗？\n\n启动后策略将开始实盘交易。`)) {
-                try {
-                    console.log('🚀 启动策略:', strategyName);
-
-                    // 显示加载状态
-                    const button = event.target;
-                    const originalText = button.textContent;
-                    button.textContent = '启动中...';
-                    button.disabled = true;
-
-                    // 调用策略启动API
-                    const response = await fetch('/api/v1/trading/strategies/start', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            strategy_name: strategyName,
-                            strategy_setting: {
-                                max_position: 5,
-                                trade_volume: 1
-                            }
-                        })
-                    });
-
-                    if (!response.ok) {
-                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                    }
-
-                    const result = await response.json();
-                    console.log('📊 策略启动响应:', result);
-
-                    if (result.success) {
-                        alert(`✅ 策略 ${strategyName} 启动成功！\n\n策略已开始运行，可以在实盘统计中查看交易数据。`);
-                        // 刷新页面数据
-                        loadRunningStrategies();
-                        loadStrategyList();
-                    } else {
-                        throw new Error(result.message || '启动失败');
-                    }
-
-                } catch (error) {
-                    console.error('❌ 启动策略失败:', error);
-                    alert(`❌ 启动策略失败: ${error.message}`);
-                } finally {
-                    // 恢复按钮状态
-                    const button = event.target;
-                    button.textContent = originalText;
-                    button.disabled = false;
-                }
-            }
-        }
-
-        // 停止策略
-        async function stopStrategy(strategyName) {
-            if (confirm(`确定要停止策略 ${strategyName} 吗？\n\n停止后策略将不再进行交易。`)) {
-                try {
-                    console.log('⏹️ 停止策略:', strategyName);
-
-                    // 显示加载状态
-                    const button = event.target;
-                    const originalText = button.textContent;
-                    button.textContent = '停止中...';
-                    button.disabled = true;
-
-                    // 调用策略停止API
-                    const response = await fetch('/api/v1/trading/strategies/stop', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            strategy_name: strategyName
-                        })
-                    });
-
-                    if (!response.ok) {
-                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                    }
-
-                    const result = await response.json();
-                    console.log('📊 策略停止响应:', result);
-
-                    if (result.success) {
-                        alert(`✅ 策略 ${strategyName} 停止成功！`);
-                        // 刷新页面数据
-                        loadRunningStrategies();
-                        loadStrategyList();
-                    } else {
-                        throw new Error(result.message || '停止失败');
-                    }
-
-                } catch (error) {
-                    console.error('❌ 停止策略失败:', error);
-                    alert(`❌ 停止策略失败: ${error.message}`);
-                } finally {
-                    // 恢复按钮状态
-                    const button = event.target;
-                    button.textContent = originalText;
-                    button.disabled = false;
-                }
             }
         }
 
@@ -1110,7 +578,38 @@
             }
         }
 
+        // 测试策略选择功能
+        function testStrategySelection() {
+            console.log('🧪 开始测试策略选择功能');
+            const strategySelect = document.getElementById('live-strategy-select');
+            const contentDiv = document.getElementById('live-stats-content');
 
+            console.log('📊 下拉框元素:', strategySelect);
+            console.log('📊 内容区域元素:', contentDiv);
+            console.log('📊 当前选中值:', strategySelect?.value);
+            console.log('📊 选项数量:', strategySelect?.options?.length);
+
+            // 打印所有选项
+            if (strategySelect && strategySelect.options) {
+                for (let i = 0; i < strategySelect.options.length; i++) {
+                    console.log(`📊 选项 ${i}:`, strategySelect.options[i].value, '-', strategySelect.options[i].textContent);
+                }
+            }
+
+            if (strategySelect && strategySelect.options.length > 1) {
+                // 自动选择第一个非空选项进行测试
+                for (let i = 1; i < strategySelect.options.length; i++) {
+                    if (strategySelect.options[i].value) {
+                        strategySelect.value = strategySelect.options[i].value;
+                        console.log('🧪 自动选择策略进行测试:', strategySelect.value);
+                        onStrategySelectChange();
+                        break;
+                    }
+                }
+            } else {
+                console.log('⚠️ 没有可选择的策略选项');
+            }
+        }
 
         // 加载所有策略的实盘统计数据（备用函数）
         async function loadAllLiveStats() {
@@ -1261,9 +760,24 @@
                     strategiesListDiv.innerHTML = '<div class="loading">正在加载策略列表...</div>';
                 }
 
-                // 使用共享的策略数据
-                const strategiesData = await loadAllStrategiesData();
-                const strategies = Object.keys(strategiesData);
+                const response = await fetch('http://localhost:8002/backtest/strategies');
+                console.log('📡 API响应状态:', response.status);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const result = await response.json();
+                console.log('📊 策略列表API响应:', result);
+
+                // 简化数据提取
+                let strategies = [];
+                if (result && result.success && result.data && result.data.strategies) {
+                    strategies = result.data.strategies;
+                } else {
+                    console.error('❌ 策略数据格式错误:', result);
+                    throw new Error('策略列表数据格式错误');
+                }
 
                 console.log('📊 获取到策略列表:', strategies, '数量:', strategies.length);
 
@@ -1272,61 +786,40 @@
                     strategyCountDiv.textContent = strategies.length;
                 }
 
-                // 获取运行中的策略状态
-                let runningStrategiesStatus = {};
-                try {
-                    const statusResponse = await fetch('/api/v1/trading/strategies');
-                    if (statusResponse.ok) {
-                        const statusResult = await statusResponse.json();
-                        if (statusResult.success && statusResult.data) {
-                            runningStrategiesStatus = statusResult.data;
-                        }
-                    }
-                } catch (error) {
-                    console.log('获取策略状态失败:', error);
-                }
-
                 // 更新策略列表
                 if (strategiesListDiv) {
                     if (strategies.length === 0) {
                         strategiesListDiv.innerHTML = '<div class="empty-state">暂无可用策略</div>';
                     } else {
-                        const strategyCards = strategies.map(strategyName => {
-                            const isRunning = runningStrategiesStatus[strategyName] !== undefined;
-                            const statusBadge = isRunning ?
-                                '<span class="status-badge running">运行中</span>' :
-                                '<span class="status-badge stopped">已停止</span>';
-
-                            return `
-                                <div class="strategy-card" onclick="selectStrategy('${strategyName}')">
-                                    <div class="strategy-header">
-                                        <div class="strategy-info">
-                                            <h4>${strategyName}</h4>
-                                            <span class="strategy-type">量化策略</span>
-                                        </div>
-                                        ${statusBadge}
+                        const strategyCards = strategies.map(strategyName => `
+                            <div class="strategy-card" onclick="selectStrategy('${strategyName}')">
+                                <div class="strategy-header">
+                                    <div class="strategy-info">
+                                        <h4>${strategyName}</h4>
+                                        <span class="strategy-type">量化策略</span>
                                     </div>
-                                    <div class="strategy-metrics">
-                                        <div class="metric">
-                                            <span class="metric-label">今日盈亏</span>
-                                            <span class="metric-value">--</span>
-                                        </div>
-                                        <div class="metric">
-                                            <span class="metric-label">胜率</span>
-                                            <span class="metric-value">--</span>
-                                        </div>
-                                        <div class="metric">
-                                            <span class="metric-label">交易次数</span>
-                                            <span class="metric-value">--</span>
-                                        </div>
+                                    <span class="status-badge stopped">可用于回测</span>
+                                </div>
+                                <div class="strategy-metrics">
+                                    <div class="metric">
+                                        <span class="metric-label">今日盈亏</span>
+                                        <span class="metric-value">--</span>
                                     </div>
-                                    <div class="strategy-actions">
-                                        <button class="btn btn-success btn-sm" onclick="event.stopPropagation(); startStrategy('${strategyName}')" ${isRunning ? 'disabled' : ''}>🚀 启动</button>
-                                        <button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); stopStrategy('${strategyName}')" ${!isRunning ? 'disabled' : ''}>⏹️ 停止</button>
+                                    <div class="metric">
+                                        <span class="metric-label">胜率</span>
+                                        <span class="metric-value">--</span>
+                                    </div>
+                                    <div class="metric">
+                                        <span class="metric-label">交易次数</span>
+                                        <span class="metric-value">--</span>
                                     </div>
                                 </div>
-                            `;
-                        }).join('');
+                                <div class="strategy-actions">
+                                    <button class="btn btn-primary btn-sm" onclick="event.stopPropagation(); quickBacktest('${strategyName}')">快速回测</button>
+                                    <button class="btn btn-info btn-sm" onclick="event.stopPropagation(); advancedBacktest('${strategyName}')">高级回测</button>
+                                </div>
+                            </div>
+                        `).join('');
 
                         strategiesListDiv.innerHTML = strategyCards;
                     }
@@ -1347,7 +840,7 @@
         }
 
         // 选择策略
-        async function selectStrategy(strategyName) {
+        function selectStrategy(strategyName) {
             console.log('选择策略:', strategyName);
 
             // 移除其他策略的选中状态
@@ -1358,386 +851,120 @@
             // 添加当前策略的选中状态
             event.currentTarget.classList.add('selected');
 
-            try {
-                // 获取策略配置
-                const response = await fetch('/api/v1/trading/strategies/config');
-                if (!response.ok) {
-                    throw new Error('获取策略配置失败');
-                }
+            // 显示策略详情
+            const detailsDiv = document.getElementById('strategy-details');
+            detailsDiv.innerHTML = `
+                <div class="details-header">
+                    <h4>${strategyName}</h4>
+                    <div class="details-actions">
+                        <button class="btn btn-primary btn-sm" onclick="quickBacktest('${strategyName}')">快速回测</button>
+                        <button class="btn btn-info btn-sm" onclick="advancedBacktest('${strategyName}')">高级回测</button>
+                    </div>
+                </div>
 
-                const result = await response.json();
-                const strategyConfig = result.success && result.data ? result.data[strategyName] : null;
+                <div class="details-section">
+                    <h4>基本信息</h4>
+                    <div class="info-grid">
+                        <div class="info-item">
+                            <span class="info-label">策略名称</span>
+                            <span class="info-value">${strategyName}</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">策略类型</span>
+                            <span class="info-value">量化策略</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">状态</span>
+                            <span class="info-value">可用于回测（未运行）</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">实盘状态</span>
+                            <span class="info-value">未启动</span>
+                        </div>
+                    </div>
+                </div>
 
-                // 显示策略详情
-                const detailsDiv = document.getElementById('strategy-details');
-
-                if (strategyConfig) {
-                    const params = strategyConfig.params || {};
-                    const paramItems = Object.entries(params).map(([key, value]) => `
+                <div class="details-section">
+                    <h4>策略参数</h4>
+                    <div class="params-grid">
                         <div class="param-item">
-                            <span class="param-label">${getParamLabel(key)}</span>
-                            <div style="display: flex; flex-direction: column; gap: 4px;">
-                                <input type="number" class="param-input" value="${value}"
-                                       title="${getParamHint(key)}"
-                                       placeholder="建议值见下方提示"
-                                       onchange="updateParam('${strategyName}', '${key}', this.value)">
-                                <small style="color: #6c757d; font-size: 11px;">${getParamHint(key)}</small>
-                            </div>
+                            <span class="param-label">最大持仓</span>
+                            <span class="param-value">5</span>
                         </div>
-                    `).join('');
+                        <div class="param-item">
+                            <span class="param-label">风险控制</span>
+                            <span class="param-value">启用</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
 
-                    detailsDiv.innerHTML = `
-                        <div class="details-header">
-                            <h4>${strategyConfig.name || strategyName}</h4>
-                            <div class="details-actions">
-                                <button class="btn btn-success btn-sm" onclick="saveStrategyConfig('${strategyName}')">💾 保存参数</button>
-                                <button class="btn btn-warning btn-sm" onclick="resetToDefaults('${strategyName}')">🔄 恢复默认</button>
-                                <button class="btn btn-primary btn-sm" onclick="goToBacktest('${strategyName}')">📊 回测分析</button>
-                            </div>
-                        </div>
+        // 快速回测
+        async function quickBacktest(strategyName) {
+            if (confirm(`确定要对策略 ${strategyName} 进行快速回测吗？\n\n将使用专业回测服务进行7天快速回测。`)) {
+                try {
+                    console.log('开始快速回测:', strategyName);
 
-                        <div class="details-section">
-                            <h4>基本信息</h4>
-                            <div class="info-grid">
-                                <div class="info-item">
-                                    <span class="info-label">策略名称</span>
-                                    <span class="info-value">${strategyConfig.name || strategyName}</span>
-                                </div>
-                                <div class="info-item">
-                                    <span class="info-label">描述</span>
-                                    <span class="info-value">${strategyConfig.description || '量化策略'}</span>
-                                </div>
-                                <div class="info-item">
-                                    <span class="info-label">交易品种</span>
-                                    <span class="info-value">${strategyConfig.symbol || 'au2510'}</span>
-                                </div>
-                                <div class="info-item">
-                                    <span class="info-label">K线时间单位</span>
-                                    <span class="info-value">1分钟K线</span>
-                                </div>
-                                <div class="info-item">
-                                    <span class="info-label">启用状态</span>
-                                    <label class="switch">
-                                        <input type="checkbox" ${strategyConfig.enabled ? 'checked' : ''}
-                                               onchange="toggleStrategyEnabled('${strategyName}', this.checked)">
-                                        <span class="slider"></span>
-                                    </label>
-                                </div>
-                            </div>
-                        </div>
+                    // 显示加载状态
+                    const originalText = event.target.textContent;
+                    event.target.textContent = '回测中...';
+                    event.target.disabled = true;
 
-                        <div class="details-section">
-                            <h4>策略参数</h4>
-                            <div class="params-grid">
-                                ${paramItems}
-                            </div>
-                            <div class="param-help">
-                                <h6>📋 新手指南 - 参数详解</h6>
-                                <div style="margin-bottom: 12px;">
-                                    <strong>🕐 时间周期参数：</strong>
-                                    <ul style="margin: 4px 0;">
-                                        <li><strong>K线基础</strong>：1分钟K线 = 1分钟内的开盘价、收盘价、最高价、最低价</li>
-                                        <li><strong>均线周期</strong>：短期5 = 最近5分钟平均价格，长期20 = 最近20分钟平均价格</li>
-                                        <li><strong>交易信号</strong>：短期均线上穿长期均线 = 买入信号，下穿 = 卖出信号</li>
-                                    </ul>
-                                </div>
-                                <div style="margin-bottom: 12px;">
-                                    <strong>💰 资金仓位参数：</strong>
-                                    <ul style="margin: 4px 0;">
-                                        <li><strong>初始资金</strong>：策略开始时的总资金，建议不少于50000元</li>
-                                        <li><strong>最大持仓</strong>：同时最多持有多少手合约，1手=1000克黄金≈45万元</li>
-                                        <li><strong>交易量</strong>：每次买卖的手数，新手建议设为1手</li>
-                                    </ul>
-                                </div>
-                                <div style="margin-bottom: 12px;">
-                                    <strong>⚖️ 风险控制参数：</strong>
-                                    <ul style="margin: 4px 0;">
-                                        <li><strong>比例值</strong>：0.02 = 2%，0.1 = 10%，用于设置止损止盈</li>
-                                        <li><strong>阈值</strong>：触发交易的临界条件，数值越小越敏感</li>
-                                    </ul>
-                                </div>
-                                <div style="background: #fff3cd; padding: 8px; border-radius: 4px; border-left: 4px solid #ffc107;">
-                                    <strong>⚠️ 新手建议：</strong>首次使用建议保持默认参数，熟悉后再调整
-                                </div>
-                            </div>
-                        </div>
-                    `;
-                } else {
-                    detailsDiv.innerHTML = `
-                        <div class="details-header">
-                            <h4>${strategyName}</h4>
-                            <div class="details-actions">
-                                <button class="btn btn-primary btn-sm" onclick="goToBacktest('${strategyName}')">📊 回测分析</button>
-                            </div>
-                        </div>
-                        <div class="details-section">
-                            <p>策略配置加载失败或不存在</p>
-                        </div>
-                    `;
+                    // 调用专业回测服务的快速回测API
+                    const response = await fetch('http://localhost:8003/backtest/quick', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            strategy_name: strategyName,
+                            strategy_setting: {
+                                max_position: 5
+                            },
+                            days: 7
+                        })
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
+
+                    const result = await response.json();
+                    console.log('快速回测结果:', result);
+
+                    if (result.success) {
+                        alert(`${strategyName} 快速回测完成！\n\n请点击"📊 回测结果"按钮查看详细结果。`);
+                        // 如果回测结果区域是打开的，刷新数据
+                        if (backtestResultsVisible) {
+                            loadBacktestResults();
+                        }
+                    } else {
+                        throw new Error(result.message || '回测失败');
+                    }
+
+                } catch (error) {
+                    console.error('快速回测失败:', error);
+                    alert(`快速回测失败: ${error.message}\n\n请确保专业回测服务正常运行。`);
+                } finally {
+                    // 恢复按钮状态
+                    event.target.textContent = originalText;
+                    event.target.disabled = false;
                 }
-
-            } catch (error) {
-                console.error('加载策略详情失败:', error);
-                const detailsDiv = document.getElementById('strategy-details');
-                detailsDiv.innerHTML = `
-                    <div class="details-header">
-                        <h4>${strategyName}</h4>
-                    </div>
-                    <div class="details-section">
-                        <p>策略详情加载失败: ${error.message}</p>
-                    </div>
-                `;
             }
         }
 
-        // 跳转到回测分析页面
-        function goToBacktest(strategyName) {
-            console.log('跳转到回测分析页面:', strategyName);
+        // 高级回测
+        function advancedBacktest(strategyName) {
+            console.log('打开高级回测:', strategyName);
             // 跳转到回测分析页面，并传递策略名称参数
             window.location.href = `/backtest?strategy=${encodeURIComponent(strategyName)}`;
         }
 
-        // 参数验证函数
-        function validateParam(paramKey, value) {
-            const numValue = parseFloat(value);
-
-            // 基本数值验证
-            if (isNaN(numValue)) {
-                return { valid: false, message: '必须是数字' };
-            }
-
-            // 根据参数类型进行具体验证
-            switch (paramKey) {
-                case 'initial_capital':
-                    return numValue > 0 ?
-                        { valid: true } :
-                        { valid: false, message: '初始资金必须大于0' };
-
-                case 'max_position':
-                case 'trade_volume':
-                case 'min_order_size':
-                    return (Number.isInteger(numValue) && numValue > 0) ?
-                        { valid: true } :
-                        { valid: false, message: '必须是正整数' };
-
-                case 'ma_short':
-                case 'ma_long':
-                case 'fast_period':
-                case 'slow_period':
-                case 'trend_period':
-                case 'volatility_period':
-                case 'vwap_period':
-                    return (Number.isInteger(numValue) && numValue >= 2) ?
-                        { valid: true } :
-                        { valid: false, message: '周期必须是大于等于2的整数' };
-
-                case 'signal_interval':
-                    return (Number.isInteger(numValue) && numValue >= 1) ?
-                        { valid: true } :
-                        { valid: false, message: '信号间隔必须是大于等于1的整数' };
-
-                case 'follow_ratio':
-                case 'entry_threshold':
-                case 'exit_threshold':
-                case 'deviation_threshold':
-                case 'reversion_threshold':
-                case 'max_drawdown':
-                case 'stop_loss_ratio':
-                case 'take_profit_ratio':
-                    return (numValue >= 0 && numValue <= 1) ?
-                        { valid: true } :
-                        { valid: false, message: '比例值必须在0-1之间' };
-
-                case 'max_daily_loss':
-                    return numValue >= 0 ?
-                        { valid: true } :
-                        { valid: false, message: '最大日亏损不能为负数' };
-
-                default:
-                    return numValue >= 0 ?
-                        { valid: true } :
-                        { valid: false, message: '数值不能为负数' };
-            }
-        }
-
-        // 更新参数值（临时存储）
-        function updateParam(strategyName, paramKey, value) {
-            console.log('更新参数:', strategyName, paramKey, value);
-
-            const validation = validateParam(paramKey, value);
-            const input = event.target;
-
-            if (validation.valid) {
-                // 参数验证通过
-                input.style.borderColor = '#28a745';
-                input.title = '参数有效';
-            } else {
-                // 参数验证失败
-                input.style.borderColor = '#dc3545';
-                input.title = validation.message;
-            }
-        }
-
-        // 保存策略配置
-        async function saveStrategyConfig(strategyName) {
-            if (!confirm(`确定要保存策略 ${strategyName} 的配置吗？`)) {
-                return;
-            }
-
-            try {
-                console.log('保存策略配置:', strategyName);
-
-                // 收集当前页面的参数值
-                const paramInputs = document.querySelectorAll('.param-input');
-                const params = {};
-
-                paramInputs.forEach(input => {
-                    const paramKey = input.onchange.toString().match(/'([^']+)'/g)[1].replace(/'/g, '');
-                    params[paramKey] = parseFloat(input.value) || input.value;
-                });
-
-                // 获取当前策略配置
-                const response = await fetch('/api/v1/trading/strategies/config');
-                if (!response.ok) {
-                    throw new Error('获取当前配置失败');
-                }
-
-                const result = await response.json();
-                const currentConfig = result.data[strategyName];
-
-                if (!currentConfig) {
-                    throw new Error('策略配置不存在');
-                }
-
-                // 更新参数
-                currentConfig.params = { ...currentConfig.params, ...params };
-
-                // 保存配置
-                const saveResponse = await fetch(`/api/v1/trading/strategies/config/${strategyName}`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(currentConfig)
-                });
-
-                if (!saveResponse.ok) {
-                    throw new Error('保存请求失败');
-                }
-
-                const saveResult = await saveResponse.json();
-
-                if (saveResult.success) {
-                    alert(`✅ 策略 ${strategyName} 配置保存成功！`);
-                    // 重新加载策略详情
-                    selectStrategy(strategyName);
-                } else {
-                    throw new Error(saveResult.message || '保存失败');
-                }
-
-            } catch (error) {
-                console.error('保存策略配置失败:', error);
-                alert(`❌ 保存失败: ${error.message}`);
-            }
-        }
-
-        // 切换策略启用状态
-        async function toggleStrategyEnabled(strategyName, enabled) {
-            try {
-                console.log('切换策略启用状态:', strategyName, enabled);
-
-                // 获取当前策略配置
-                const response = await fetch('/api/v1/trading/strategies/config');
-                const result = await response.json();
-                const currentConfig = result.data[strategyName];
-
-                if (!currentConfig) {
-                    throw new Error('策略配置不存在');
-                }
-
-                // 更新启用状态
-                currentConfig.enabled = enabled;
-
-                // 保存配置
-                const saveResponse = await fetch(`/api/v1/trading/strategies/config/${strategyName}`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(currentConfig)
-                });
-
-                const saveResult = await saveResponse.json();
-
-                if (saveResult.success) {
-                    console.log(`策略 ${strategyName} 启用状态已更新为: ${enabled}`);
-                } else {
-                    throw new Error(saveResult.message || '更新失败');
-                }
-
-            } catch (error) {
-                console.error('更新策略启用状态失败:', error);
-                // 恢复开关状态
-                event.target.checked = !enabled;
-                alert(`❌ 更新失败: ${error.message}`);
-            }
-        }
-
-        // 恢复默认参数
-        function resetToDefaults(strategyName) {
-            if (!confirm(`确定要将策略 ${strategyName} 的参数恢复为默认值吗？\n\n此操作将覆盖当前的参数设置。`)) {
-                return;
-            }
-
-            // 获取默认参数配置
-            const defaultParams = {
-                'SHFEQuantStrategy': {
-                    ma_short: 5, ma_long: 15, trade_volume: 1, max_position: 2, initial_capital: 50000
-                },
-                'SimpleSHFEStrategy': {
-                    ma_short: 10, ma_long: 30, trade_volume: 1, max_position: 5, initial_capital: 50000
-                },
-                'TestStrategy': {
-                    signal_interval: 30, trade_volume: 1, max_position: 10, initial_capital: 10000
-                },
-                'DoubleMaStrategy': {
-                    fast_period: 12, slow_period: 26, trade_volume: 1, max_position: 3, initial_capital: 100000
-                },
-                'LargeOrderFollowingStrategy': {
-                    min_order_size: 10, follow_ratio: 0.5, trade_volume: 1, max_position: 5, initial_capital: 200000
-                },
-                'AdvancedSHFEStrategy': {
-                    trend_period: 20, volatility_period: 14, entry_threshold: 0.02, exit_threshold: 0.01,
-                    trade_volume: 2, max_position: 8, initial_capital: 300000
-                },
-                'VWAPDeviationReversionStrategy': {
-                    vwap_period: 20, deviation_threshold: 0.015, reversion_threshold: 0.005,
-                    trade_volume: 1, max_position: 4, initial_capital: 150000
-                }
-            };
-
-            const defaults = defaultParams[strategyName];
-            if (!defaults) {
-                alert('未找到该策略的默认参数配置');
-                return;
-            }
-
-            // 更新页面上的输入框
-            const paramInputs = document.querySelectorAll('.param-input');
-            paramInputs.forEach(input => {
-                const paramKey = input.onchange.toString().match(/'([^']+)'/g)[1].replace(/'/g, '');
-                if (defaults[paramKey] !== undefined) {
-                    input.value = defaults[paramKey];
-                    input.style.borderColor = '#28a745'; // 显示为有效状态
-                }
-            });
-
-            alert('✅ 参数已恢复为默认值，请点击"💾 保存参数"按钮保存配置');
-        }
-
         // 页面加载完成后绑定事件
         document.addEventListener('DOMContentLoaded', function() {
-            console.log('🎯 策略管理页面初始化完成');
+            console.log('🎯 策略管理页面版本: v2.1-20250818');
+            console.log('🎯 当前时间:', new Date().toISOString());
             // 绑定策略选择下拉框事件
             const strategySelect = document.getElementById('live-strategy-select');
             if (strategySelect) {
@@ -1761,40 +988,82 @@
             }
 
             // 初始加载数据
-            console.log('🚀 开始初始化数据加载...');
+            loadStrategyList();
+            loadRunningStrategies();
 
-            // 使用立即执行的异步函数
-            (async () => {
+            // 延迟测试策略选择功能
+            setTimeout(() => {
+                console.log('🧪 延迟测试策略选择功能');
+                testStrategySelection();
+            }, 2000);
+
+            // 添加手动测试函数到全局作用域
+            window.testAPI = async function() {
+                console.log('🧪 手动测试API调用');
                 try {
-                    // 先加载策略数据（只请求一次）
-                    console.log('🚀 预加载策略数据...');
-                    await loadAllStrategiesData();
-
-                    // 然后并行加载两个功能
-                    console.log('🚀 并行加载策略列表和下拉框...');
-                    loadStrategyList();
-                    loadRunningStrategies();
-                    console.log('🚀 初始化数据加载完成');
+                    const response = await fetch('http://localhost:8002/backtest/strategies');
+                    console.log('📡 手动测试 - API响应:', response.status);
+                    const result = await response.json();
+                    console.log('📊 手动测试 - API数据:', result);
                 } catch (error) {
-                    console.error('❌ 初始化数据加载失败:', error);
+                    console.error('❌ 手动测试失败:', error);
                 }
-            })();
+            };
 
+            // 添加简化的策略列表加载测试
+            window.testLoadStrategies = function() {
+                console.log('🧪 测试策略列表加载');
+                const strategiesListDiv = document.getElementById('strategies-list');
+                const strategyCountDiv = document.getElementById('strategy-count');
+
+                console.log('📊 策略列表容器:', strategiesListDiv);
+                console.log('📊 策略计数容器:', strategyCountDiv);
+
+                if (strategiesListDiv) {
+                    strategiesListDiv.innerHTML = `
+                        <div class="strategy-card">
+                            <div class="strategy-header">
+                                <div class="strategy-info">
+                                    <h4>测试策略</h4>
+                                    <span class="strategy-type">量化策略</span>
+                                </div>
+                                <span class="status-badge stopped">测试中</span>
+                            </div>
+                        </div>
+                    `;
+                    console.log('✅ 测试策略卡片已添加');
+                }
+
+                if (strategyCountDiv) {
+                    strategyCountDiv.textContent = '1';
+                    console.log('✅ 策略计数已更新');
+                }
+            };
+
+            // 添加浏览器信息诊断
+            window.debugInfo = function() {
+                console.log('🔍 浏览器诊断信息:');
+                console.log('User Agent:', navigator.userAgent);
+                console.log('当前URL:', window.location.href);
+                console.log('Cookies:', document.cookie);
+                console.log('Local Storage:', localStorage);
+                console.log('Session Storage:', sessionStorage);
+                console.log('DOM Ready State:', document.readyState);
+                console.log('策略列表容器:', document.getElementById('strategies-list'));
+                console.log('下拉框容器:', document.getElementById('live-strategy-select'));
+            };
+
+            // 页面加载完成后自动运行诊断
+            setTimeout(() => {
+                console.log('🔍 自动运行浏览器诊断');
+                debugInfo();
+            }, 1000);
 
             // 绑定添加策略按钮
             const addBtn = document.getElementById('add-strategy-btn');
             if (addBtn) {
                 addBtn.addEventListener('click', function() {
                     alert('添加策略功能开发中...');
-                });
-            }
-
-            // 绑定实盘交易统计按钮
-            const tradingStatsBtn = document.getElementById('trading-stats-btn');
-            if (tradingStatsBtn) {
-                tradingStatsBtn.addEventListener('click', function() {
-                    console.log('🔄 打开实盘交易统计页面');
-                    openTradingStatistics();
                 });
             }
 
