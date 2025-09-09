@@ -159,21 +159,14 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
             logger.info(f"[策略服务-GoldMaRsi] 🔧 策略未启用交易，跳过处理")
             return
 
-        # 🎯 检查是否在交易时间，避免停市后生成重复K线
-        if not self._is_trading_time():
-            logger.debug(f"[策略服务-GoldMaRsi] ⏰ 非交易时间，跳过K线处理")
-            return
-
-        # 🎯 标准架构：策略服务合成K线 → 策略更新ArrayManager → 计算指标 → 生成信号
+        # 🎯 标准架构：策略引擎已在源头控制交易时间 → 策略更新ArrayManager → 计算指标 → 生成信号
         self.am.update_bar(bar)
 
         # 确保有足够的数据
         if not self.am.inited:
             return
 
-        # 🛡️ 优先检查止盈止损（基于当前价格）
-        if self.pos != 0:
-            self._check_risk_control(bar.close_price)
+        # 🛡️ 风控检查已移至on_tick_impl中实时处理
 
         # 检查信号间隔（避免频繁交易）
         current_time = time.time()
@@ -339,9 +332,9 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
             return
             
         if self.pos > 0:
-            self.sell(price, abs(self.pos), stop=False)
+            self.sell(price, abs(self.pos), stop=False)  # 卖出平仓
         else:
-            self.buy(price, abs(self.pos), stop=False)
+            self.cover(price, abs(self.pos), stop=False)  # 买入平仓
             
         self.write_log(f"🛑 {reason}: 平仓 {self.pos}手 @ {price:.2f}")
         self.entry_price = 0.0
@@ -454,37 +447,37 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
             if self.pos < 0:  # 有空头持仓，优先平空仓
                 close_volume = min(trade_volume, abs(self.pos))
                 logger.info(f"� [持仓管理] 有空头持仓{self.pos}手，BUY信号优先平空仓{close_volume}手")
-                self.buy(current_price, close_volume, stop=False)
+                self.cover(current_price, close_volume, stop=False)  # 买入平仓
 
                 # 如果还有剩余信号强度，考虑开多仓
                 remaining_volume = trade_volume - close_volume
                 if remaining_volume > 0:
                     logger.info(f"🔧 [持仓管理] 平空后剩余信号，开多仓{remaining_volume}手")
-                    self.buy(current_price, remaining_volume, stop=False)
+                    self.buy(current_price, remaining_volume, stop=False)  # 买入开仓
             else:  # 无持仓或有多头持仓，开多仓或加多仓
                 if self.pos == 0:
                     logger.info(f"�🚀 [SHFE策略] 无持仓，执行开多仓！价格: {current_price}, 数量: {trade_volume}")
                 else:
                     logger.info(f"🚀 [SHFE策略] 有多头持仓{self.pos}手，执行加多仓！价格: {current_price}, 数量: {trade_volume}")
-                self.buy(current_price, trade_volume, stop=False)
+                self.buy(current_price, trade_volume, stop=False)  # 买入开仓
 
         elif action == 'SELL':
             if self.pos > 0:  # 有多头持仓，优先平多仓
                 close_volume = min(trade_volume, abs(self.pos))
                 logger.info(f"🔧 [持仓管理] 有多头持仓{self.pos}手，SELL信号优先平多仓{close_volume}手")
-                self.sell(current_price, close_volume, stop=False)
+                self.sell(current_price, close_volume, stop=False)  # 卖出平仓
 
                 # 如果还有剩余信号强度，考虑开空仓
                 remaining_volume = trade_volume - close_volume
                 if remaining_volume > 0:
                     logger.info(f"🔧 [持仓管理] 平多后剩余信号，开空仓{remaining_volume}手")
-                    self.sell(current_price, remaining_volume, stop=False)
+                    self.short(current_price, remaining_volume, stop=False)  # 卖出开仓
             else:  # 无持仓或有空头持仓，开空仓或加空仓
                 if self.pos == 0:
                     logger.info(f"🚀 [SHFE策略] 无持仓，执行开空仓！价格: {current_price}, 数量: {trade_volume}")
                 else:
                     logger.info(f"🚀 [SHFE策略] 有空头持仓{self.pos}手，执行加空仓！价格: {current_price}, 数量: {trade_volume}")
-                self.sell(current_price, trade_volume, stop=False)
+                self.short(current_price, trade_volume, stop=False)  # 卖出开仓
 
         # 更新信号时间
         self.last_signal_time = time.time()
@@ -532,36 +525,16 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
 
         return True
 
-    def _is_trading_time(self) -> bool:
-        """检查是否在交易时间"""
-        now = datetime.now()
-        hour = now.hour
-        minute = now.minute
 
-        # 日盘: 9:00-11:30, 13:30-15:00
-        # 夜盘: 21:00-02:30
-        if (9 <= hour < 11) or (hour == 11 and minute <= 30):
-            return True
-        elif (13 <= hour < 15) or (hour == 13 and minute >= 30):
-            return True
-        elif hour >= 21 or hour <= 2:
-            return True
-        elif hour == 2 and minute <= 30:
-            return True
-
-        return False
 
     def on_tick_impl(self, tick: TickData):
         """具体的tick处理实现 - 必需的抽象方法"""
-        # 这里可以添加基于tick的快速处理逻辑
-        # 目前主要逻辑在on_bar中处理
-        pass
+        # 🛡️ 基于Tick的实时风控检查
+        if self.pos != 0:
+            self._check_risk_control(tick.last_price)
 
-    def on_tick_impl(self, tick: TickData):
-        """具体的tick处理实现 - 必需的抽象方法"""
-        # 这里可以添加基于tick的快速处理逻辑
-        # 目前主要逻辑在on_bar_impl中处理
-        pass
+        # 其他基于tick的快速处理逻辑可以在这里添加
+        # 主要的技术分析逻辑仍在on_bar_impl中处理
 
     def on_trade_impl(self, trade):
         """具体的成交处理实现"""

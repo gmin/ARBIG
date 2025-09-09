@@ -522,9 +522,15 @@ class StrategyEngine:
                     logger.info(f"🔧 当前启动策略数量: {len(self.active_strategies)}")
                     logger.info(f"🔧 启动策略列表: {self.active_strategies}")
 
-                # 获取市场数据
-                logger.info(f"🔧 调用_fetch_market_data, 启动策略: {len(self.active_strategies)}")
-                self._fetch_market_data()
+                # 🎯 在调度层控制交易时间 - 最优架构
+                if self._is_trading_time():
+                    # 只在交易时间获取市场数据
+                    logger.info(f"🔧 交易时间内，调用_fetch_market_data, 启动策略: {len(self.active_strategies)}")
+                    self._fetch_market_data()
+                else:
+                    # 非交易时间，跳过数据获取，节省资源
+                    if loop_count % 60 == 1:  # 每分钟提醒一次
+                        logger.debug(f"🔧 非交易时间，跳过数据获取")
 
                 # 休眠1秒
                 threading.Event().wait(1.0)
@@ -570,16 +576,14 @@ class StrategyEngine:
                         # 存储最新tick数据
                         self.tick_data[symbol] = tick
 
-                        # 🎯 简化判断：只给测试策略发送tick，技术分析策略只接收K线
+                        # 🎯 发送tick数据给所有策略（用于实时风控）
                         for strategy_name in self.active_strategies:
                             strategy = self.strategies[strategy_name]
                             if strategy.symbol == symbol:
-                                # 硬编码判断：只有TestSystem需要tick数据
-                                if strategy_name == "TestSystem":
-                                    logger.debug(f"[策略服务-引擎] 🔧 发送tick给测试策略: {strategy_name}")
-                                    strategy.on_tick(tick)
+                                logger.debug(f"[策略服务-引擎] 🔧 发送tick给策略: {strategy_name}")
+                                strategy.on_tick(tick)
 
-                        # 🔧 启用1分钟K线生成 - 支持MA和RSI计算
+                        # 🔧 启用1分钟K线生成 - 调度层已控制交易时间
                         if symbol in self.bar_generators:
                             logger.info(f"[策略服务-引擎] 🔧 更新K线生成器: {symbol}")
                             self.bar_generators[symbol].update_tick(tick)
@@ -652,6 +656,33 @@ class StrategyEngine:
                     
         except Exception as e:
             logger.error(f"Bar数据处理异常: {e}")
+
+    def _is_trading_time(self) -> bool:
+        """
+        检查是否在交易时间
+
+        Returns:
+            bool: True表示在交易时间内
+        """
+        from datetime import datetime, time
+
+        now = datetime.now()
+        current_time = now.time()
+
+        # 日盘交易时间: 9:00-10:15, 10:30-11:30, 13:30-15:00
+        day_session_1a = time(9, 0) <= current_time <= time(10, 15)
+        day_session_1b = time(10, 30) <= current_time <= time(11, 30)
+        day_session_2 = time(13, 30) <= current_time <= time(15, 0)
+
+        # 夜盘交易时间: 21:00-02:30 (跨日)
+        night_session = current_time >= time(21, 0) or current_time <= time(2, 30)
+
+        is_trading = day_session_1a or day_session_1b or day_session_2 or night_session
+
+        if not is_trading:
+            logger.debug(f"[策略服务-引擎] ⏰ 非交易时间: {current_time.strftime('%H:%M:%S')}")
+
+        return is_trading
     
     def get_strategy_status(self, strategy_name: str) -> Optional[Dict[str, Any]]:
         """

@@ -312,15 +312,15 @@ class ARBIGCtaTemplate(ABC):
     def on_tick(self, tick: TickData) -> None:
         """
         Tick数据回调
-        
+
         Args:
             tick: Tick数据
         """
         if not self.active:
             return
-        
+
         self.tick = tick
-        
+
         # 调用策略实现
         try:
             self.on_tick_impl(tick)
