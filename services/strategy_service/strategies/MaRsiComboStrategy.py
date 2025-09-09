@@ -80,8 +80,8 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
     rsi_oversold = 30     # RSI超卖阈值：<30视为超卖，谨慎做空
     
     # 风险控制参数
-    stop_loss_pct = 0.02  # 止损百分比：2%固定止损，控制单笔损失
-    take_profit_pct = 0.03 # 止盈百分比：3%目标止盈，锁定利润
+    stop_loss_pct = 0.006  # 止损百分比：0.6%固定止损，控制单笔损失
+    take_profit_pct = 0.008 # 止盈百分比：0.8%目标止盈，锁定利润
     
     # 交易执行参数
     trade_volume = 1      # 基础交易手数：每次交易的标准手数
@@ -91,6 +91,12 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
     entry_price = 0.0     # 入场价格
     last_signal_time = 0  # 上次信号时间
     signal_count = 0      # 信号计数
+
+    # 🔧 重复下单防护机制
+    last_bar_time = None  # 上次处理的K线时间
+    last_order_id = None  # 上次发送的订单ID
+    min_signal_interval = 30  # 最小信号间隔（秒）
+    pending_orders = set()  # 待成交订单集合
     
     def __init__(self, strategy_name: str, symbol: str, setting: dict, signal_sender=None, **kwargs):
         """初始化策略 - 兼容策略引擎参数"""
@@ -102,8 +108,8 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
         self.rsi_period = setting.get('rsi_period', 14)
         self.rsi_overbought = setting.get('rsi_overbought', 70)
         self.rsi_oversold = setting.get('rsi_oversold', 30)
-        self.stop_loss_pct = setting.get('stop_loss_pct', 0.02)
-        self.take_profit_pct = setting.get('take_profit_pct', 0.03)
+        self.stop_loss_pct = setting.get('stop_loss_pct', 0.006)
+        self.take_profit_pct = setting.get('take_profit_pct', 0.008)
         self.trade_volume = setting.get('trade_volume', 1)
         self.max_position = setting.get('max_position', 5)
         
@@ -138,29 +144,36 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
         """策略停止回调"""
         self.write_log("⏹️ MA-RSI组合策略已停止")
         
-    def on_tick(self, tick: TickData):
-        """🎯 纯净的行情回调 - 专注信号生成"""
-        if not self.trading:
-            return
-
-        # 🔧 使用自定义ArrayManager，支持update_tick
-        self.am.update_tick(tick)
-
-        # 🎯 专注核心职责：基于tick数据进行快速判断
-        # 不在这里进行复杂的持仓查询和风控检查
-        self._process_tick_signal(tick)
+    # 🎯 MaRsiComboStrategy是纯技术分析策略，不需要on_tick方法
+    # 只基于K线数据进行分析，符合标准量化交易架构：
+    # 策略服务合成K线 → 策略计算指标 → 策略生成信号
         
-    def on_bar(self, bar: BarData):
-        """🎯 Bar数据处理 - 主要的信号生成入口"""
+    def on_bar_impl(self, bar: BarData):
+        """🎯 K线数据处理 - 技术分析策略的核心入口
+
+        在基类ARBIGCtaTemplate的on_bar调用链中执行
+        """
+        logger.info(f"[策略服务-GoldMaRsi] 📊 收到K线数据: {bar.symbol} 时间={bar.datetime} 收盘价={bar.close_price}")
+
         if not self.trading:
+            logger.info(f"[策略服务-GoldMaRsi] 🔧 策略未启用交易，跳过处理")
             return
 
-        # 更新ArrayManager
+        # 🎯 检查是否在交易时间，避免停市后生成重复K线
+        if not self._is_trading_time():
+            logger.debug(f"[策略服务-GoldMaRsi] ⏰ 非交易时间，跳过K线处理")
+            return
+
+        # 🎯 标准架构：策略服务合成K线 → 策略更新ArrayManager → 计算指标 → 生成信号
         self.am.update_bar(bar)
 
         # 确保有足够的数据
         if not self.am.inited:
             return
+
+        # 🛡️ 优先检查止盈止损（基于当前价格）
+        if self.pos != 0:
+            self._check_risk_control(bar.close_price)
 
         # 检查信号间隔（避免频繁交易）
         current_time = time.time()
@@ -278,63 +291,6 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
                 "reason": f"趋势{trend_signal}+RSI{rsi_signal}({rsi:.1f})，条件不满足",
                 "strength": 0.0
             }
-
-    def _generate_trading_signal(self, bar: BarData):
-        """
-        生成交易信号 - 核心策略逻辑
-        
-        ## 信号生成流程
-        1. **计算技术指标**：MA5, MA20, RSI14
-        2. **趋势信号判断**：基于双均线交叉
-        3. **超买超卖信号**：基于RSI极值
-        4. **信号过滤**：避免在极端市场条件下交易
-        5. **执行交易决策**：发送买入/卖出指令
-        
-        ## 信号类型
-        - **趋势跟随信号**：双均线金叉/死叉 + RSI确认
-        - **均值回归信号**：RSI超买/超卖极值反转
-        - **风控信号**：持仓限制和止损止盈
-        
-        Args:
-            bar: K线数据，包含OHLCV信息
-        """
-        # 计算技术指标
-        ma_short = self.am.sma(self.ma_short)
-        ma_long = self.am.sma(self.ma_long)
-        rsi = self.am.rsi(self.rsi_period)
-        
-        current_price = bar.close_price
-        signal = None
-        reason = ""
-        
-        # 趋势信号：双均线交叉
-        if ma_short > ma_long and self.pos <= 0:
-            # 短均线上穿长均线，且当前无多头持仓
-            if rsi < self.rsi_overbought:  # 避免在超买区域买入
-                signal = "BUY"
-                reason = f"双均线金叉 + RSI({rsi:.1f})"
-                
-        elif ma_short < ma_long and self.pos >= 0:
-            # 短均线下穿长均线，且当前无空头持仓
-            if rsi > self.rsi_oversold:  # 避免在超卖区域卖出
-                signal = "SELL" 
-                reason = f"双均线死叉 + RSI({rsi:.1f})"
-        
-        # 均值回归信号：RSI极值
-        elif rsi < self.rsi_oversold and self.pos <= 0:
-            # RSI超卖，买入
-            signal = "BUY"
-            reason = f"RSI超卖({rsi:.1f})"
-            
-        elif rsi > self.rsi_overbought and self.pos >= 0:
-            # RSI超买，卖出
-            signal = "SELL"
-            reason = f"RSI超买({rsi:.1f})"
-        
-        # 执行交易信号
-        if signal:
-            self._execute_signal(signal, current_price, reason)
-            
     def _execute_signal(self, signal: str, price: float, reason: str):
         """执行交易信号"""
         # 检查持仓限制
@@ -369,12 +325,12 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
         else:  # 空头持仓
             pnl_pct = (self.entry_price - current_price) / self.entry_price
             
-        # 止损
-        if pnl_pct <= -self.stop_loss_pct:
+        # 止损（使用小的容差处理浮点数精度问题）
+        if pnl_pct <= -self.stop_loss_pct + 1e-6:
             self._close_all_positions(current_price, "止损")
-            
-        # 止盈
-        elif pnl_pct >= self.take_profit_pct:
+
+        # 止盈（使用小的容差处理浮点数精度问题）
+        elif pnl_pct >= self.take_profit_pct - 1e-6:
             self._close_all_positions(current_price, "止盈")
             
     def _close_all_positions(self, price: float, reason: str):
@@ -482,8 +438,8 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
 
         logger.info(f"🔧 [SHFE策略] 信号处理模块：接收到{action}信号，开始处理")
 
-        # 🔧 主动查询持仓进行风控检查
-        if not self._pre_trade_safety_check():
+        # 🔧 主动查询持仓进行智能风控检查
+        if not self._pre_trade_safety_check(action):
             logger.info(f"🔧 [SHFE策略] 信号处理模块：风控检查未通过，信号被拒绝")
             return
 
@@ -493,18 +449,48 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
         # 计算交易数量
         trade_volume = self._calculate_position_size(signal_decision.get('strength', 1.0))
 
+        # 🎯 智能单向持仓管理
         if action == 'BUY':
-            logger.info(f"🚀 [SHFE策略] 执行买入订单！价格: {current_price}, 数量: {trade_volume}")
-            self.buy(current_price, trade_volume, stop=False)
+            if self.pos < 0:  # 有空头持仓，优先平空仓
+                close_volume = min(trade_volume, abs(self.pos))
+                logger.info(f"� [持仓管理] 有空头持仓{self.pos}手，BUY信号优先平空仓{close_volume}手")
+                self.buy(current_price, close_volume, stop=False)
+
+                # 如果还有剩余信号强度，考虑开多仓
+                remaining_volume = trade_volume - close_volume
+                if remaining_volume > 0:
+                    logger.info(f"🔧 [持仓管理] 平空后剩余信号，开多仓{remaining_volume}手")
+                    self.buy(current_price, remaining_volume, stop=False)
+            else:  # 无持仓或有多头持仓，开多仓或加多仓
+                if self.pos == 0:
+                    logger.info(f"�🚀 [SHFE策略] 无持仓，执行开多仓！价格: {current_price}, 数量: {trade_volume}")
+                else:
+                    logger.info(f"🚀 [SHFE策略] 有多头持仓{self.pos}手，执行加多仓！价格: {current_price}, 数量: {trade_volume}")
+                self.buy(current_price, trade_volume, stop=False)
+
         elif action == 'SELL':
-            logger.info(f"🚀 [SHFE策略] 执行卖出订单！价格: {current_price}, 数量: {trade_volume}")
-            self.sell(current_price, trade_volume, stop=False)
+            if self.pos > 0:  # 有多头持仓，优先平多仓
+                close_volume = min(trade_volume, abs(self.pos))
+                logger.info(f"🔧 [持仓管理] 有多头持仓{self.pos}手，SELL信号优先平多仓{close_volume}手")
+                self.sell(current_price, close_volume, stop=False)
+
+                # 如果还有剩余信号强度，考虑开空仓
+                remaining_volume = trade_volume - close_volume
+                if remaining_volume > 0:
+                    logger.info(f"🔧 [持仓管理] 平多后剩余信号，开空仓{remaining_volume}手")
+                    self.sell(current_price, remaining_volume, stop=False)
+            else:  # 无持仓或有空头持仓，开空仓或加空仓
+                if self.pos == 0:
+                    logger.info(f"🚀 [SHFE策略] 无持仓，执行开空仓！价格: {current_price}, 数量: {trade_volume}")
+                else:
+                    logger.info(f"🚀 [SHFE策略] 有空头持仓{self.pos}手，执行加空仓！价格: {current_price}, 数量: {trade_volume}")
+                self.sell(current_price, trade_volume, stop=False)
 
         # 更新信号时间
         self.last_signal_time = time.time()
 
-    def _pre_trade_safety_check(self) -> bool:
-        """🔧 交易前安全检查 - 独立的持仓风控模块"""
+    def _pre_trade_safety_check(self, action: str) -> bool:
+        """🔧 交易前安全检查 - 智能持仓风控模块"""
         real_position = self._query_real_position()
         if real_position is None:
             logger.warning(f"⚠️ [SHFE策略] 无法查询持仓，停止交易")
@@ -515,13 +501,55 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
             logger.info(f"🔄 [SHFE策略] 持仓同步: {self.pos} → {real_position}")
             self.pos = real_position
 
-        # 风控检查 - 预测交易后持仓
-        predicted_position = abs(real_position + 1)  # 假设交易1手
-        if predicted_position > self.max_position:
-            logger.warning(f"⚠️ [SHFE策略] 风控阻止: 当前={real_position}, 预测={predicted_position}, 限制={self.max_position}")
-            return False
+        # 🎯 智能风控：区分平仓和开仓
+        if action == 'BUY':
+            if real_position < 0:
+                # 有空头持仓，BUY信号是平空仓，允许执行
+                logger.info(f"✅ [SHFE策略] BUY信号-平空仓: 当前空头={real_position}手，允许平仓")
+                return True
+            else:
+                # 无空头持仓，BUY信号是开多仓，检查风控
+                predicted_position = abs(real_position + 1)
+                if predicted_position > self.max_position:
+                    logger.warning(f"⚠️ [SHFE策略] 风控阻止开多: 当前={real_position}, 预测={predicted_position}, 限制={self.max_position}")
+                    return False
+                logger.info(f"✅ [SHFE策略] BUY信号-开多仓: 当前={real_position}手，预测={predicted_position}手，风控通过")
+                return True
+
+        elif action == 'SELL':
+            if real_position > 0:
+                # 有多头持仓，SELL信号是平多仓，允许执行
+                logger.info(f"✅ [SHFE策略] SELL信号-平多仓: 当前多头={real_position}手，允许平仓")
+                return True
+            else:
+                # 无多头持仓，SELL信号是开空仓，检查风控
+                predicted_position = abs(real_position - 1)
+                if predicted_position > self.max_position:
+                    logger.warning(f"⚠️ [SHFE策略] 风控阻止开空: 当前={real_position}, 预测={predicted_position}, 限制={self.max_position}")
+                    return False
+                logger.info(f"✅ [SHFE策略] SELL信号-开空仓: 当前={real_position}手，预测={predicted_position}手，风控通过")
+                return True
 
         return True
+
+    def _is_trading_time(self) -> bool:
+        """检查是否在交易时间"""
+        now = datetime.now()
+        hour = now.hour
+        minute = now.minute
+
+        # 日盘: 9:00-11:30, 13:30-15:00
+        # 夜盘: 21:00-02:30
+        if (9 <= hour < 11) or (hour == 11 and minute <= 30):
+            return True
+        elif (13 <= hour < 15) or (hour == 13 and minute >= 30):
+            return True
+        elif hour >= 21 or hour <= 2:
+            return True
+        elif hour == 2 and minute <= 30:
+            return True
+
+        return False
 
     def on_tick_impl(self, tick: TickData):
         """具体的tick处理实现 - 必需的抽象方法"""
@@ -529,10 +557,10 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
         # 目前主要逻辑在on_bar中处理
         pass
 
-    def on_bar_impl(self, bar: BarData):
-        """具体的bar处理实现 - 必需的抽象方法"""
-        # 主要的策略逻辑已经在on_bar中实现
-        # 这里作为抽象方法的具体实现
+    def on_tick_impl(self, tick: TickData):
+        """具体的tick处理实现 - 必需的抽象方法"""
+        # 这里可以添加基于tick的快速处理逻辑
+        # 目前主要逻辑在on_bar_impl中处理
         pass
 
     def on_trade_impl(self, trade):
@@ -557,6 +585,25 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
         except Exception as e:
             logger.error(f"⚠️ [SHFE策略] 持仓缓存更新失败: {e}")
 
+    def _calculate_position_size(self, signal_strength: float = 1.0) -> int:
+        """
+        计算交易数量
+
+        Args:
+            signal_strength: 信号强度 (0.0-1.0)
+
+        Returns:
+            交易数量
+        """
+        # 基础交易数量
+        base_volume = self.trade_volume
+
+        # 根据信号强度调整数量（可选）
+        adjusted_volume = int(base_volume * signal_strength)
+
+        # 确保至少为1手
+        return max(1, adjusted_volume)
+
 
 # 策略工厂函数
 def create_strategy(strategy_engine, strategy_name: str, symbol: str, setting: dict) -> MaRsiComboStrategy:
@@ -569,8 +616,8 @@ def create_strategy(strategy_engine, strategy_name: str, symbol: str, setting: d
         'rsi_period': 14,
         'rsi_overbought': 70,
         'rsi_oversold': 30,
-        'stop_loss_pct': 0.02,
-        'take_profit_pct': 0.03,
+        'stop_loss_pct': 0.006,
+        'take_profit_pct': 0.008,
         'trade_volume': 1,
         'max_position': 5
     }
@@ -614,12 +661,12 @@ STRATEGY_TEMPLATE = {
         },
         "stop_loss_pct": {
             "type": "float",
-            "default": 0.02,
+            "default": 0.006,
             "description": "止损百分比"
         },
         "take_profit_pct": {
             "type": "float",
-            "default": 0.03,
+            "default": 0.008,
             "description": "止盈百分比"
         },
         "trade_volume": {

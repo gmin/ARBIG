@@ -313,6 +313,49 @@ class CtpIntegration:
         logger.info(f"📋 [交易服务] 数量: {getattr(order, 'volume', 'N/A')}")
         logger.info(f"📋 [交易服务] 已成交: {getattr(order, 'traded', 'N/A')}")
 
+        # 🚨 如果订单被拒绝，记录详细错误信息
+        if hasattr(order, 'status') and str(order.status) == 'Status.REJECTED':
+            logger.error(f"🚨 订单被拒绝详情:")
+            logger.error(f"   订单ID: {getattr(order, 'orderid', 'N/A')}")
+            logger.error(f"   订单引用: {getattr(order, 'reference', 'N/A')}")
+            logger.error(f"   合约代码: {getattr(order, 'symbol', 'N/A')}")
+            logger.error(f"   买卖方向: {getattr(order, 'direction', 'N/A')}")
+            logger.error(f"   订单类型: {getattr(order, 'type', 'N/A')}")
+            logger.error(f"   开平仓: {getattr(order, 'offset', 'N/A')}")
+            logger.error(f"   订单价格: {getattr(order, 'price', 'N/A')}")
+            logger.error(f"   订单数量: {getattr(order, 'volume', 'N/A')}")
+            logger.error(f"   状态消息: {getattr(order, 'msg', 'N/A')}")
+
+            # 尝试获取CTP特有的错误信息
+            if hasattr(order, 'gateway_name'):
+                logger.error(f"   网关: {order.gateway_name}")
+            if hasattr(order, 'status_msg'):
+                logger.error(f"   CTP状态消息: {order.status_msg}")
+            if hasattr(order, 'error_id'):
+                logger.error(f"   CTP错误ID: {order.error_id}")
+            if hasattr(order, 'error_msg'):
+                logger.error(f"   CTP错误消息: {order.error_msg}")
+            if hasattr(order, 'datetime'):
+                logger.error(f"   时间: {order.datetime}")
+
+            # 记录所有可用属性（用于调试）
+            all_attrs = [attr for attr in dir(order) if not attr.startswith('_') and not callable(getattr(order, attr))]
+            logger.error(f"   可用属性: {all_attrs}")
+
+            # 尝试记录属性值
+            for attr in ['InsertTime', 'UpdateTime', 'CancelTime', 'StatusMsg', 'ErrorID', 'ErrorMsg']:
+                if hasattr(order, attr):
+                    logger.error(f"   {attr}: {getattr(order, attr)}")
+
+            # 检查extra字段中的错误信息
+            if hasattr(order, 'extra') and order.extra:
+                logger.error(f"   Extra信息: {order.extra}")
+                # 如果extra是字典，尝试获取错误信息
+                if isinstance(order.extra, dict):
+                    for key, value in order.extra.items():
+                        if 'error' in key.lower() or 'msg' in key.lower():
+                            logger.error(f"   {key}: {value}")
+
         self.orders[order.orderid] = order
 
         # 调用回调函数
@@ -394,8 +437,25 @@ class CtpIntegration:
             logger.warning(f"价格精度调整失败: {e}, 使用原价格: {price}")
             return price
 
-    def send_order(self, symbol: str, direction: str, volume: int, price: float = 0, order_type: str = "MARKET", offset: str = "OPEN") -> Optional[str]:
-        """发送订单"""
+    def send_order(self, symbol: str, direction: str, volume: int, price: float = 0, order_type: str = "MARKET", offset: str = "OPEN", time_condition: str = "GFD") -> Optional[str]:
+        """
+        发送订单
+
+        Args:
+            symbol: 合约代码
+            direction: 买卖方向 (BUY/SELL)
+            volume: 数量
+            price: 价格
+            order_type: 订单类型 (MARKET/LIMIT)
+            offset: 开平仓 (OPEN/CLOSE/AUTO)
+            time_condition: 订单有效期类型
+                - "GFD": Good For Day - 当日有效 (使用激进价格确保立即成交)
+                - "GFD": 当日有效
+                - "GFS": 本节有效
+
+        Returns:
+            Optional[str]: 订单ID
+        """
         try:
             if not self.td_login_status:
                 logger.error("交易服务器未连接，无法发送订单")
@@ -445,17 +505,35 @@ class CtpIntegration:
             # 调整价格精度
             order_price = self._round_price(symbol, order_price)
 
+            # 根据time_condition选择价格策略（保留条件判断便于后续调试）
+            logger.info(f"🔍 订单类型: time_condition='{time_condition}'")
+
+            # 确定使用的价格和订单引用
+            if time_condition.upper() == "GFD":
+                # GFD订单：使用激进价格确保立即成交
+                final_price = self._calculate_aggressive_price(symbol, vnpy_direction, order_price)
+                if final_price is None:
+                    final_price = order_price
+                order_reference = f"GFD_AGG_{int(time.time())}"  # 激进价格GFD订单
+                logger.info(f"🚀 发送GFD订单(激进价格): {symbol} {direction} {volume}@{final_price} ({offset})")
+            else:
+                # 其他time_condition：使用用户指定价格（便于调试其他订单类型）
+                final_price = order_price
+                order_reference = f"ARBIG_{int(time.time())}"  # 标准订单
+                logger.info(f"🚀 发送标准订单: {symbol} {direction} {volume}@{final_price} ({offset}) [{time_condition}]")
+
+            # 统一发送GFD订单（所有订单都是GFD类型）
             req = OrderRequest(
                 symbol=symbol,
                 exchange=Exchange.SHFE,
                 direction=vnpy_direction,
-                type=vnpy_order_type,
+                type=vnpy_order_type,  # 都是限价单
                 volume=volume,
-                price=order_price,
+                price=final_price,
                 offset=vnpy_offset,
-                reference=f"ARBIG_{int(time.time())}"
+                reference=order_reference
             )
-            
+
             # 发送订单
             order_id = self.ctp_gateway.send_order(req)
             
@@ -525,6 +603,137 @@ class CtpIntegration:
         """设置当前运行的策略名称"""
         self.current_strategy = strategy_name
         logger.info(f"设置当前策略: {strategy_name}")
+
+
+
+    def _get_tick_size(self, symbol: str) -> float:
+        """
+        获取合约的最小变动价位
+
+        Args:
+            symbol: 合约代码
+
+        Returns:
+            float: 最小变动价位
+        """
+        # 根据合约类型返回最小变动价位
+        if symbol.startswith('au'):  # 黄金期货
+            return 0.02
+        elif symbol.startswith('ag'):  # 白银期货
+            return 1.0
+        elif symbol.startswith('cu'):  # 铜期货
+            return 10.0
+        elif symbol.startswith('al'):  # 铝期货
+            return 5.0
+        elif symbol.startswith('zn'):  # 锌期货
+            return 5.0
+        elif symbol.startswith('pb'):  # 铅期货
+            return 5.0
+        elif symbol.startswith('ni'):  # 镍期货
+            return 10.0
+        elif symbol.startswith('sn'):  # 锡期货
+            return 10.0
+        else:
+            # 默认最小变动价位
+            return 0.01
+
+    def _calculate_aggressive_price(self, symbol: str, direction: Direction, fallback_price: float) -> Optional[float]:
+        """
+        计算激进价格 - 确保GFD订单立即成交
+        买单使用卖一价+最小变动价位，卖单使用买一价-最小变动价位
+
+        Args:
+            symbol: 合约代码
+            direction: 买卖方向
+            fallback_price: 备用价格
+
+        Returns:
+            Optional[float]: 激进价格，None表示无法计算
+        """
+        try:
+            # 获取当前行情
+            tick = self.ticks.get(symbol)
+            if not tick:
+                logger.warning(f"❌ 无法获取{symbol}的行情数据，使用备用价格")
+                return self._round_price(symbol, fallback_price)
+
+            # 获取合约的最小变动价位
+            tick_size = self._get_tick_size(symbol)
+            aggressive_price = None
+
+            # 根据方向计算激进价格
+            if direction == Direction.LONG:
+                # 买入：优先使用卖一价，确保立即成交
+                if hasattr(tick, 'ask_price_1') and tick.ask_price_1 > 0:
+                    aggressive_price = tick.ask_price_1 + tick_size  # 增加一个最小变动价位确保成交
+                    logger.info(f"🎯 激进买入价: 卖一价({tick.ask_price_1})+{tick_size} = {aggressive_price}")
+                elif hasattr(tick, 'last_price') and tick.last_price > 0:
+                    # 如果没有卖一价，使用最新价+2个最小变动价位
+                    aggressive_price = tick.last_price + (tick_size * 2)
+                    logger.info(f"🎯 激进买入价: 最新价({tick.last_price})+{tick_size * 2} = {aggressive_price}")
+            else:
+                # 卖出：优先使用买一价，确保立即成交
+                if hasattr(tick, 'bid_price_1') and tick.bid_price_1 > 0:
+                    aggressive_price = tick.bid_price_1 - tick_size  # 减少一个最小变动价位确保成交
+                    logger.info(f"🎯 激进卖出价: 买一价({tick.bid_price_1})-{tick_size} = {aggressive_price}")
+                elif hasattr(tick, 'last_price') and tick.last_price > 0:
+                    # 如果没有买一价，使用最新价-2个最小变动价位
+                    aggressive_price = tick.last_price - (tick_size * 2)
+                    logger.info(f"🎯 激进卖出价: 最新价({tick.last_price})-{tick_size * 2} = {aggressive_price}")
+
+            # 如果计算出了价格，进行精度调整
+            if aggressive_price is not None:
+                aggressive_price = self._round_price(symbol, aggressive_price)
+                return aggressive_price
+            else:
+                # 无法计算激进价格，使用备用价格
+                logger.warning(f"❌ 无法计算{symbol}的激进价格，使用备用价格: {fallback_price}")
+                return self._round_price(symbol, fallback_price)
+
+        except Exception as e:
+            logger.error(f"计算激进价格失败: {e}")
+            return self._round_price(symbol, fallback_price)
+
+    def _send_standard_order(self, symbol: str, direction: Direction, offset: Offset, volume: int, price: float) -> Optional[str]:
+        """发送标准订单（GFD）"""
+        try:
+            req = OrderRequest(
+                symbol=symbol,
+                exchange=Exchange.SHFE,
+                direction=direction,
+                type=OrderType.LIMIT,
+                volume=volume,
+                price=price,
+                offset=offset,
+                reference=f"ARBIG_{int(time.time())}"
+            )
+
+            return self.ctp_gateway.send_order(req)
+
+        except Exception as e:
+            logger.error(f"发送标准订单失败: {e}")
+            return None
+
+    def _get_ctp_offset_flag(self, offset: Offset) -> str:
+        """转换vnpy的Offset为CTP的开平仓标志"""
+        if offset == Offset.OPEN:
+            return '0'  # 开仓
+        elif offset == Offset.CLOSE:
+            return '1'  # 平仓
+        elif offset == Offset.CLOSETODAY:
+            return '3'  # 平今
+        elif offset == Offset.CLOSEYESTERDAY:
+            return '4'  # 平昨
+        else:
+            return '0'  # 默认开仓
+
+    def _get_request_id(self) -> int:
+        """获取请求ID"""
+        if not hasattr(self, '_request_id'):
+            self._request_id = 1
+        else:
+            self._request_id += 1
+        return self._request_id
 
     def _convert_offset(self, offset: str) -> Offset:
         """转换开平仓类型 - 上海期货交易所需要区分平今平昨"""
@@ -1248,6 +1457,32 @@ class CtpIntegration:
         """添加账户回调"""
         self.account_callbacks.append(callback)
     
+    def get_orders(self) -> List[Dict[str, Any]]:
+        """获取所有订单信息"""
+        orders = []
+        for order_id, order in self.orders.items():
+            try:
+                order_data = {
+                    'order_id': order_id,
+                    'symbol': getattr(order, 'symbol', 'N/A'),
+                    'direction': getattr(order, 'direction', 'N/A'),
+                    'volume': getattr(order, 'volume', 0),
+                    'price': getattr(order, 'price', 0.0),
+                    'traded': getattr(order, 'traded', 0),
+                    'status': str(getattr(order, 'status', 'N/A')),
+                    'type': str(getattr(order, 'type', 'N/A')),
+                    'offset': str(getattr(order, 'offset', 'N/A')),
+                    'reference': getattr(order, 'reference', 'N/A'),
+                    'datetime': getattr(order, 'datetime', None),
+                    'msg': getattr(order, 'msg', 'N/A')
+                }
+                orders.append(order_data)
+            except Exception as e:
+                logger.error(f"处理订单数据失败: {e}")
+                continue
+
+        return orders
+
     def get_status(self) -> Dict[str, Any]:
         """获取连接状态"""
         return {

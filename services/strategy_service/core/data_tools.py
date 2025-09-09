@@ -15,8 +15,37 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '../../..'))
 
 from core.types import TickData, BarData, Direction
 from utils.logger import get_logger
+import logging
 
 logger = get_logger(__name__)
+
+# 创建K线专用日志记录器
+def setup_bar_logger():
+    """设置K线专用日志记录器"""
+    bar_logger = logging.getLogger('bar_data')
+    bar_logger.setLevel(logging.INFO)
+
+    # 避免重复添加handler
+    if not bar_logger.handlers:
+        # 使用与其他日志相同的目录
+        log_dir = "logs"
+        os.makedirs(log_dir, exist_ok=True)
+
+        # 创建文件handler
+        log_file = os.path.join(log_dir, f"bar_data_{datetime.now().strftime('%Y%m%d')}.log")
+        file_handler = logging.FileHandler(log_file, encoding='utf-8')
+        file_handler.setLevel(logging.INFO)
+
+        # 设置格式
+        formatter = logging.Formatter('%(asctime)s - %(message)s')
+        file_handler.setFormatter(formatter)
+
+        bar_logger.addHandler(file_handler)
+
+    return bar_logger
+
+# 初始化K线日志记录器
+bar_logger = setup_bar_logger()
 
 class BarGenerator:
     """
@@ -48,22 +77,37 @@ class BarGenerator:
     def update_tick(self, tick: TickData) -> None:
         """
         更新Tick数据
-        
+
         Args:
             tick: Tick数据
         """
+        logger.debug(f"[K线生成器] 🔧 收到tick: {tick.symbol} 价格={tick.last_price} 时间={tick.datetime}")
+
         new_minute = False
-        
+
         # 检查是否为新的分钟
         if not self.bar:
             new_minute = True
+            logger.info(f"[K线生成器] 🔧 首次tick，创建新分钟K线")
         elif self.bar.datetime.minute != tick.datetime.minute:
             new_minute = True
+            logger.info(f"[K线生成器] 🔧 分钟变化: {self.bar.datetime.minute} → {tick.datetime.minute}")
         elif self.bar.datetime.hour != tick.datetime.hour:
             new_minute = True
+            logger.info(f"[K线生成器] 🔧 小时变化: {self.bar.datetime.hour} → {tick.datetime.hour}")
+        else:
+            logger.debug(f"[K线生成器] 🔧 同一分钟内tick: {tick.datetime.strftime('%H:%M:%S')}")
         
         if new_minute:
             if self.bar:
+                logger.info(f"[K线生成器] 📊 生成1分钟K线: {self.bar.symbol} 时间={self.bar.datetime} 收盘价={self.bar.close_price}")
+
+                # 📊 记录K线数据到专用日志文件
+                bar_logger.info(f"K线生成 | {self.bar.symbol} | {self.bar.datetime.strftime('%Y-%m-%d %H:%M:%S')} | "
+                              f"开:{self.bar.open_price:.2f} | 高:{self.bar.high_price:.2f} | "
+                              f"低:{self.bar.low_price:.2f} | 收:{self.bar.close_price:.2f} | "
+                              f"量:{self.bar.volume}")
+
                 self.on_bar(self.bar)
                 self.update_window_bar(self.bar)
             

@@ -19,11 +19,12 @@ from contextlib import asynccontextmanager
 import sys
 import os
 
-# 添加当前目录到Python路径以支持相对导入
-current_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, current_dir)
+# 添加项目根目录到Python路径
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
-from core.strategy_engine import StrategyEngine
+from services.strategy_service.core.strategy_engine import StrategyEngine
 
 # 配置日志 - 先配置日志再使用
 logging.basicConfig(level=logging.INFO)

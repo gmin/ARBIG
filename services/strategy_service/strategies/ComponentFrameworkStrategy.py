@@ -243,7 +243,7 @@ class ComponentFrameworkStrategy(ARBIGCtaTemplate):
         elif decision.action == "CLOSE_LONG" and self.pos > 0:
             self.sell(decision.price, min(quantity, self.pos), stop=False)
         elif decision.action == "CLOSE_SHORT" and self.pos < 0:
-            self.buy(decision.price, min(quantity, abs(self.pos)), stop=False)
+            self.cover(decision.price, min(quantity, abs(self.pos)), stop=False)
         else:
             return
             

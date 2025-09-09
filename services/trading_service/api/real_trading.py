@@ -247,27 +247,32 @@ async def send_real_order(request: Dict[str, Any]):
         price = float(request.get('price', 0))
         order_type = request.get('order_type', 'MARKET').upper()
         offset = request.get('offset', 'AUTO').upper()  # 支持手动指定开平仓
-        
+        time_condition = request.get('time_condition', 'GFD').upper()  # 默认使用GFD（激进价格）避免延迟成交
+
         # 验证参数
         if direction not in ['BUY', 'SELL']:
             raise HTTPException(status_code=400, detail="direction必须是BUY或SELL")
-        
+
         if volume <= 0:
             raise HTTPException(status_code=400, detail="volume必须大于0")
-        
+
         if order_type not in ['MARKET', 'LIMIT']:
             raise HTTPException(status_code=400, detail="order_type必须是MARKET或LIMIT")
-        
+
         if order_type == 'LIMIT' and price <= 0:
             raise HTTPException(status_code=400, detail="限价单必须指定价格")
+
+        if time_condition not in ['GFD', 'GFS']:
+            raise HTTPException(status_code=400, detail="time_condition必须是GFD或GFS")
 
         # 智能判断开平仓
         ctp = get_ctp_integration()
         if offset == 'AUTO':
             offset = ctp.get_smart_offset(symbol, direction)
 
-        # 发送订单
-        order_id = ctp.send_order(symbol, direction, volume, price, order_type, offset)
+        # 发送GFD订单（激进价格）
+        logger.info(f"📨 收到策略信号: {symbol} {direction} {volume}@{price} (time_condition={time_condition})")
+        order_id = ctp.send_order(symbol, direction, volume, price, order_type, offset, time_condition)
         
         if not order_id:
             raise HTTPException(status_code=500, detail="订单发送失败")
@@ -446,10 +451,9 @@ async def handle_strategy_signal(request: Dict[str, Any]):
         price = float(request.get('price', 0))
         order_type = 'MARKET' if price == 0 else 'LIMIT'
         order_id = request.get('order_id', f"STRATEGY_{uuid.uuid4().hex[:8].upper()}")
+        time_condition = request.get('time_condition', 'GFD').upper()  # 默认使用GFD（激进价格）
 
-
-
-        logger.info(f"📨 收到策略信号: {strategy_name} {action} {direction} {volume}@{price}")
+        logger.info(f"📨 收到策略信号: {strategy_name} {action} {direction} {volume}@{price} (time_condition={time_condition})")
 
         # 验证参数
         if direction not in ['LONG', 'SHORT']:
@@ -464,24 +468,38 @@ async def handle_strategy_signal(request: Dict[str, Any]):
         # 转换策略信号为CTP订单
         ctp = get_ctp_integration()
 
-        # 根据策略信号确定交易方向和开平仓
-        if action in ['BUY', 'OPEN']:
+        # 🔧 修复信号转换逻辑
+        if action == 'BUY':
             if direction == 'LONG':
-                trade_direction = 'BUY'
+                trade_direction = 'BUY'   # 开多仓
+                offset = 'OPEN'
+            else:  # SHORT - 这种组合不常见，但处理为平空仓
+                trade_direction = 'BUY'   # 平空仓
+                offset = 'AUTO'
+        elif action == 'SELL':
+            if direction == 'LONG':
+                trade_direction = 'SELL'  # 平多仓
+                offset = 'AUTO'
+            else:  # SHORT
+                trade_direction = 'SELL'  # 🔧 修复：开空仓
+                offset = 'OPEN'
+        elif action == 'OPEN':
+            if direction == 'LONG':
+                trade_direction = 'BUY'   # 开多仓
                 offset = 'OPEN'
             else:  # SHORT
-                trade_direction = 'SELL'
+                trade_direction = 'SELL'  # 开空仓
                 offset = 'OPEN'
-        else:  # SELL, CLOSE
+        else:  # CLOSE
             if direction == 'LONG':
-                trade_direction = 'SELL'
-                offset = 'AUTO'  # 智能平仓
+                trade_direction = 'SELL'  # 平多仓
+                offset = 'AUTO'
             else:  # SHORT
-                trade_direction = 'BUY'
-                offset = 'AUTO'  # 智能平仓
+                trade_direction = 'BUY'   # 平空仓
+                offset = 'AUTO'
 
-        # 发送订单到CTP
-        ctp_order_id = ctp.send_order(symbol, trade_direction, volume, price, order_type, offset)
+        # 发送GFD订单到CTP（激进价格）
+        ctp_order_id = ctp.send_order(symbol, trade_direction, volume, price, order_type, offset, time_condition)
 
         if not ctp_order_id:
             raise HTTPException(status_code=500, detail="CTP订单发送失败")

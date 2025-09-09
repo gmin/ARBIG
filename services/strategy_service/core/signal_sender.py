@@ -37,13 +37,17 @@ class SignalSender:
         
         logger.info(f"信号发送器初始化完成，交易服务URL: {trading_service_url}")
     
-    def send_signal(self, signal: SignalData) -> str:
+    def send_signal(self, signal: SignalData, time_condition: str = "GFD") -> str:
         """
         发送交易信号到交易服务
-        
+
         Args:
             signal: 信号数据
-            
+            time_condition: 订单有效期类型
+                - "GFD": 当日有效 (默认)
+                - "GFD": Good For Day - 当日有效 (使用激进价格确保立即成交)
+                - "GFS": 本节有效
+
         Returns:
             订单ID
         """
@@ -51,7 +55,7 @@ class SignalSender:
             # 生成订单ID
             self.order_counter += 1
             order_id = f"{signal.strategy_name}_{signal.action}_{datetime.now().strftime('%H%M%S')}_{self.order_counter:03d}"
-            
+
             # 构造请求数据
             request_data = {
                 "strategy_name": signal.strategy_name,
@@ -62,6 +66,7 @@ class SignalSender:
                 "price": signal.price,
                 "signal_type": signal.signal_type,
                 "stop_order": getattr(signal, 'stop_order', False),
+                "time_condition": time_condition,  # 添加订单有效期参数
                 "timestamp": signal.timestamp.isoformat() if signal.timestamp else datetime.now().isoformat(),
                 "order_id": order_id
             }

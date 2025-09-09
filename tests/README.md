@@ -8,11 +8,12 @@ tests/
 ├── run_all_tests.py            # 主测试运行器
 ├── system/                     # 系统级测试
 │   ├── simple_system_test.py   # 基础系统功能测试
-│   └── test_non_trading_functions.py  # 非交易时间功能测试
+│   ├── test_non_trading_functions.py  # 非交易时间功能测试
+│   └── test_service_connection.py     # 服务连接状态测试
 ├── strategy/                   # 策略相关测试
 │   └── test_strategy_management.py    # 策略管理系统测试
 ├── integration/                # 集成测试
-│   └── (待添加)
+│   └── test_gfd_default.py    # GFD默认参数和订单测试
 └── legacy/                     # 遗留测试文件
     ├── ctp_connection_test.py
     ├── test_account_query.py
@@ -38,6 +39,12 @@ tests/
   - API接口测试
   - 数据库连接
   - 配置文件验证
+
+- **`test_service_connection.py`** - 服务连接状态测试
+  - 多端口连接检查
+  - API文档可访问性
+  - 服务响应状态
+  - 连接故障诊断
 
 ### 策略相关测试 (`strategy/`)
 测试策略管理系统的各项功能

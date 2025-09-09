@@ -13,12 +13,17 @@ import os
 # 添加项目根目录到路径
 sys.path.append(os.path.join(os.path.dirname(__file__), '../../..'))
 
+# 确保能找到项目根目录
+import sys
+import os
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
 from core.types import (
     TickData, BarData, OrderData, TradeData, SignalData,
     Direction, OrderType, Status
 )
-from core.event_engine import EventEngine, Event
-from core.constants import SIGNAL_EVENT
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -124,8 +129,8 @@ class ARBIGCtaTemplate(ABC):
     
     def start(self) -> None:
         """启动策略"""
-        if self.status != StrategyStatus.INIT:
-            logger.warning(f"策略 {self.strategy_name} 状态异常，无法启动")
+        if self.status not in [StrategyStatus.INIT, StrategyStatus.STOPPED]:
+            logger.warning(f"策略 {self.strategy_name} 状态异常，无法启动 (当前状态: {self.status})")
             return
         
         try:
@@ -157,61 +162,65 @@ class ARBIGCtaTemplate(ABC):
     
     # ==================== 标准交易方法 (vnpy风格) ====================
     
-    def buy(self, price: float, volume: int, stop: bool = False) -> str:
+    def buy(self, price: float, volume: int, stop: bool = False, time_condition: str = "GFD") -> str:
         """
         买入开仓
-        
+
         Args:
             price: 委托价格，0表示市价单
             volume: 委托数量
             stop: 是否为停止单
-            
+            time_condition: 订单有效期类型 (GFD/GFS，默认GFD激进价格)
+
         Returns:
             订单ID
         """
-        return self._send_order(Direction.LONG, "BUY", volume, price, stop)
-    
-    def sell(self, price: float, volume: int, stop: bool = False) -> str:
+        return self._send_order(Direction.LONG, "BUY", volume, price, stop, time_condition)
+
+    def sell(self, price: float, volume: int, stop: bool = False, time_condition: str = "GFD") -> str:
         """
         卖出平仓
-        
+
         Args:
             price: 委托价格，0表示市价单
             volume: 委托数量
             stop: 是否为停止单
-            
+            time_condition: 订单有效期类型 (GFD/GFS，默认GFD激进价格)
+
         Returns:
             订单ID
         """
-        return self._send_order(Direction.SHORT, "SELL", volume, price, stop)
-    
-    def short(self, price: float, volume: int, stop: bool = False) -> str:
+        return self._send_order(Direction.SHORT, "SELL", volume, price, stop, time_condition)
+
+    def short(self, price: float, volume: int, stop: bool = False, time_condition: str = "GFD") -> str:
         """
         卖出开仓
-        
+
         Args:
             price: 委托价格，0表示市价单
             volume: 委托数量
             stop: 是否为停止单
-            
+            time_condition: 订单有效期类型 (GFD/GFS，默认GFD激进价格)
+
         Returns:
             订单ID
         """
-        return self._send_order(Direction.SHORT, "SHORT", volume, price, stop)
-    
-    def cover(self, price: float, volume: int, stop: bool = False) -> str:
+        return self._send_order(Direction.SHORT, "SHORT", volume, price, stop, time_condition)
+
+    def cover(self, price: float, volume: int, stop: bool = False, time_condition: str = "GFD") -> str:
         """
         买入平仓
-        
+
         Args:
             price: 委托价格，0表示市价单
             volume: 委托数量
             stop: 是否为停止单
-            
+            time_condition: 订单有效期类型 (GFD/GFS，默认GFD激进价格)
+
         Returns:
             订单ID
         """
-        return self._send_order(Direction.LONG, "COVER", volume, price, stop)
+        return self._send_order(Direction.LONG, "COVER", volume, price, stop, time_condition)
     
     def set_target_pos(self, target_pos: int) -> None:
         """
@@ -254,30 +263,32 @@ class ARBIGCtaTemplate(ABC):
         logger.info(f"设置目标持仓: {self.strategy_name} {self.pos} -> {target_pos}")
     
     def _send_order(
-        self, 
-        direction: Direction, 
-        action: str, 
-        volume: int, 
-        price: float, 
-        stop: bool = False
+        self,
+        direction: Direction,
+        action: str,
+        volume: int,
+        price: float,
+        stop: bool = False,
+        time_condition: str = "GFD"
     ) -> str:
         """
         发送订单信号到交易服务
-        
+
         Args:
             direction: 交易方向
             action: 交易动作
             volume: 数量
             price: 价格
             stop: 是否为停止单
-            
+            time_condition: 订单有效期类型 (GFD/GFS，默认GFD激进价格)
+
         Returns:
             订单ID
         """
         if not self.active or not self.trading:
             logger.warning(f"策略 {self.strategy_name} 未激活或禁止交易")
             return ""
-        
+
         # 创建信号数据
         signal = SignalData(
             strategy_name=self.strategy_name,
@@ -289,11 +300,11 @@ class ARBIGCtaTemplate(ABC):
             signal_type="TRADE",
             timestamp=datetime.now()
         )
-        
-        # 通过信号发送器发送到交易服务
-        order_id = self.signal_sender.send_signal(signal)
-        
-        logger.info(f"发送交易信号: {self.strategy_name} {action} {volume}@{price}")
+
+        # 通过信号发送器发送到交易服务（GFD激进价格）
+        order_id = self.signal_sender.send_signal(signal, time_condition)
+
+        logger.info(f"发送交易信号: {self.strategy_name} {action} {volume}@{price} (time_condition={time_condition})")
         return order_id
     
     # ==================== 数据处理方法 ====================

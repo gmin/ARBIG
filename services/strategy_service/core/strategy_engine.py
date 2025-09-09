@@ -282,10 +282,14 @@ class StrategyEngine:
 
             # 初始化数据工具
             if symbol not in self.bar_generators:
+                logger.info(f"[策略服务-引擎] 🔧 创建K线生成器: {symbol}")
                 self.bar_generators[symbol] = BarGenerator(
-                    on_bar_callback=lambda bar: self._on_bar(bar),
+                    on_bar_callback=self._on_bar,
                     window=0  # 只生成1分钟K线
                 )
+                logger.info(f"[策略服务-引擎] ✅ K线生成器创建完成: {symbol}")
+            else:
+                logger.info(f"[策略服务-引擎] 🔧 K线生成器已存在: {symbol}")
             
             if symbol not in self.array_managers:
                 self.array_managers[symbol] = ArrayManager(size=200)
@@ -536,12 +540,12 @@ class StrategyEngine:
         try:
             # 🔧 检查是否有启动的策略
             if not self.active_strategies:
-                logger.info("🔧 没有启动的策略，跳过行情分发")
+                logger.info("[策略服务-引擎] 🔧 没有启动的策略，跳过行情分发")
                 return
 
             # 🔧 固定获取主要品种行情
             symbols_to_fetch = ["au2510"]  # 主要品种
-            logger.info(f"🔧 开始获取行情数据，品种: {symbols_to_fetch}, 启动策略: {len(self.active_strategies)}个")
+            logger.info(f"[策略服务-引擎] 🔧 开始获取行情数据，品种: {symbols_to_fetch}, 启动策略: {len(self.active_strategies)}个")
 
             # 🔧 从交易服务获取实时tick数据
             for symbol in symbols_to_fetch:
@@ -559,18 +563,29 @@ class StrategyEngine:
                     if tick_data.get("success") and tick_data.get("data"):
                         # 🔧 创建TickData对象并分发给策略
                         tick_info = tick_data["data"]
-                        logger.info(f"📈 收到tick数据: {symbol} 价格={tick_info.get('last_price')}")
+                        logger.info(f"[策略服务-引擎] 📈 收到tick数据: {symbol} 价格={tick_info.get('last_price')}")
 
                         tick = self._create_tick_data(tick_info)
 
-                        # 分发给所有订阅该品种的策略
-                        logger.debug(f"🔧 分发tick数据给 {len(self.strategies)} 个策略")
-                        self._on_tick(tick)
+                        # 存储最新tick数据
+                        self.tick_data[symbol] = tick
+
+                        # 🎯 简化判断：只给测试策略发送tick，技术分析策略只接收K线
+                        for strategy_name in self.active_strategies:
+                            strategy = self.strategies[strategy_name]
+                            if strategy.symbol == symbol:
+                                # 硬编码判断：只有TestSystem需要tick数据
+                                if strategy_name == "TestSystem":
+                                    logger.debug(f"[策略服务-引擎] 🔧 发送tick给测试策略: {strategy_name}")
+                                    strategy.on_tick(tick)
 
                         # 🔧 启用1分钟K线生成 - 支持MA和RSI计算
                         if symbol in self.bar_generators:
-                            logger.debug(f"🔧 更新K线生成器: {symbol}")
+                            logger.info(f"[策略服务-引擎] 🔧 更新K线生成器: {symbol}")
                             self.bar_generators[symbol].update_tick(tick)
+                        else:
+                            logger.warning(f"[策略服务-引擎] ⚠️ 没有找到K线生成器: {symbol}")
+                            logger.info(f"[策略服务-引擎] 🔧 当前K线生成器: {list(self.bar_generators.keys())}")
                     else:
                         logger.warning(f"🔧 {symbol} tick数据无效: {tick_data}")
 
@@ -615,38 +630,24 @@ class StrategyEngine:
             logger.error(f"创建TickData失败: {e}")
             raise
 
-    def _on_tick(self, tick: TickData) -> None:
-        """处理Tick数据"""
-        try:
-            symbol = tick.symbol
-            self.tick_data[symbol] = tick
-            
-            # 更新K线生成器
-            if symbol in self.bar_generators:
-                self.bar_generators[symbol].update_tick(tick)
-            
-            # 分发给相关策略
-            for strategy_name in self.active_strategies:
-                strategy = self.strategies[strategy_name]
-                if strategy.symbol == symbol:
-                    strategy.on_tick(tick)
-                    
-        except Exception as e:
-            logger.error(f"Tick数据处理异常: {e}")
+
     
     def _on_bar(self, bar: BarData) -> None:
         """处理Bar数据"""
         try:
             symbol = bar.symbol
-            
+            logger.info(f"[策略服务-引擎] 📊 生成bar数据: {symbol} 时间={bar.datetime} 收盘价={bar.close_price}")
+
             # 更新数组管理器
             if symbol in self.array_managers:
                 self.array_managers[symbol].update_bar(bar)
-            
+
             # 分发给相关策略
+            logger.info(f"[策略服务-引擎] 🔧 分发bar数据给 {len(self.active_strategies)} 个策略")
             for strategy_name in self.active_strategies:
                 strategy = self.strategies[strategy_name]
                 if strategy.symbol == symbol:
+                    logger.debug(f"[策略服务-引擎] 🔧 发送bar给策略: {strategy_name}")
                     strategy.on_bar(bar)
                     
         except Exception as e:
