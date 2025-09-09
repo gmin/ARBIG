@@ -58,8 +58,13 @@ tests/
 ### 集成测试 (`integration/`)
 测试各个服务之间的集成和协作
 
+- **`test_gfd_default.py`** - GFD默认参数和订单测试
+  - GFD默认参数验证
+  - 开多开空订单测试
+  - 激进价格策略验证
+  - 订单立即成交测试
+
 - 待添加：端到端测试
-- 待添加：交易流程测试
 - 待添加：数据流测试
 
 ### 遗留测试 (`legacy/`)
@@ -83,6 +88,10 @@ python tests/run_all_tests.py
 # 系统测试
 python tests/system/simple_system_test.py
 python tests/system/test_non_trading_functions.py
+python tests/system/test_service_connection.py
+
+# 集成测试
+python tests/integration/test_gfd_default.py
 
 # 策略测试
 python tests/strategy/test_strategy_management.py
