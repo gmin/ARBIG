@@ -459,8 +459,8 @@ async def handle_strategy_signal(request: Dict[str, Any]):
         if direction not in ['LONG', 'SHORT']:
             raise HTTPException(status_code=400, detail="direction必须是LONG或SHORT")
 
-        if action not in ['BUY', 'SELL', 'OPEN', 'CLOSE']:
-            raise HTTPException(status_code=400, detail="action必须是BUY、SELL、OPEN或CLOSE")
+        if action not in ['BUY', 'SELL', 'SHORT', 'COVER', 'OPEN', 'CLOSE']:
+            raise HTTPException(status_code=400, detail="action必须是BUY、SELL、SHORT、COVER、OPEN或CLOSE")
 
         if volume <= 0:
             raise HTTPException(status_code=400, detail="volume必须大于0")
@@ -480,9 +480,17 @@ async def handle_strategy_signal(request: Dict[str, Any]):
             if direction == 'LONG':
                 trade_direction = 'SELL'  # 平多仓
                 offset = 'AUTO'
-            else:  # SHORT
-                trade_direction = 'SELL'  # 🔧 修复：开空仓
-                offset = 'OPEN'
+            else:  # SHORT - vnpy标准：卖出平仓（平多仓）
+                trade_direction = 'SELL'  # 平多仓
+                offset = 'AUTO'
+        elif action == 'SHORT':
+            # vnpy标准：卖出开仓（空头建仓）
+            trade_direction = 'SELL'  # 开空仓
+            offset = 'OPEN'
+        elif action == 'COVER':
+            # vnpy标准：买入平仓（空头平仓）
+            trade_direction = 'BUY'   # 平空仓
+            offset = 'AUTO'
         elif action == 'OPEN':
             if direction == 'LONG':
                 trade_direction = 'BUY'   # 开多仓

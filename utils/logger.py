@@ -10,6 +10,9 @@ from datetime import datetime
 # 全局logger缓存，避免重复创建handlers
 _logger_cache = {}
 
+# 系统日志的当前日期跟踪
+_current_system_log_date = None
+
 def setup_logger(name, log_file, level=logging.INFO):
     """
     设置日志记录器
@@ -61,10 +64,10 @@ def setup_logger(name, log_file, level=logging.INFO):
 
     return logger
 
-# 创建默认日志记录器
+# 创建默认日志记录器 - 支持按日期自动切换
 def get_logger(name='gold_arbitrage'):
     """
-    获取默认日志记录器
+    获取默认日志记录器 - 支持按日期自动切换文件
 
     Args:
         name: 日志记录器名称
@@ -72,13 +75,33 @@ def get_logger(name='gold_arbitrage'):
     Returns:
         logger: 配置好的日志记录器
     """
+    global _current_system_log_date
+
+    # 获取当前日期
+    today = datetime.now().strftime("%Y%m%d")
+
+    # 如果日期变化，清理缓存强制重新创建
+    if _current_system_log_date != today:
+        # 清理旧的logger缓存
+        if name in _logger_cache:
+            old_logger = _logger_cache[name]
+            # 关闭所有handlers
+            for handler in old_logger.handlers[:]:
+                handler.close()
+                old_logger.removeHandler(handler)
+            # 从缓存中移除
+            del _logger_cache[name]
+
+        _current_system_log_date = today
+        print(f"📅 [系统日志] 切换到新日期: {today}")
+
     log_dir = 'logs'
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
 
     log_file = os.path.join(
         log_dir,
-        f'gold_arbitrage_{datetime.now().strftime("%Y%m%d")}.log'
+        f'gold_arbitrage_{today}.log'
     )
 
     return setup_logger(name, log_file)

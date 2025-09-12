@@ -737,6 +737,13 @@ class CtpIntegration:
 
     def _convert_offset(self, offset: str) -> Offset:
         """转换开平仓类型 - 上海期货交易所需要区分平今平昨"""
+        # 处理AUTO：智能判断开平仓
+        if offset == 'AUTO':
+            # AUTO应该是平仓，使用平今仓
+            result = Offset.CLOSETODAY
+            logger.info(f"开平仓转换: {offset} -> {result} (智能平仓)")
+            return result
+
         offset_map = {
             'OPEN': Offset.OPEN,
             'CLOSE': Offset.CLOSETODAY,  # 修改：SHFE默认使用平今仓

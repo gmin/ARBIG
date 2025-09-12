@@ -19,20 +19,35 @@ import logging
 
 logger = get_logger(__name__)
 
-# 创建K线专用日志记录器
-def setup_bar_logger():
-    """设置K线专用日志记录器"""
-    bar_logger = logging.getLogger('bar_data')
-    bar_logger.setLevel(logging.INFO)
+# K线日志记录器全局变量
+bar_logger = None
+current_bar_log_date = None
 
-    # 避免重复添加handler
-    if not bar_logger.handlers:
+def get_bar_logger():
+    """获取K线专用日志记录器 - 支持按日期自动切换文件"""
+    global bar_logger, current_bar_log_date
+
+    # 获取当前日期
+    today = datetime.now().strftime('%Y%m%d')
+
+    # 如果日期变化或首次创建，重新创建logger
+    if current_bar_log_date != today or bar_logger is None:
+        # 清理旧的handlers
+        if bar_logger:
+            for handler in bar_logger.handlers[:]:
+                handler.close()
+                bar_logger.removeHandler(handler)
+
+        # 创建新的logger
+        bar_logger = logging.getLogger('bar_data')
+        bar_logger.setLevel(logging.INFO)
+
         # 使用与其他日志相同的目录
         log_dir = "logs"
         os.makedirs(log_dir, exist_ok=True)
 
-        # 创建文件handler
-        log_file = os.path.join(log_dir, f"bar_data_{datetime.now().strftime('%Y%m%d')}.log")
+        # 创建文件handler - 使用当前日期
+        log_file = os.path.join(log_dir, f"bar_data_{today}.log")
         file_handler = logging.FileHandler(log_file, encoding='utf-8')
         file_handler.setLevel(logging.INFO)
 
@@ -42,10 +57,12 @@ def setup_bar_logger():
 
         bar_logger.addHandler(file_handler)
 
-    return bar_logger
+        # 更新当前日期
+        current_bar_log_date = today
 
-# 初始化K线日志记录器
-bar_logger = setup_bar_logger()
+        print(f"📅 [K线日志] 切换到新日期文件: {log_file}")
+
+    return bar_logger
 
 class BarGenerator:
     """
@@ -102,8 +119,9 @@ class BarGenerator:
             if self.bar:
                 logger.info(f"[K线生成器] 📊 生成1分钟K线: {self.bar.symbol} 时间={self.bar.datetime} 收盘价={self.bar.close_price}")
 
-                # 📊 记录K线数据到专用日志文件
-                bar_logger.info(f"K线生成 | {self.bar.symbol} | {self.bar.datetime.strftime('%Y-%m-%d %H:%M:%S')} | "
+                # 📊 记录K线数据到专用日志文件 - 支持日期自动切换
+                current_bar_logger = get_bar_logger()
+                current_bar_logger.info(f"K线生成 | {self.bar.symbol} | {self.bar.datetime.strftime('%Y-%m-%d %H:%M:%S')} | "
                               f"开:{self.bar.open_price:.2f} | 高:{self.bar.high_price:.2f} | "
                               f"低:{self.bar.low_price:.2f} | 收:{self.bar.close_price:.2f} | "
                               f"量:{self.bar.volume}")
@@ -308,50 +326,53 @@ class ArrayManager:
         """获取最新持仓量"""
         return self.open_interest_array[-1]
     
-    def sma(self, n: int, array: bool = False):
-        """
-        简单移动平均线
-        
-        Args:
-            n: 周期
-            array: 是否返回数组
-            
-        Returns:
-            移动平均值或数组
-        """
-        if not self.inited:
-            return 0
-        
-        result = np.mean(self.close_array[-n:])
-        if array:
-            return np.convolve(self.close_array, np.ones(n)/n, mode='valid')
-        return result
+
     
     def ema(self, n: int, array: bool = False):
         """
-        指数移动平均线
-        
+        指数移动平均线 - 完全标准的EMA算法
+
         Args:
             n: 周期
             array: 是否返回数组
-            
+
         Returns:
             指数移动平均值或数组
         """
         if not self.inited:
             return 0
-        
-        # 计算EMA
-        alpha = 2 / (n + 1)
-        ema_values = np.zeros_like(self.close_array)
-        ema_values[0] = self.close_array[0]
-        
-        for i in range(1, len(self.close_array)):
-            ema_values[i] = alpha * self.close_array[i] + (1 - alpha) * ema_values[i-1]
-        
+
+        # 🎯 完全标准的EMA算法
+        alpha = 2.0 / (n + 1)  # 平滑因子
+
+        # 获取所有有效数据（不只是最近n个）
+        all_data = self.close_array[self.close_array != 0]  # 过滤掉初始化的0值
+
+        if len(all_data) < n:
+            return 0
+
+        # 标准EMA算法：
+        # 1. 初始EMA = 前n个数据的SMA
+        initial_sma = np.mean(all_data[:n])
+        ema = initial_sma
+
+        # 2. 从第n+1个数据开始，逐个计算EMA
+        for i in range(n, len(all_data)):
+            ema = alpha * all_data[i] + (1 - alpha) * ema
+
         if array:
-            return ema_values
-        return ema_values[-1]
+            # 返回EMA序列
+            ema_values = []
+            current_ema = initial_sma
+            ema_values.append(current_ema)
+
+            for i in range(n, len(all_data)):
+                current_ema = alpha * all_data[i] + (1 - alpha) * current_ema
+                ema_values.append(current_ema)
+
+            return np.array(ema_values)
+        else:
+            return ema
     
     def std(self, n: int, array: bool = False):
         """
@@ -375,37 +396,77 @@ class ArrayManager:
     
     def rsi(self, n: int = 14, array: bool = False):
         """
-        相对强弱指标
-        
+        相对强弱指标 - 使用EMA计算（标准算法）
+
         Args:
             n: 周期
             array: 是否返回数组
-            
+
         Returns:
             RSI值或数组
         """
-        if not self.inited:
+        if not self.inited or len(self.close_array) < n + 1:
             return 50
-        
+
+        # 获取有效数据（过滤掉初始化的0值）
+        all_data = self.close_array[self.close_array != 0]
+
+        if len(all_data) < n + 1:
+            return 50
+
         # 计算价格变化
-        diff = np.diff(self.close_array)
+        diff = np.diff(all_data)
         gains = np.where(diff > 0, diff, 0)
         losses = np.where(diff < 0, -diff, 0)
-        
-        # 计算平均收益和损失
-        avg_gains = np.convolve(gains, np.ones(n)/n, mode='valid')
-        avg_losses = np.convolve(losses, np.ones(n)/n, mode='valid')
-        
+
+        # 🎯 使用EMA计算平均收益和损失（标准RSI算法）
+        alpha = 1.0 / n  # EMA平滑因子
+
+        # 初始化：使用前n个值的SMA作为起始值
+        if len(gains) >= n:
+            avg_gain = np.mean(gains[:n])
+            avg_loss = np.mean(losses[:n])
+
+            # 从第n+1个值开始使用EMA
+            for i in range(n, len(gains)):
+                avg_gain = alpha * gains[i] + (1 - alpha) * avg_gain
+                avg_loss = alpha * losses[i] + (1 - alpha) * avg_loss
+        else:
+            avg_gain = np.mean(gains) if len(gains) > 0 else 0
+            avg_loss = np.mean(losses) if len(losses) > 0 else 1e-10
+
         # 避免除零
-        avg_losses = np.where(avg_losses == 0, 1e-10, avg_losses)
-        
+        if avg_loss == 0:
+            avg_loss = 1e-10
+
         # 计算RSI
-        rs = avg_gains / avg_losses
-        rsi_values = 100 - (100 / (1 + rs))
-        
+        rs = avg_gain / avg_loss
+        rsi_value = 100 - (100 / (1 + rs))
+
         if array:
-            return rsi_values
-        return rsi_values[-1] if len(rsi_values) > 0 else 50
+            # 如果需要数组，计算所有历史RSI值
+            rsi_array = []
+            if len(gains) >= n:
+                # 初始RSI
+                init_avg_gain = np.mean(gains[:n])
+                init_avg_loss = np.mean(losses[:n])
+                if init_avg_loss == 0:
+                    init_avg_loss = 1e-10
+                init_rs = init_avg_gain / init_avg_loss
+                rsi_array.append(100 - (100 / (1 + init_rs)))
+
+                # 后续RSI
+                avg_gain = init_avg_gain
+                avg_loss = init_avg_loss
+                for i in range(n, len(gains)):
+                    avg_gain = alpha * gains[i] + (1 - alpha) * avg_gain
+                    avg_loss = alpha * losses[i] + (1 - alpha) * avg_loss
+                    rs = avg_gain / avg_loss
+                    rsi_array.append(100 - (100 / (1 + rs)))
+
+            return np.array(rsi_array) if rsi_array else np.array([50])
+
+        return rsi_value
     
     def macd(self, fast: int = 12, slow: int = 26, signal: int = 9) -> tuple:
         """
@@ -467,7 +528,7 @@ class ArrayManager:
         if not self.inited:
             return 0, 0, 0
         
-        middle = self.sma(n)
+        middle = self.ema(n)
         std_value = self.std(n)
         
         upper = middle + dev * std_value
@@ -537,12 +598,7 @@ class TechnicalIndicators:
     提供常用技术指标的静态计算方法
     """
     
-    @staticmethod
-    def sma(data: List[float], period: int) -> float:
-        """简单移动平均"""
-        if len(data) < period:
-            return 0
-        return sum(data[-period:]) / period
+
     
     @staticmethod
     def ema(data: List[float], period: int) -> float:
@@ -596,13 +652,14 @@ class TechnicalIndicators:
         if len(data) < period:
             return 0, 0, 0
         
-        sma = TechnicalIndicators.sma(data, period)
-        
+        # 使用EMA作为中轨（统一使用EMA）
+        ema = TechnicalIndicators.ema(data, period)
+
         # 计算标准差
-        variance = sum([(x - sma) ** 2 for x in data[-period:]]) / period
+        variance = sum([(x - ema) ** 2 for x in data[-period:]]) / period
         std = variance ** 0.5
-        
-        upper = sma + (std_dev * std)
-        lower = sma - (std_dev * std)
-        
-        return upper, sma, lower
+
+        upper = ema + (std_dev * std)
+        lower = ema - (std_dev * std)
+
+        return upper, ema, lower

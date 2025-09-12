@@ -88,14 +88,20 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
     max_position = 5      # 最大持仓限制：总持仓不超过5手，控制整体风险
     
     # 策略变量
-    entry_price = 0.0     # 入场价格
     last_signal_time = 0  # 上次信号时间
-    signal_count = 0      # 信号计数
 
-    # 🔧 重复下单防护机制
+    # 🎯 性能优化：缓存当前K线的指标计算结果
+    current_ma5 = 0.0     # 当前MA5值
+    current_ma20 = 0.0    # 当前MA20值
+    current_rsi = 0.0     # 当前RSI值
+
+    # � 绘图数据记录
+    plot_data = []        # 存储绘图数据 [时间, 价格, MA5, MA20, RSI]
+
+    # �🔧 重复下单防护机制
     last_bar_time = None  # 上次处理的K线时间
     last_order_id = None  # 上次发送的订单ID
-    min_signal_interval = 30  # 最小信号间隔（秒）
+    min_signal_interval = 60  # 最小信号间隔（秒）- 可配置参数
     pending_orders = set()  # 待成交订单集合
     
     def __init__(self, strategy_name: str, symbol: str, setting: dict, signal_sender=None, **kwargs):
@@ -117,13 +123,16 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
         self.am = ArrayManager()
 
         # 🔧 持仓缓存机制 - 应用优化架构
-        self.cached_position = 0  # 净持仓缓存
-        self.cached_long_position = 0  # 多单持仓缓存
-        self.cached_short_position = 0  # 空单持仓缓存
+        self.cached_position = 0  # 净持仓缓存（减少API查询）
         self.last_position_update = 0  # 上次持仓更新时间
 
         # 🔧 信号控制优化
         self.signal_lock = False  # 信号生成锁定标志
+
+        # 🎯 均线历史数据（用于金叉死叉检测）
+        self.ma5_history = []  # MA5历史值
+        self.ma20_history = []  # MA20历史值
+        self.max_history_length = 10  # 保留最近10个值
 
         logger.info(f"✅ {self.strategy_name} 初始化完成")
         logger.info(f"   交易品种: {self.symbol}")
@@ -144,15 +153,17 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
         """策略停止回调"""
         self.write_log("⏹️ MA-RSI组合策略已停止")
         
-    # 🎯 MaRsiComboStrategy是纯技术分析策略，不需要on_tick方法
-    # 只基于K线数据进行分析，符合标准量化交易架构：
-    # 策略服务合成K线 → 策略计算指标 → 策略生成信号
+    # 🎯 MaRsiComboStrategy采用双层架构：
+    # K线级别：技术分析和信号生成 (on_bar_impl)
+    # Tick级别：实时风控和止盈止损 (on_tick_impl)
         
     def on_bar_impl(self, bar: BarData):
         """🎯 K线数据处理 - 技术分析策略的核心入口
 
         在基类ARBIGCtaTemplate的on_bar调用链中执行
         """
+
+
         logger.info(f"[策略服务-GoldMaRsi] 📊 收到K线数据: {bar.symbol} 时间={bar.datetime} 收盘价={bar.close_price}")
 
         if not self.trading:
@@ -166,28 +177,26 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
         if not self.am.inited:
             return
 
-        # 🛡️ 风控检查已移至on_tick_impl中实时处理
+        # 🎯 性能优化：每个K线只计算一次指标，后续复用
+        self.current_ma5 = self.am.ema(self.ma_short)   # 改为EMA5
+        self.current_ma20 = self.am.ema(self.ma_long)   # 改为EMA20
+        self.current_rsi = self.am.rsi(self.rsi_period)
+
+        # 📝 记录指标数据到专门的CSV文件
+        self._log_indicators_to_csv(bar)
+
+        # 🛡️ 实时风控检查在on_tick_impl中处理，K线级别专注信号生成
 
         # 检查信号间隔（避免频繁交易）
         current_time = time.time()
-        if current_time - self.last_signal_time < 60:  # 1分钟间隔
+        if current_time - self.last_signal_time < self.min_signal_interval:
             return
 
         # 🎯 应用优化的信号生成机制
-        self._generate_sophisticated_signal(bar)
+        self._generate_trading_signal(bar)
 
-    def _process_tick_signal(self, tick: TickData):
-        """🎯 基于tick的快速信号判断"""
-        # 基于缓存持仓进行快速风控预检
-        if abs(self.cached_position) >= self.max_position:
-            return  # 已达上限，不生成信号
-
-        # 其他快速判断逻辑...
-        # 这里可以添加基于tick的快速信号判断
-        pass
-
-    def _generate_sophisticated_signal(self, bar: BarData):
-        """🎯 优化的信号生成 - 分离信号生成和执行"""
+    def _generate_trading_signal(self, bar: BarData):
+        """🎯 生成交易信号 - 分离信号生成和执行"""
         # 🚨 信号生成前置检查
         if self.signal_lock:
             logger.info(f"🔒 [SHFE策略] 信号生成被锁定，等待交易完成")
@@ -197,10 +206,12 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
         signal_analysis = self._analyze_market_conditions(bar)
 
         # 🎯 生成交易决策
-        signal_decision = self._make_sophisticated_decision(signal_analysis, bar.close_price)
+        signal_decision = self._analyze_trading_opportunity(signal_analysis, bar.close_price)
 
         # 🎯 发送信号给处理模块
         if signal_decision['action'] in ['BUY', 'SELL']:
+            # 📊 记录交易信号时的完整指标数据（用于复盘分析）
+            self._log_trading_signal_indicators(signal_analysis, signal_decision, bar.close_price)
             logger.info(f"🎯 [SHFE策略] 生成交易信号: {signal_decision['action']} - {signal_decision['reason']}")
             self._process_trading_signal(signal_decision, bar.close_price)
         else:
@@ -219,12 +230,25 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
                 "current_price": bar.close_price
             }
 
-        # 计算技术指标
-        ma_short = self.am.sma(self.ma_short)
-        ma_long = self.am.sma(self.ma_long)
-        rsi = self.am.rsi(self.rsi_period)
+        # 🎯 使用缓存的技术指标（性能优化）
+        ma_short = self.current_ma5
+        ma_long = self.current_ma20
+        rsi = self.current_rsi
 
-        # 趋势分析
+        # 🎯 更新MA历史数据
+        self.ma5_history.append(ma_short)
+        self.ma20_history.append(ma_long)
+
+        # 保持历史数据长度
+        if len(self.ma5_history) > self.max_history_length:
+            self.ma5_history.pop(0)
+        if len(self.ma20_history) > self.max_history_length:
+            self.ma20_history.pop(0)
+
+        # 🎯 金叉死叉检测
+        cross_signal = self._detect_ma_cross()
+
+        # 趋势分析（保留原有逻辑作为辅助）
         trend_signal = "NEUTRAL"
         if ma_short > ma_long:
             trend_signal = "BULLISH"
@@ -244,121 +268,206 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
             "rsi": rsi,
             "trend_signal": trend_signal,
             "rsi_signal": rsi_signal,
+            "cross_signal": cross_signal,  # 新增：金叉死叉信号
             "current_price": bar.close_price
         }
 
-    def _make_sophisticated_decision(self, analysis: dict, current_price: float) -> dict:
-        """🎯 基于分析结果做出交易决策"""
-        trend_signal = analysis["trend_signal"]
-        rsi_signal = analysis["rsi_signal"]
+    def _detect_ma_cross(self) -> str:
+        """🎯 检测MA5和MA20的金叉死叉 - 2根K线确认"""
+        if len(self.ma5_history) < 2 or len(self.ma20_history) < 2:
+            return "NONE"  # 数据不足，需要至少2个点进行确认
+
+        # 获取最近2个时刻的MA值（用于确认检测）
+        ma5_values = self.ma5_history[-2:]  # [前1, 当前]
+        ma20_values = self.ma20_history[-2:]
+
+        # 金叉检测：MA5从下方穿越MA20 + 1个K线确认
+        if (ma5_values[0] <= ma20_values[0] and  # 前1时刻：MA5 <= MA20
+            ma5_values[1] > ma20_values[1]):     # 当前时刻：MA5 > MA20 (交叉发生)
+
+            # TODO: 改为基于斜率的交叉检测，更准确判断趋势变化
+            # 最小幅度检测 - 使用绝对差值
+            cross_strength = abs(ma5_values[1] - ma20_values[1])
+            if cross_strength >= 0.04:  # 绝对差值4分钱
+                logger.info(f"🌟 [均线信号] 确认金叉: MA5({ma5_values[1]:.2f}) 上穿 MA20({ma20_values[1]:.2f}), 差值{cross_strength:.2f}")
+                return "GOLDEN_CROSS"
+            else:
+                logger.debug(f"🔍 [均线信号] 金叉幅度不足: 差值{cross_strength:.2f} < 0.04")
+
+        # 死叉检测：MA5从上方穿越MA20 + 1个K线确认
+        if (ma5_values[0] >= ma20_values[0] and  # 前1时刻：MA5 >= MA20
+            ma5_values[1] < ma20_values[1]):     # 当前时刻：MA5 < MA20 (交叉发生)
+
+            # TODO: 改为基于斜率的交叉检测，更准确判断趋势变化
+            # 最小幅度检测 - 使用绝对差值
+            cross_strength = abs(ma5_values[1] - ma20_values[1])
+            if cross_strength >= 0.04:  # 绝对差值4分钱
+                logger.info(f"💀 [均线信号] 确认死叉: MA5({ma5_values[1]:.2f}) 下穿 MA20({ma20_values[1]:.2f}), 差值{cross_strength:.2f}")
+                return "DEATH_CROSS"
+            else:
+                logger.debug(f"🔍 [均线信号] 死叉幅度不足: 差值{cross_strength:.2f} < 0.04")
+
+        return "NONE"
+
+    def _log_trading_signal_indicators(self, analysis: dict, decision: dict, current_price: float):
+        """📊 记录交易信号时的完整指标数据到K线日志文件（用于复盘分析）"""
+        # 直接使用现有logger记录交易信号指标
+
+        ma5 = analysis["ma_short"]
+        ma20 = analysis["ma_long"]
+        rsi = analysis["rsi"]
+        cross_signal = analysis["cross_signal"]
+
+        # 计算交叉强度
+        cross_strength = 0.0
+        if len(self.ma5_history) >= 1 and len(self.ma20_history) >= 1:
+            cross_strength = abs(ma5 - ma20) / ma20
+
+        # 📊 详细的交易信号记录
+        logger.info(f"🎯 [交易信号] ==========================================")
+        logger.info(f"🎯 [交易信号] 信号类型: {decision['action']} - {decision['reason']}")
+        logger.info(f"🎯 [交易信号] 当前价格: {current_price:.2f}")
+        logger.info(f"🎯 [交易信号] MA5: {ma5:.2f}")
+        logger.info(f"🎯 [交易信号] MA20: {ma20:.2f}")
+        logger.info(f"🎯 [交易信号] MA差值: {ma5-ma20:.2f} ({((ma5-ma20)/ma20*100):+.2f}%)")
+        logger.info(f"🎯 [交易信号] RSI: {rsi:.1f}")
+        logger.info(f"🎯 [交易信号] 交叉信号: {cross_signal}")
+        logger.info(f"🎯 [交易信号] 交叉强度: {cross_strength:.4f} ({cross_strength*100:.2f}%)")
+        logger.info(f"🎯 [交易信号] 当前持仓: {self.pos}")
+
+        # MA历史数据（最近3个值）用于手工验证
+        if len(self.ma5_history) >= 3:
+            logger.info(f"🎯 [交易信号] MA5历史: {[f'{x:.2f}' for x in self.ma5_history[-3:]]}")
+        if len(self.ma20_history) >= 3:
+            logger.info(f"🎯 [交易信号] MA20历史: {[f'{x:.2f}' for x in self.ma20_history[-3:]]}")
+
+        logger.info(f"🎯 [交易信号] ==========================================")
+
+    def _analyze_trading_opportunity(self, analysis: dict, current_price: float) -> dict:
+        """🎯 分析交易机会 - 基于金叉死叉信号做出交易决策"""
+        cross_signal = analysis["cross_signal"]
         rsi = analysis["rsi"]
 
-        # 决策逻辑：趋势跟踪 + RSI确认
-        if trend_signal == "BULLISH" and rsi_signal == "OVERSOLD":
-            return {
-                "action": "BUY",
-                "reason": f"多头趋势+RSI超卖({rsi:.1f})",
-                "strength": 1.0
-            }
-        elif trend_signal == "BEARISH" and rsi_signal == "OVERBOUGHT":
-            return {
-                "action": "SELL",
-                "reason": f"空头趋势+RSI超买({rsi:.1f})",
-                "strength": 1.0
-            }
-        elif trend_signal == "BULLISH" and rsi < 50:
-            return {
-                "action": "BUY",
-                "reason": f"多头趋势+RSI中性偏低({rsi:.1f})",
-                "strength": 0.7
-            }
-        elif trend_signal == "BEARISH" and rsi > 50:
-            return {
-                "action": "SELL",
-                "reason": f"空头趋势+RSI中性偏高({rsi:.1f})",
-                "strength": 0.7
-            }
+        # 🎯 新逻辑：基于金叉死叉 + RSI确认
+        if cross_signal == "GOLDEN_CROSS":
+            # 金叉买入信号
+            if 30 < rsi < 70:  # RSI在合理区间
+                return {
+                    "action": "BUY",
+                    "reason": f"金叉信号+RSI确认({rsi:.1f})",
+                    "strength": 1.0
+                }
+            else:
+                return {
+                    "action": "NONE",
+                    "reason": f"金叉信号但RSI不合适({rsi:.1f})",
+                    "strength": 0
+                }
+        elif cross_signal == "DEATH_CROSS":
+            # 死叉卖出信号
+            if 30 < rsi < 70:  # RSI在合理区间
+                return {
+                    "action": "SELL",
+                    "reason": f"死叉信号+RSI确认({rsi:.1f})",
+                    "strength": 1.0
+                }
+            else:
+                return {
+                    "action": "NONE",
+                    "reason": f"死叉信号但RSI不合适({rsi:.1f})",
+                    "strength": 0
+                }
         else:
+            # 无交叉信号
             return {
-                "action": "HOLD",
-                "reason": f"趋势{trend_signal}+RSI{rsi_signal}({rsi:.1f})，条件不满足",
+                "action": "NONE",
+                "reason": f"无金叉死叉信号，RSI({rsi:.1f})",
                 "strength": 0.0
             }
-    def _execute_signal(self, signal: str, price: float, reason: str):
-        """执行交易信号"""
-        # 检查持仓限制
-        if abs(self.pos) >= self.max_position:
-            self.write_log(f"已达最大持仓 {self.max_position}，忽略信号: {signal}")
-            return
-            
-        self.signal_count += 1
-        
-        if signal == "BUY":
-            self.buy(price, self.trade_volume, stop=False)
-            self.entry_price = price
-            
-        elif signal == "SELL":
-            self.sell(price, self.trade_volume, stop=False)
-            self.entry_price = price
-            
-        self.last_signal_time = time.time()
-        
-        self.write_log(f"📊 信号 #{self.signal_count}: {signal}")
-        self.write_log(f"   原因: {reason}")
-        self.write_log(f"   价格: {price:.2f}, 持仓: {self.pos}")
-        
-    def _check_risk_control(self, current_price: float):
-        """检查风险控制"""
-        if self.pos == 0 or self.entry_price == 0:
-            return
-            
-        # 计算盈亏比例
-        if self.pos > 0:  # 多头持仓
-            pnl_pct = (current_price - self.entry_price) / self.entry_price
-        else:  # 空头持仓
-            pnl_pct = (self.entry_price - current_price) / self.entry_price
-            
-        # 止损（使用小的容差处理浮点数精度问题）
-        if pnl_pct <= -self.stop_loss_pct + 1e-6:
-            self._close_all_positions(current_price, "止损")
 
-        # 止盈（使用小的容差处理浮点数精度问题）
-        elif pnl_pct >= self.take_profit_pct - 1e-6:
-            self._close_all_positions(current_price, "止盈")
+    def _check_risk_control(self, current_price: float):
+        """检查风险控制 - 基于上期所真实持仓成本价"""
+        if self.pos == 0:
+            return
+
+        # 🎯 从上期所查询真实的持仓成本价
+        try:
+            real_position = self._query_real_position()
+            if real_position is None:
+                logger.warning("⚠️ [风控] 无法获取持仓信息，跳过风控检查")
+                return
+
+            # 获取持仓成本价（上期所提供的真实数据）
+            entry_price = real_position.get("average_price", 0)
+            if entry_price <= 0:
+                logger.warning("⚠️ [风控] 持仓成本价无效，跳过风控检查")
+                return
+
+            # 计算盈亏比例
+            if self.pos > 0:  # 多头持仓
+                pnl_pct = (current_price - entry_price) / entry_price
+            else:  # 空头持仓
+                pnl_pct = (entry_price - current_price) / entry_price
+
+            # 止损（使用小的容差处理浮点数精度问题）
+            if pnl_pct <= -self.stop_loss_pct + 1e-6:
+                self._close_all_positions(current_price, entry_price, "止损")
+
+            # 止盈（使用小的容差处理浮点数精度问题）
+            elif pnl_pct >= self.take_profit_pct - 1e-6:
+                self._close_all_positions(current_price, entry_price, "止盈")
+
+        except Exception as e:
+            logger.error(f"⚠️ [风控] 风控检查异常: {e}")
             
-    def _close_all_positions(self, price: float, reason: str):
+    def _close_all_positions(self, price: float, entry_price: float, reason: str):
         """平掉所有持仓"""
         if self.pos == 0:
             return
-            
+
+        # 📊 记录风控触发时的详细数据（用于复盘分析）
+        pnl_amount = 0.0
+        pnl_pct = 0.0
+        if entry_price > 0:
+            if self.pos > 0:  # 多头持仓
+                pnl_amount = (price - entry_price) * abs(self.pos)
+                pnl_pct = (price - entry_price) / entry_price
+            else:  # 空头持仓
+                pnl_amount = (entry_price - price) * abs(self.pos)
+                pnl_pct = (entry_price - price) / entry_price
+
+        # 📊 详细的风控记录
+        logger.info(f"🛑 [风控触发] ==========================================")
+        logger.info(f"🛑 [风控触发] 风控类型: {reason}")
+        logger.info(f"🛑 [风控触发] 平仓价格: {price:.2f}")
+        logger.info(f"🛑 [风控触发] 入场价格: {entry_price:.2f} (来自上期所)")
+        logger.info(f"🛑 [风控触发] 持仓数量: {self.pos}手")
+        logger.info(f"🛑 [风控触发] 盈亏金额: {pnl_amount:+.2f}元")
+        logger.info(f"🛑 [风控触发] 盈亏比例: {pnl_pct*100:+.2f}%")
+        logger.info(f"🛑 [风控触发] 价格变动: {price - entry_price:+.2f}元")
+        logger.info(f"🛑 [风控触发] ==========================================")
+
         if self.pos > 0:
             self.sell(price, abs(self.pos), stop=False)  # 卖出平仓
         else:
             self.cover(price, abs(self.pos), stop=False)  # 买入平仓
-            
-        self.write_log(f"🛑 {reason}: 平仓 {self.pos}手 @ {price:.2f}")
-        self.entry_price = 0.0
+
+        self.write_log(f"🛑 {reason}: 平仓 {self.pos}手 @ {price:.2f}, 盈亏{pnl_pct*100:+.2f}%")
         
     def on_order(self, order):
         """处理订单回调"""
         self.write_log(f"订单状态: {order.orderid} - {order.status}")
         
-        # 如果订单被拒绝，重置入场价格
+        # 订单被拒绝时的处理
         if order.status.value == "拒单":
-            self.entry_price = 0.0
+            logger.warning(f"⚠️ 订单被拒绝: {order.orderid}")
             
     def on_trade(self, trade):
         """处理成交回调"""
         self.write_log(f"✅ 成交: {trade.direction} {trade.volume}手 @ {trade.price:.2f}")
         self.write_log(f"   当前持仓: {self.pos}")
         
-        # 如果是开仓成交，记录入场价格
-        if trade.offset.value == "开仓":
-            self.entry_price = trade.price
-            
-        # 如果是平仓成交，重置入场价格
-        elif abs(self.pos) == 0:
-            self.entry_price = 0.0
+        # 成交后的基本处理（入场价格由上期所管理）
             
         # 重要成交发送邮件通知
         if abs(trade.volume) >= 3:
@@ -377,18 +486,16 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
             "strategy_name": self.strategy_name,
             "symbol": self.symbol,
             "position": self.pos,
-            "entry_price": self.entry_price,
-            "signal_count": self.signal_count,
             "indicators": {
-                "ma_short": self.am.sma(self.ma_short),
-                "ma_long": self.am.sma(self.ma_long),
-                "rsi": self.am.rsi(self.rsi_period)
+                "ma_short": self.current_ma5,
+                "ma_long": self.current_ma20,
+                "rsi": self.current_rsi
             },
             "last_price": self.am.close_array[-1] if len(self.am.close_array) > 0 else 0
         }
 
-    def _query_real_position(self) -> Optional[int]:
-        """🔧 实时查询真实持仓 - 集成优化架构"""
+    def _query_real_position(self) -> Optional[dict]:
+        """🔧 实时查询真实持仓 - 返回完整持仓信息"""
         try:
             import requests
 
@@ -405,15 +512,20 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
                     long_position = position_info.get("long_position", 0)
                     short_position = position_info.get("short_position", 0)
                     net_position = position_info.get("net_position", 0)
+                    average_price = position_info.get("average_price", 0)
 
                     logger.info(f"🔍 [SHFE策略] 查询到真实持仓: 多单={long_position}, 空单={short_position}, 净持仓={net_position}")
 
-                    # 更新缓存
-                    self.cached_long_position = long_position
-                    self.cached_short_position = short_position
+                    # 更新缓存（只保留净持仓）
                     self.cached_position = net_position
 
-                    return net_position
+                    # 返回完整持仓信息
+                    return {
+                        "net_position": net_position,
+                        "long_position": long_position,
+                        "short_position": short_position,
+                        "average_price": average_price
+                    }
                 else:
                     logger.warning(f"⚠️ [SHFE策略] 持仓查询返回空数据")
                     return None
@@ -484,10 +596,13 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
 
     def _pre_trade_safety_check(self, action: str) -> bool:
         """🔧 交易前安全检查 - 智能持仓风控模块"""
-        real_position = self._query_real_position()
-        if real_position is None:
+        real_position_info = self._query_real_position()
+        if real_position_info is None:
             logger.warning(f"⚠️ [SHFE策略] 无法查询持仓，停止交易")
             return False
+
+        # 获取净持仓
+        real_position = real_position_info.get("net_position", 0)
 
         # 更新策略持仓
         if real_position != self.pos:
@@ -525,8 +640,6 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
 
         return True
 
-
-
     def on_tick_impl(self, tick: TickData):
         """具体的tick处理实现 - 必需的抽象方法"""
         # 🛡️ 基于Tick的实时风控检查
@@ -540,13 +653,17 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
         """具体的成交处理实现"""
         logger.info(f"🔥 [SHFE策略] 成交确认: {trade.direction} {trade.volume}手 @ {trade.price}")
 
+        # 🎯 记录成交信息
+        self._log_trade_info(trade)
+
         # 成交后异步更新持仓缓存
         try:
             import threading
 
             def update_cache():
-                real_position = self._query_real_position()
-                if real_position is not None:
+                real_position_info = self._query_real_position()
+                if real_position_info is not None:
+                    real_position = real_position_info.get("net_position", 0)
                     old_cache = self.cached_position
                     self.cached_position = real_position
                     self.last_position_update = time.time()
@@ -557,6 +674,74 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
 
         except Exception as e:
             logger.error(f"⚠️ [SHFE策略] 持仓缓存更新失败: {e}")
+
+    def _log_trade_info(self, trade):
+        """📊 记录成交信息"""
+        logger.info(f"💰 [成交记录] {trade.direction.value} {trade.offset} {trade.volume}手 @ {trade.price:.2f}")
+        logger.info(f"💰 [持仓变化] 持仓更新为: {self.pos}手")
+
+    def _log_indicators_to_csv(self, bar):
+        """📊 记录指标数据到CSV文件"""
+        import csv
+        import os
+        from datetime import datetime
+
+        try:
+            # 创建logs目录
+            log_dir = "logs"
+            if not os.path.exists(log_dir):
+                os.makedirs(log_dir)
+
+            # CSV文件路径 - 按日期分文件
+            today = datetime.now().strftime('%Y%m%d')
+            csv_file = f"{log_dir}/indicators_{self.strategy_name}_{self.symbol}_{today}.csv"
+
+            # 检查文件是否存在，如果不存在则创建并写入表头
+            file_exists = os.path.exists(csv_file)
+
+            with open(csv_file, 'a', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+
+                # 写入表头
+                if not file_exists:
+                    writer.writerow([
+                        'DateTime', 'Open', 'High', 'Low', 'Close', 'Volume',
+                        'EMA5', 'EMA20', 'RSI', 'EMA5_EMA20_Diff', 'Cross_Signal'
+                    ])
+
+                # 计算EMA差值
+                ema_diff = self.current_ma5 - self.current_ma20
+
+                # 获取交叉信号
+                cross_signal = self._detect_ma_cross()
+
+                # 写入数据
+                writer.writerow([
+                    bar.datetime.strftime('%Y-%m-%d %H:%M:%S'),
+                    f"{bar.open_price:.2f}",
+                    f"{bar.high_price:.2f}",
+                    f"{bar.low_price:.2f}",
+                    f"{bar.close_price:.2f}",
+                    bar.volume,
+                    f"{self.current_ma5:.2f}",
+                    f"{self.current_ma20:.2f}",
+                    f"{self.current_rsi:.2f}",
+                    f"{ema_diff:.2f}",
+                    cross_signal
+                ])
+
+            # 每10个K线输出一次指标对比
+            if hasattr(self, '_csv_log_count'):
+                self._csv_log_count += 1
+            else:
+                self._csv_log_count = 1
+
+            if self._csv_log_count % 10 == 0:
+                logger.info(f"📊 [EMA指标] EMA5:{self.current_ma5:.2f} | "
+                           f"EMA20:{self.current_ma20:.2f} | RSI:{self.current_rsi:.2f}")
+
+        except Exception as e:
+            logger.error(f"⚠️ [指标记录] CSV记录失败: {e}")
 
     def _calculate_position_size(self, signal_strength: float = 1.0) -> int:
         """
