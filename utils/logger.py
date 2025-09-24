@@ -25,9 +25,7 @@ def setup_logger(name, log_file, level=logging.INFO):
     Returns:
         logger: 配置好的日志记录器
     """
-    # 检查是否已经创建过该logger
-    if name in _logger_cache:
-        return _logger_cache[name]
+    # 注意：不再检查缓存，因为get_logger已经处理了日期切换逻辑
 
     # 创建日志记录器
     logger = logging.getLogger(name)

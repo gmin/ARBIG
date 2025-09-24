@@ -245,8 +245,8 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
         if len(self.ma20_history) > self.max_history_length:
             self.ma20_history.pop(0)
 
-        # 🎯 金叉死叉检测
-        cross_signal = self._detect_ma_cross()
+        # 🎯 金叉死叉检测 - 传入当前价格进行确认
+        cross_signal = self._detect_ma_cross(bar.close_price)
 
         # 趋势分析（保留原有逻辑作为辅助）
         trend_signal = "NEUTRAL"
@@ -272,8 +272,8 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
             "current_price": bar.close_price
         }
 
-    def _detect_ma_cross(self) -> str:
-        """🎯 检测MA5和MA20的金叉死叉 - 2根K线确认"""
+    def _detect_ma_cross(self, current_price: float) -> str:
+        """🎯 检测MA5和MA20的金叉死叉 - 改进的交叉幅度和价格确认"""
         if len(self.ma5_history) < 2 or len(self.ma20_history) < 2:
             return "NONE"  # 数据不足，需要至少2个点进行确认
 
@@ -281,31 +281,49 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
         ma5_values = self.ma5_history[-2:]  # [前1, 当前]
         ma20_values = self.ma20_history[-2:]
 
-        # 金叉检测：MA5从下方穿越MA20 + 1个K线确认
+        # 金叉检测：MA5从下方穿越MA20 + 价格确认
         if (ma5_values[0] <= ma20_values[0] and  # 前1时刻：MA5 <= MA20
             ma5_values[1] > ma20_values[1]):     # 当前时刻：MA5 > MA20 (交叉发生)
 
-            # TODO: 改为基于斜率的交叉检测，更准确判断趋势变化
-            # 最小幅度检测 - 使用绝对差值
-            cross_strength = abs(ma5_values[1] - ma20_values[1])
-            if cross_strength >= 0.04:  # 绝对差值4分钱
-                logger.info(f"🌟 [均线信号] 确认金叉: MA5({ma5_values[1]:.2f}) 上穿 MA20({ma20_values[1]:.2f}), 差值{cross_strength:.2f}")
+            # 计算交叉幅度 - 从交叉前到交叉后的总变化
+            cross_strength = abs((ma5_values[1] - ma20_values[1]) - (ma5_values[0] - ma20_values[0]))
+
+            # 价格确认 - 收盘价应该在MA5之上
+            price_confirmation = current_price > ma5_values[1]
+
+            if cross_strength >= 0.04 and price_confirmation:  # 交叉幅度 + 价格确认
+                logger.info(f"🌟 [均线信号] 确认金叉: MA5({ma5_values[1]:.2f}) 上穿 MA20({ma20_values[1]:.2f})")
+                logger.info(f"🌟 [交叉详情] 交叉幅度:{cross_strength:.2f} | 价格:{current_price:.2f} > MA5:{ma5_values[1]:.2f}")
                 return "GOLDEN_CROSS"
             else:
-                logger.debug(f"🔍 [均线信号] 金叉幅度不足: 差值{cross_strength:.2f} < 0.04")
+                reason = []
+                if cross_strength < 0.04:
+                    reason.append(f"幅度不足({cross_strength:.2f}<0.04)")
+                if not price_confirmation:
+                    reason.append(f"价格未确认({current_price:.2f}≤{ma5_values[1]:.2f})")
+                logger.debug(f"🔍 [均线信号] 金叉未确认: {', '.join(reason)}")
 
-        # 死叉检测：MA5从上方穿越MA20 + 1个K线确认
+        # 死叉检测：MA5从上方穿越MA20 + 价格确认
         if (ma5_values[0] >= ma20_values[0] and  # 前1时刻：MA5 >= MA20
             ma5_values[1] < ma20_values[1]):     # 当前时刻：MA5 < MA20 (交叉发生)
 
-            # TODO: 改为基于斜率的交叉检测，更准确判断趋势变化
-            # 最小幅度检测 - 使用绝对差值
-            cross_strength = abs(ma5_values[1] - ma20_values[1])
-            if cross_strength >= 0.04:  # 绝对差值4分钱
-                logger.info(f"💀 [均线信号] 确认死叉: MA5({ma5_values[1]:.2f}) 下穿 MA20({ma20_values[1]:.2f}), 差值{cross_strength:.2f}")
+            # 计算交叉幅度 - 从交叉前到交叉后的总变化
+            cross_strength = abs((ma5_values[1] - ma20_values[1]) - (ma5_values[0] - ma20_values[0]))
+
+            # 价格确认 - 收盘价应该在MA5之下
+            price_confirmation = current_price < ma5_values[1]
+
+            if cross_strength >= 0.04 and price_confirmation:  # 交叉幅度 + 价格确认
+                logger.info(f"💀 [均线信号] 确认死叉: MA5({ma5_values[1]:.2f}) 下穿 MA20({ma20_values[1]:.2f})")
+                logger.info(f"💀 [交叉详情] 交叉幅度:{cross_strength:.2f} | 价格:{current_price:.2f} < MA5:{ma5_values[1]:.2f}")
                 return "DEATH_CROSS"
             else:
-                logger.debug(f"🔍 [均线信号] 死叉幅度不足: 差值{cross_strength:.2f} < 0.04")
+                reason = []
+                if cross_strength < 0.04:
+                    reason.append(f"幅度不足({cross_strength:.2f}<0.04)")
+                if not price_confirmation:
+                    reason.append(f"价格未确认({current_price:.2f}≥{ma5_values[1]:.2f})")
+                logger.debug(f"🔍 [均线信号] 死叉未确认: {', '.join(reason)}")
 
         return "NONE"
 
@@ -397,10 +415,21 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
                 logger.warning("⚠️ [风控] 无法获取持仓信息，跳过风控检查")
                 return
 
-            # 获取持仓成本价（上期所提供的真实数据）
-            entry_price = real_position.get("average_price", 0)
+            # 获取持仓成本价（根据净持仓方向选择对应价格）
+            net_position = real_position.get("net_position", 0)
+            if net_position > 0:
+                # 净多头持仓，使用多单价格
+                entry_price = real_position.get("long_price", 0)
+            elif net_position < 0:
+                # 净空头持仓，使用空单价格
+                entry_price = real_position.get("short_price", 0)
+            else:
+                # 无净持仓
+                logger.debug("⚠️ [风控] 无净持仓，跳过风控检查")
+                return
+
             if entry_price <= 0:
-                logger.warning("⚠️ [风控] 持仓成本价无效，跳过风控检查")
+                logger.warning(f"⚠️ [风控] 持仓成本价无效: net_position={net_position}, entry_price={entry_price}")
                 return
 
             # 计算盈亏比例
@@ -712,8 +741,8 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
                 # 计算EMA差值
                 ema_diff = self.current_ma5 - self.current_ma20
 
-                # 获取交叉信号
-                cross_signal = self._detect_ma_cross()
+                # 获取交叉信号 - 传入当前价格进行确认
+                cross_signal = self._detect_ma_cross(bar.close_price)
 
                 # 写入数据
                 writer.writerow([
