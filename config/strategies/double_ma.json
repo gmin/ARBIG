@@ -2,7 +2,7 @@
   "name": "双均线策略",
   "description": "经典的双移动平均线交叉策略",
   "class_name": "DoubleMaStrategy",
-  "symbol": "au2510",
+  "symbol": "au2512",
   "enabled": false,
   "params": {
     "fast_period": 12,

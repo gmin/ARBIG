@@ -13,6 +13,21 @@ _logger_cache = {}
 # 系统日志的当前日期跟踪
 _current_system_log_date = None
 
+def clear_logger_cache():
+    """清理logger缓存，强制重新创建"""
+    global _logger_cache, _current_system_log_date
+
+    # 关闭所有现有的handlers
+    for name, logger in _logger_cache.items():
+        for handler in logger.handlers[:]:
+            handler.close()
+            logger.removeHandler(handler)
+
+    # 清空缓存
+    _logger_cache.clear()
+    _current_system_log_date = None
+    print("🔄 [日志系统] 强制清理缓存，重新创建logger")
+
 def setup_logger(name, log_file, level=logging.INFO):
     """
     设置日志记录器

@@ -55,7 +55,7 @@ class StrategyEngine:
         self.active_strategies: List[str] = []
 
         # 🔧 订阅品种管理 - 默认订阅主要品种
-        self.subscribed_symbols: set = {"au2510"}  # 默认订阅黄金主力合约
+        self.subscribed_symbols: set = {"au2512"}  # 默认订阅黄金主力合约
 
         # 性能统计
         self.performance_stats: Dict[str, StrategyPerformance] = {}
@@ -550,7 +550,7 @@ class StrategyEngine:
                 return
 
             # 🔧 固定获取主要品种行情
-            symbols_to_fetch = ["au2510"]  # 主要品种
+            symbols_to_fetch = ["au2512"]  # 主要品种
             logger.info(f"[策略服务-引擎] 🔧 开始获取行情数据，品种: {symbols_to_fetch}, 启动策略: {len(self.active_strategies)}个")
 
             # 🔧 从交易服务获取实时tick数据

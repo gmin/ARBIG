@@ -368,7 +368,7 @@ async def close_all_positions(
     try:
         # 简化实现：直接调用核心交易服务的一键平仓，使用默认合约
         close_response = await service_client.post("/real_trading/close_position", data={
-            "symbol": "au2510",  # 使用默认合约
+            "symbol": "au2512",  # 使用默认合约
             "direction": "all",
             "order_type": "MARKET"
         })

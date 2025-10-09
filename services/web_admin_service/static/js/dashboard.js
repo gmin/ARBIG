@@ -3,7 +3,7 @@ class Dashboard {
     constructor() {
         this.updateInterval = 2000; // 2秒更新一次
         this.isUpdating = false;
-        this.mainContract = 'au2510'; // 默认值，将从配置加载
+        this.mainContract = 'au2512'; // 默认值，将从配置加载
         this.init();
     }
 

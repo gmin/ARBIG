@@ -72,7 +72,7 @@ class ARBIGBacktestEngine:
         self.default_settings = {
             "start_date": datetime(2024, 1, 1),
             "end_date": datetime(2024, 12, 31),
-            "symbol": "au2510.SHFE",
+            "symbol": "au2512.SHFE",
             "interval": Interval.MINUTE,
             "rate": 2/10000,        # 手续费率 0.02%
             "slippage": 0.2,        # 滑点 0.2元
@@ -86,7 +86,7 @@ class ARBIGBacktestEngine:
     def setup_backtest(self, 
                       start_date: datetime = None,
                       end_date: datetime = None,
-                      symbol: str = "au2510.SHFE",
+                      symbol: str = "au2512.SHFE",
                       interval: Interval = Interval.MINUTE,
                       rate: float = 2/10000,
                       slippage: float = 0.2,

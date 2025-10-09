@@ -2,7 +2,7 @@
   "name": "VWAP偏离回归策略",
   "description": "基于成交量加权平均价格偏离的均值回归策略",
   "class_name": "VWAPDeviationReversionStrategy",
-  "symbol": "au2510",
+  "symbol": "au2512",
   "enabled": false,
   "params": {
     "vwap_period": 20,

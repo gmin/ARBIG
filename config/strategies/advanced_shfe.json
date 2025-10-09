@@ -2,7 +2,7 @@
   "name": "高级SHFE策略",
   "description": "高级上海期货交易所策略，使用组件化框架",
   "class_name": "AdvancedSHFEStrategy",
-  "symbol": "au2510",
+  "symbol": "au2512",
   "enabled": false,
   "params": {
     "trend_period": 20,
