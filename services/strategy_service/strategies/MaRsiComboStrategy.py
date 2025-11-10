@@ -568,19 +568,23 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
                     long_position = position_info.get("long_position", 0)
                     short_position = position_info.get("short_position", 0)
                     net_position = position_info.get("net_position", 0)
-                    average_price = position_info.get("average_price", 0)
+                    long_price = position_info.get("long_price", 0)
+                    short_price = position_info.get("short_price", 0)
+                    current_price = position_info.get("current_price", 0)
 
-                    logger.info(f"🔍 [SHFE策略] 查询到真实持仓: 多单={long_position}, 空单={short_position}, 净持仓={net_position}")
+                    logger.info(f"🔍 [SHFE策略] 查询到真实持仓: 多单={long_position}@{long_price:.2f}, 空单={short_position}@{short_price:.2f}, 净持仓={net_position}")
 
                     # 更新缓存（只保留净持仓）
                     self.cached_position = net_position
 
-                    # 返回完整持仓信息
+                    # 返回完整持仓信息（包含多空价格）
                     return {
                         "net_position": net_position,
                         "long_position": long_position,
                         "short_position": short_position,
-                        "average_price": average_price
+                        "long_price": long_price,
+                        "short_price": short_price,
+                        "current_price": current_price
                     }
                 else:
                     logger.warning(f"⚠️ [SHFE策略] 持仓查询返回空数据")
