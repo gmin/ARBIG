@@ -9,6 +9,7 @@ from datetime import datetime
 
 from services.trading_service.core.market_data_manager import get_market_data_manager
 from utils.logger import get_logger
+from config.config import get_supported_contracts
 
 logger = get_logger(__name__)
 
@@ -166,23 +167,25 @@ async def start_mock_feed():
     """启动模拟行情推送"""
     try:
         import asyncio
-        
+
         market_manager = get_market_data_manager()
-        
-        # 为主要合约启动模拟数据生成
-        symbols = ["au2509", "au2512", "au2601"]
-        
+
+        # 从配置获取支持的合约列表
+        supported_contracts = get_supported_contracts()
+        symbols = [contract['symbol'] for contract in supported_contracts]
+
         # 模拟行情推送已禁用，使用真实CTP数据
-        logger.info("模拟行情推送请求被忽略，系统使用真实CTP数据")
-        
+        logger.info(f"模拟行情推送请求被忽略，系统使用真实CTP数据。支持的合约: {symbols}")
+
         return {
             "success": True,
             "message": "模拟行情推送已禁用，系统使用真实CTP数据",
             "status": "disabled",
+            "supported_symbols": symbols,
             "recommendation": "请确保CTP连接正常以获取真实行情数据",
             "timestamp": datetime.now().isoformat()
         }
-        
+
     except Exception as e:
         logger.error(f"启动模拟行情推送失败: {e}")
         raise HTTPException(status_code=500, detail=f"启动模拟行情推送失败: {str(e)}")

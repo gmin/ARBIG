@@ -43,6 +43,7 @@ except ImportError as e:
 
 from utils.logger import get_logger
 from services.strategy_service.core.cta_template import ARBIGCtaTemplate
+from config.config import get_main_contract_symbol
 
 logger = get_logger(__name__)
 
@@ -63,16 +64,20 @@ class ARBIGBacktestEngine:
         """初始化回测引擎"""
         if BacktestingEngine is None:
             raise ImportError("vnpy_ctastrategy未安装，无法使用专业回测功能")
-        
+
         self.engine = BacktestingEngine()
         self.results = {}
         self.strategies = {}
-        
+
+        # 从配置获取主力合约
+        main_contract = get_main_contract_symbol()
+        backtest_symbol = f"{main_contract}.SHFE"
+
         # 默认回测参数
         self.default_settings = {
             "start_date": datetime(2024, 1, 1),
             "end_date": datetime(2024, 12, 31),
-            "symbol": "au2512.SHFE",
+            "symbol": backtest_symbol,
             "interval": Interval.MINUTE,
             "rate": 2/10000,        # 手续费率 0.02%
             "slippage": 0.2,        # 滑点 0.2元
@@ -80,13 +85,13 @@ class ARBIGBacktestEngine:
             "pricetick": 0.02,      # 最小价格变动
             "capital": 1000000      # 初始资金100万
         }
-        
-        logger.info("ARBIG专业回测引擎初始化完成")
+
+        logger.info(f"ARBIG专业回测引擎初始化完成，默认回测品种: {backtest_symbol}")
     
-    def setup_backtest(self, 
+    def setup_backtest(self,
                       start_date: datetime = None,
                       end_date: datetime = None,
-                      symbol: str = "au2512.SHFE",
+                      symbol: str = None,
                       interval: Interval = Interval.MINUTE,
                       rate: float = 2/10000,
                       slippage: float = 0.2,
@@ -95,11 +100,11 @@ class ARBIGBacktestEngine:
                       capital: int = 1000000):
         """
         设置回测参数
-        
+
         Args:
             start_date: 回测开始日期
             end_date: 回测结束日期
-            symbol: 交易品种
+            symbol: 交易品种（默认使用配置中的主力合约）
             interval: 数据周期
             rate: 手续费率
             slippage: 滑点
@@ -113,6 +118,8 @@ class ARBIGBacktestEngine:
                 start_date = self.default_settings["start_date"]
             if end_date is None:
                 end_date = self.default_settings["end_date"]
+            if symbol is None:
+                symbol = self.default_settings["symbol"]
             
             # 设置回测参数
             self.engine.set_parameters(
