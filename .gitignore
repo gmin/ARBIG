@@ -38,4 +38,9 @@ yarn.lock
 
 # Build outputs
 web_admin/frontend/dist/
-web_admin/frontend/build/ 
+web_admin/frontend/build/
+
+# Sensitive configuration files (账户密码等敏感信息)
+config/ctp_sim.json
+config/ctp_sim2.json
+config/database.json
