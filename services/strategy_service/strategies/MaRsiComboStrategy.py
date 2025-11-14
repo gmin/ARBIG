@@ -182,8 +182,18 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
         self.current_ma20 = self.am.ema(self.ma_long)   # 改为EMA20
         self.current_rsi = self.am.rsi(self.rsi_period)
 
-        # 📝 记录指标数据到专门的CSV文件
-        self._log_indicators_to_csv(bar)
+        # 📝 每个K线都记录指标数据到CSV文件（不受信号间隔限制）
+        # 🎯 为CSV记录单独检测交叉信号（避免重复调用）
+        csv_cross_signal = self._detect_ma_cross(bar.close_price)
+        csv_analysis = {
+            "ma_short": self.current_ma5,
+            "ma_long": self.current_ma20,
+            "rsi": self.current_rsi,
+            "cross_signal": csv_cross_signal,
+            "current_price": bar.close_price
+        }
+
+        self._log_indicators_to_csv(bar, csv_analysis)
 
         # 🛡️ 实时风控检查在on_tick_impl中处理，K线级别专注信号生成
 
@@ -202,7 +212,7 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
             logger.info(f"🔒 [SHFE策略] 信号生成被锁定，等待交易完成")
             return
 
-        # 🎯 核心逻辑：分析市场条件
+        # 🎯 核心逻辑：分析市场条件（为交易决策单独分析）
         signal_analysis = self._analyze_market_conditions(bar)
 
         # 🎯 生成交易决策
@@ -281,6 +291,13 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
         ma5_values = self.ma5_history[-2:]  # [前1, 当前]
         ma20_values = self.ma20_history[-2:]
 
+        # 🔍 详细调试日志
+        logger.debug(f"🔍 [交叉调试] MA5历史: {self.ma5_history[-3:] if len(self.ma5_history) >= 3 else self.ma5_history}")
+        logger.debug(f"🔍 [交叉调试] MA20历史: {self.ma20_history[-3:] if len(self.ma20_history) >= 3 else self.ma20_history}")
+        logger.debug(f"🔍 [交叉调试] 比较点 - 前1时刻: MA5={ma5_values[0]:.2f}, MA20={ma20_values[0]:.2f}")
+        logger.debug(f"🔍 [交叉调试] 比较点 - 当前时刻: MA5={ma5_values[1]:.2f}, MA20={ma20_values[1]:.2f}")
+        logger.debug(f"🔍 [交叉调试] 当前价格: {current_price:.2f}")
+
         # 金叉检测：MA5从下方穿越MA20 + 价格确认
         if (ma5_values[0] <= ma20_values[0] and  # 前1时刻：MA5 <= MA20
             ma5_values[1] > ma20_values[1]):     # 当前时刻：MA5 > MA20 (交叉发生)
@@ -304,14 +321,22 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
                 logger.debug(f"🔍 [均线信号] 金叉未确认: {', '.join(reason)}")
 
         # 死叉检测：MA5从上方穿越MA20 + 价格确认
-        if (ma5_values[0] >= ma20_values[0] and  # 前1时刻：MA5 >= MA20
-            ma5_values[1] < ma20_values[1]):     # 当前时刻：MA5 < MA20 (交叉发生)
+        death_cross_condition1 = ma5_values[0] >= ma20_values[0]  # 前1时刻：MA5 >= MA20
+        death_cross_condition2 = ma5_values[1] < ma20_values[1]   # 当前时刻：MA5 < MA20
+
+        logger.debug(f"🔍 [死叉检测] 条件1(前1时刻MA5>=MA20): {ma5_values[0]:.2f} >= {ma20_values[0]:.2f} = {death_cross_condition1}")
+        logger.debug(f"🔍 [死叉检测] 条件2(当前时刻MA5<MA20): {ma5_values[1]:.2f} < {ma20_values[1]:.2f} = {death_cross_condition2}")
+
+        if death_cross_condition1 and death_cross_condition2:
 
             # 计算交叉幅度 - 从交叉前到交叉后的总变化
             cross_strength = abs((ma5_values[1] - ma20_values[1]) - (ma5_values[0] - ma20_values[0]))
 
             # 价格确认 - 收盘价应该在MA5之下
             price_confirmation = current_price < ma5_values[1]
+
+            logger.debug(f"🔍 [死叉检测] 交叉幅度: {cross_strength:.2f} >= 0.04 = {cross_strength >= 0.04}")
+            logger.debug(f"🔍 [死叉检测] 价格确认: {current_price:.2f} < {ma5_values[1]:.2f} = {price_confirmation}")
 
             if cross_strength >= 0.04 and price_confirmation:  # 交叉幅度 + 价格确认
                 logger.info(f"💀 [均线信号] 确认死叉: MA5({ma5_values[1]:.2f}) 下穿 MA20({ma20_values[1]:.2f})")
@@ -324,6 +349,8 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
                 if not price_confirmation:
                     reason.append(f"价格未确认({current_price:.2f}≥{ma5_values[1]:.2f})")
                 logger.debug(f"🔍 [均线信号] 死叉未确认: {', '.join(reason)}")
+        else:
+            logger.debug(f"🔍 [死叉检测] 不满足交叉条件，跳过检测")
 
         return "NONE"
 
@@ -541,19 +568,23 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
                     long_position = position_info.get("long_position", 0)
                     short_position = position_info.get("short_position", 0)
                     net_position = position_info.get("net_position", 0)
-                    average_price = position_info.get("average_price", 0)
+                    long_price = position_info.get("long_price", 0)
+                    short_price = position_info.get("short_price", 0)
+                    current_price = position_info.get("current_price", 0)
 
-                    logger.info(f"🔍 [SHFE策略] 查询到真实持仓: 多单={long_position}, 空单={short_position}, 净持仓={net_position}")
+                    logger.info(f"🔍 [SHFE策略] 查询到真实持仓: 多单={long_position}@{long_price:.2f}, 空单={short_position}@{short_price:.2f}, 净持仓={net_position}")
 
                     # 更新缓存（只保留净持仓）
                     self.cached_position = net_position
 
-                    # 返回完整持仓信息
+                    # 返回完整持仓信息（包含多空价格）
                     return {
                         "net_position": net_position,
                         "long_position": long_position,
                         "short_position": short_position,
-                        "average_price": average_price
+                        "long_price": long_price,
+                        "short_price": short_price,
+                        "current_price": current_price
                     }
                 else:
                     logger.warning(f"⚠️ [SHFE策略] 持仓查询返回空数据")
@@ -709,7 +740,7 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
         logger.info(f"💰 [成交记录] {trade.direction.value} {trade.offset} {trade.volume}手 @ {trade.price:.2f}")
         logger.info(f"💰 [持仓变化] 持仓更新为: {self.pos}手")
 
-    def _log_indicators_to_csv(self, bar):
+    def _log_indicators_to_csv(self, bar, analysis):
         """📊 记录指标数据到CSV文件"""
         import csv
         import os
@@ -741,8 +772,8 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
                 # 计算EMA差值
                 ema_diff = self.current_ma5 - self.current_ma20
 
-                # 获取交叉信号 - 传入当前价格进行确认
-                cross_signal = self._detect_ma_cross(bar.close_price)
+                # 获取交叉信号 - 使用已有的检测结果，避免重复调用
+                cross_signal = analysis.get("cross_signal", "NONE")
 
                 # 写入数据
                 writer.writerow([

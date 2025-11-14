@@ -500,7 +500,7 @@ class CtpIntegration:
                 order_price = price
 
             # 转换开平仓类型
-            vnpy_offset = self._convert_offset(offset.upper())
+            vnpy_offset = self._convert_offset(offset.upper(), symbol, direction)
 
             # 调整价格精度
             order_price = self._round_price(symbol, order_price)
@@ -735,18 +735,18 @@ class CtpIntegration:
             self._request_id += 1
         return self._request_id
 
-    def _convert_offset(self, offset: str) -> Offset:
+    def _convert_offset(self, offset: str, symbol: str = None, direction: str = None) -> Offset:
         """转换开平仓类型 - 上海期货交易所需要区分平今平昨"""
         # 处理AUTO：智能判断开平仓
         if offset == 'AUTO':
-            # AUTO应该是平仓，使用平今仓
-            result = Offset.CLOSETODAY
+            # AUTO应该是平仓，使用智能平仓逻辑
+            result = self._smart_close_offset(symbol, direction)
             logger.info(f"开平仓转换: {offset} -> {result} (智能平仓)")
             return result
 
         offset_map = {
             'OPEN': Offset.OPEN,
-            'CLOSE': Offset.CLOSETODAY,  # 修改：SHFE默认使用平今仓
+            'CLOSE': self._smart_close_offset(symbol, direction),  # 修改：使用智能平仓逻辑
             'CLOSE_TODAY': Offset.CLOSETODAY,
             'CLOSE_YESTERDAY': Offset.CLOSEYESTERDAY,
             'CLOSETODAY': Offset.CLOSETODAY,  # 添加：支持CLOSETODAY格式
@@ -755,6 +755,52 @@ class CtpIntegration:
         result = offset_map.get(offset, Offset.OPEN)
         logger.info(f"开平仓转换: {offset} -> {result}")
         return result
+
+    def _smart_close_offset(self, symbol: str = None, direction: str = None) -> Offset:
+        """智能判断平今仓还是平昨仓 - 优先平今仓，再平昨仓"""
+        if not symbol or not direction:
+            logger.warning("⚠️ 缺少合约或方向信息，使用默认平昨仓")
+            return Offset.CLOSEYESTERDAY
+
+        try:
+            # 根据交易方向确定要查询的持仓方向
+            if direction.upper() == "BUY":
+                # 买入平仓 = 平空仓
+                position_direction = "SHORT"
+                action_desc = "平空仓"
+            elif direction.upper() == "SELL":
+                # 卖出平仓 = 平多仓
+                position_direction = "LONG"
+                action_desc = "平多仓"
+            else:
+                logger.warning(f"⚠️ 未知交易方向: {direction}，使用默认平昨仓")
+                return Offset.CLOSEYESTERDAY
+
+            # 查询对应方向持仓的今昨仓详情
+            position_detail = self.get_position_detail(symbol, position_direction)
+            if not position_detail:
+                logger.warning(f"⚠️ {symbol} 无法获取{position_direction}持仓详情，使用默认平昨仓")
+                return Offset.CLOSEYESTERDAY
+
+            today_pos = position_detail.today_position
+            yesterday_pos = position_detail.yesterday_position
+
+            logger.info(f"🔍 {action_desc}分析: {symbol} {position_direction} 今仓{today_pos}手, 昨仓{yesterday_pos}手")
+
+            # 优先平今仓策略
+            if today_pos > 0:
+                logger.info(f"✅ 优先平今仓: {symbol} {position_direction} 今仓{today_pos}手")
+                return Offset.CLOSETODAY
+            elif yesterday_pos > 0:
+                logger.info(f"✅ 平昨仓: {symbol} {position_direction} 昨仓{yesterday_pos}手")
+                return Offset.CLOSEYESTERDAY
+            else:
+                logger.warning(f"⚠️ {symbol} {position_direction} 无持仓可平，使用默认平昨仓")
+                return Offset.CLOSEYESTERDAY
+
+        except Exception as e:
+            logger.error(f"⚠️ 智能平仓判断异常: {e}")
+            return Offset.CLOSEYESTERDAY
 
     def _calculate_total_margin(self) -> float:
         """计算总保证金"""

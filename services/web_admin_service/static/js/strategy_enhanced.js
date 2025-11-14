@@ -522,7 +522,7 @@ class EnhancedStrategyManager {
                         </div>
                         <div class="form-group" style="margin-bottom: 15px;">
                             <label style="display: block; margin-bottom: 5px; font-weight: bold;">交易合约:</label>
-                            <input type="text" id="symbol" placeholder="如: au2510" value="au2510" required style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                            <input type="text" id="symbol" placeholder="如: au2512" value="au2512" required style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
                         </div>
                         <div class="form-group" style="margin-bottom: 15px;">
                             <label style="display: block; margin-bottom: 5px; font-weight: bold;">策略描述:</label>

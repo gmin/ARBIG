@@ -38,4 +38,8 @@ yarn.lock
 
 # Build outputs
 web_admin/frontend/dist/
-web_admin/frontend/build/ 
+web_admin/frontend/build/
+
+# Sensitive configuration files (账户密码等敏感信息)
+# config 目录下所有 JSON 文件都不提交
+config/*.json

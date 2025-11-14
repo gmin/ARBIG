@@ -2,7 +2,7 @@
   "name": "测试策略",
   "description": "用于系统集成测试的极简策略，每30秒随机生成买卖信号",
   "class_name": "TestStrategy",
-  "symbol": "au2510",
+  "symbol": "au2512",
   "enabled": true,
   "params": {
     "signal_interval": 30,

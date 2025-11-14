@@ -2,7 +2,7 @@
   "name": "大单跟随策略",
   "description": "跟随大额订单的交易策略",
   "class_name": "LargeOrderFollowingStrategy",
-  "symbol": "au2510",
+  "symbol": "au2512",
   "enabled": false,
   "params": {
     "min_order_size": 10,

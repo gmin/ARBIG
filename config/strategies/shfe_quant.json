@@ -2,7 +2,7 @@
   "name": "上期所量化策略",
   "description": "基于双均线的简化量化策略",
   "class_name": "SHFEQuantStrategy",
-  "symbol": "au2510",
+  "symbol": "au2512",
   "enabled": false,
   "params": {
     "ma_short": 5,

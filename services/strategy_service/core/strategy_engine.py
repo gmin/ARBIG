@@ -25,6 +25,7 @@ from .cta_template import ARBIGCtaTemplate, StrategyStatus
 from .signal_sender import SignalSender
 from .data_tools import BarGenerator, ArrayManager
 from .performance import StrategyPerformance, TradeRecord
+from config.config import get_main_contract_symbol
 
 logger = get_logger(__name__)
 
@@ -54,8 +55,10 @@ class StrategyEngine:
         self.strategy_configs: Dict[str, Dict[str, Any]] = {}
         self.active_strategies: List[str] = []
 
-        # 🔧 订阅品种管理 - 默认订阅主要品种
-        self.subscribed_symbols: set = {"au2510"}  # 默认订阅黄金主力合约
+        # 🔧 订阅品种管理 - 从配置文件读取主力合约
+        main_contract = get_main_contract_symbol()
+        self.subscribed_symbols: set = {main_contract}
+        logger.info(f"📊 [策略引擎] 默认订阅主力合约: {main_contract}")
 
         # 性能统计
         self.performance_stats: Dict[str, StrategyPerformance] = {}
@@ -549,8 +552,9 @@ class StrategyEngine:
                 logger.info("[策略服务-引擎] 🔧 没有启动的策略，跳过行情分发")
                 return
 
-            # 🔧 固定获取主要品种行情
-            symbols_to_fetch = ["au2510"]  # 主要品种
+            # 🔧 从配置获取主力合约行情
+            main_contract = get_main_contract_symbol()
+            symbols_to_fetch = [main_contract]
             logger.info(f"[策略服务-引擎] 🔧 开始获取行情数据，品种: {symbols_to_fetch}, 启动策略: {len(self.active_strategies)}个")
 
             # 🔧 从交易服务获取实时tick数据

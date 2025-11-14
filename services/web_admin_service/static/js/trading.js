@@ -3,7 +3,7 @@
 // 交易配置
 const TRADING_CONFIG = {
     // 默认合约 (将从服务器动态获取)
-    DEFAULT_SYMBOL: 'au2510',
+    DEFAULT_SYMBOL: 'au2512',
 
     // 支持的合约列表 (将从服务器动态获取)
     SUPPORTED_SYMBOLS: [],
@@ -15,7 +15,7 @@ const TRADING_CONFIG = {
             return symbolInput.value;
         }
         // 如果选择器没有值，返回默认主力合约
-        return this.DEFAULT_SYMBOL || 'au2510';
+        return this.DEFAULT_SYMBOL || 'au2512';
     },
 
     // 从服务器加载合约配置
@@ -45,7 +45,7 @@ const TRADING_CONFIG = {
             console.error('❌ 合约配置加载异常:', error);
             // 使用默认配置作为备用
             this.SUPPORTED_SYMBOLS = [
-                { symbol: 'au2510', name: '黄金2510', is_main: true }
+                { symbol: 'au2512', name: '黄金2512', is_main: true }
             ];
             return false;
         }

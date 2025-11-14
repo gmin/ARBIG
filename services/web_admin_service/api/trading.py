@@ -366,14 +366,17 @@ async def close_all_positions(
 ):
     """一键平仓所有持仓"""
     try:
-        # 简化实现：直接调用核心交易服务的一键平仓，使用默认合约
+        # 从配置获取主力合约
+        main_contract = get_main_contract_symbol()
+
+        # 调用核心交易服务的一键平仓
         close_response = await service_client.post("/real_trading/close_position", data={
-            "symbol": "au2510",  # 使用默认合约
+            "symbol": main_contract,
             "direction": "all",
             "order_type": "MARKET"
         })
 
-        logger.info(f"一键平仓调用结果: {close_response}")
+        logger.info(f"一键平仓调用结果 ({main_contract}): {close_response}")
 
         # 直接返回核心服务的响应
         return close_response
