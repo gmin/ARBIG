@@ -614,42 +614,46 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
         # 计算交易数量
         trade_volume = self._calculate_position_size(signal_decision.get('strength', 1.0))
 
-        # 🎯 智能单向持仓管理
+        # 🎯 双向持仓管理：金叉平空开多，死叉平多开空
         if action == 'BUY':
-            if self.pos < 0:  # 有空头持仓，优先平空仓
-                close_volume = min(trade_volume, abs(self.pos))
-                logger.info(f"� [持仓管理] 有空头持仓{self.pos}手，BUY信号优先平空仓{close_volume}手")
-                self.cover(current_price, close_volume, stop=False)  # 买入平仓
+            if self.pos < 0:  # 有空头持仓，先平空再开多
+                close_volume = abs(self.pos)
+                logger.info(f"🔄 [持仓管理] BUY信号：有空头持仓{self.pos}手，先平空{close_volume}手")
+                self.cover(current_price, close_volume, stop=False)  # 买入平空
 
-                # 如果还有剩余信号强度，考虑开多仓
-                remaining_volume = trade_volume - close_volume
-                if remaining_volume > 0:
-                    logger.info(f"🔧 [持仓管理] 平空后剩余信号，开多仓{remaining_volume}手")
-                    self.buy(current_price, remaining_volume, stop=False)  # 买入开仓
-            else:  # 无持仓或有多头持仓，开多仓或加多仓
-                if self.pos == 0:
-                    logger.info(f"�🚀 [SHFE策略] 无持仓，执行开多仓！价格: {current_price}, 数量: {trade_volume}")
-                else:
-                    logger.info(f"🚀 [SHFE策略] 有多头持仓{self.pos}手，执行加多仓！价格: {current_price}, 数量: {trade_volume}")
-                self.buy(current_price, trade_volume, stop=False)  # 买入开仓
+                # 等待平仓订单先到达CTP（避免订单竞态）
+                time.sleep(0.1)
+
+                # 平空后立即开多仓
+                logger.info(f"🔄 [持仓管理] BUY信号：平空后开多仓{trade_volume}手")
+                self.buy(current_price, trade_volume, stop=False)  # 买入开多
+
+            elif self.pos > 0:  # 已有多头持仓，不加仓
+                logger.info(f"⏸️ [持仓管理] BUY信号：已有多头持仓{self.pos}手，不重复开仓")
+
+            else:  # 无持仓，直接开多
+                logger.info(f"🚀 [持仓管理] BUY信号：无持仓，开多仓{trade_volume}手")
+                self.buy(current_price, trade_volume, stop=False)  # 买入开多
 
         elif action == 'SELL':
-            if self.pos > 0:  # 有多头持仓，优先平多仓
-                close_volume = min(trade_volume, abs(self.pos))
-                logger.info(f"🔧 [持仓管理] 有多头持仓{self.pos}手，SELL信号优先平多仓{close_volume}手")
-                self.sell(current_price, close_volume, stop=False)  # 卖出平仓
+            if self.pos > 0:  # 有多头持仓，先平多再开空
+                close_volume = abs(self.pos)
+                logger.info(f"🔄 [持仓管理] SELL信号：有多头持仓{self.pos}手，先平多{close_volume}手")
+                self.sell(current_price, close_volume, stop=False)  # 卖出平多
 
-                # 如果还有剩余信号强度，考虑开空仓
-                remaining_volume = trade_volume - close_volume
-                if remaining_volume > 0:
-                    logger.info(f"🔧 [持仓管理] 平多后剩余信号，开空仓{remaining_volume}手")
-                    self.short(current_price, remaining_volume, stop=False)  # 卖出开仓
-            else:  # 无持仓或有空头持仓，开空仓或加空仓
-                if self.pos == 0:
-                    logger.info(f"🚀 [SHFE策略] 无持仓，执行开空仓！价格: {current_price}, 数量: {trade_volume}")
-                else:
-                    logger.info(f"🚀 [SHFE策略] 有空头持仓{self.pos}手，执行加空仓！价格: {current_price}, 数量: {trade_volume}")
-                self.short(current_price, trade_volume, stop=False)  # 卖出开仓
+                # 等待平仓订单先到达CTP（避免订单竞态）
+                time.sleep(0.1)
+
+                # 平多后立即开空仓
+                logger.info(f"🔄 [持仓管理] SELL信号：平多后开空仓{trade_volume}手")
+                self.short(current_price, trade_volume, stop=False)  # 卖出开空
+
+            elif self.pos < 0:  # 已有空头持仓，不加仓
+                logger.info(f"⏸️ [持仓管理] SELL信号：已有空头持仓{self.pos}手，不重复开仓")
+
+            else:  # 无持仓，直接开空
+                logger.info(f"🚀 [持仓管理] SELL信号：无持仓，开空仓{trade_volume}手")
+                self.short(current_price, trade_volume, stop=False)  # 卖出开空
 
         # 更新信号时间
         self.last_signal_time = time.time()
