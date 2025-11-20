@@ -308,14 +308,14 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
             # 价格确认 - 收盘价应该在MA5之上
             price_confirmation = current_price > ma5_values[1]
 
-            if cross_strength >= 0.04 and price_confirmation:  # 交叉幅度 + 价格确认
+            if cross_strength >= 0.1 and price_confirmation:  # 交叉幅度 + 价格确认
                 logger.info(f"🌟 [均线信号] 确认金叉: MA5({ma5_values[1]:.2f}) 上穿 MA20({ma20_values[1]:.2f})")
                 logger.info(f"🌟 [交叉详情] 交叉幅度:{cross_strength:.2f} | 价格:{current_price:.2f} > MA5:{ma5_values[1]:.2f}")
                 return "GOLDEN_CROSS"
             else:
                 reason = []
-                if cross_strength < 0.04:
-                    reason.append(f"幅度不足({cross_strength:.2f}<0.04)")
+                if cross_strength < 0.1:
+                    reason.append(f"幅度不足({cross_strength:.2f}<0.1)")
                 if not price_confirmation:
                     reason.append(f"价格未确认({current_price:.2f}≤{ma5_values[1]:.2f})")
                 logger.debug(f"🔍 [均线信号] 金叉未确认: {', '.join(reason)}")
@@ -335,17 +335,17 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
             # 价格确认 - 收盘价应该在MA5之下
             price_confirmation = current_price < ma5_values[1]
 
-            logger.debug(f"🔍 [死叉检测] 交叉幅度: {cross_strength:.2f} >= 0.04 = {cross_strength >= 0.04}")
+            logger.debug(f"🔍 [死叉检测] 交叉幅度: {cross_strength:.2f} >= 0.1 = {cross_strength >= 0.1}")
             logger.debug(f"🔍 [死叉检测] 价格确认: {current_price:.2f} < {ma5_values[1]:.2f} = {price_confirmation}")
 
-            if cross_strength >= 0.04 and price_confirmation:  # 交叉幅度 + 价格确认
+            if cross_strength >= 0.1 and price_confirmation:  # 交叉幅度 + 价格确认
                 logger.info(f"💀 [均线信号] 确认死叉: MA5({ma5_values[1]:.2f}) 下穿 MA20({ma20_values[1]:.2f})")
                 logger.info(f"💀 [交叉详情] 交叉幅度:{cross_strength:.2f} | 价格:{current_price:.2f} < MA5:{ma5_values[1]:.2f}")
                 return "DEATH_CROSS"
             else:
                 reason = []
-                if cross_strength < 0.04:
-                    reason.append(f"幅度不足({cross_strength:.2f}<0.04)")
+                if cross_strength < 0.1:
+                    reason.append(f"幅度不足({cross_strength:.2f}<0.1)")
                 if not price_confirmation:
                     reason.append(f"价格未确认({current_price:.2f}≥{ma5_values[1]:.2f})")
                 logger.debug(f"🔍 [均线信号] 死叉未确认: {', '.join(reason)}")
