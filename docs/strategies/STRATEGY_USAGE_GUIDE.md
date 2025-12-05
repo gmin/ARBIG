@@ -2,24 +2,21 @@
 
 ## 📋 策略总览
 
-ARBIG量化交易系统目前包含7个完整的交易策略，每个策略都有不同的特点和适用场景。
+ARBIG量化交易系统目前包含6个完整的交易策略，每个策略都有不同的特点和适用场景。
 
 ### 🎯 **策略分类**
 
 #### **测试验证类**
 - **SystemIntegrationTestStrategy** - 系统集成测试策略
 
-#### **技术分析类**  
+#### **技术分析类**
+- **EnhancedMaRsiComboStrategy** - 增强型MA+RSI组合策略 🆕
 - **MaRsiComboStrategy** - MA+RSI组合策略
 - **MultiModeAdaptiveStrategy** - 多模式自适应策略
-- **MaCrossoverTrendStrategy** - 双均线交叉策略
 
 #### **高频交易类**
 - **LargeOrderFollowingStrategy** - 大单跟踪策略
 - **VWAPDeviationReversionStrategy** - VWAP偏离策略
-
-#### **框架组件类**
-- **ComponentFrameworkStrategy** - 组件化框架策略
 
 ---
 
@@ -42,40 +39,45 @@ ARBIG量化交易系统目前包含7个完整的交易策略，每个策略都�
    ```
 
 ### **第二阶段：技术策略**
-2. **MaRsiComboStrategy** ⭐⭐⭐⭐⭐
-   - **状态**：✅ 代码完善，调试信息详细
-   - **特点**：双均线+RSI技术分析，风控完善
-   - **用途**：稳健的技术分析交易
+2. **EnhancedMaRsiComboStrategy** ⭐⭐⭐⭐⭐ 🆕
+   - **状态**：✅ 代码完善，专业级策略
+   - **特点**：增强型双均线+RSI，智能交叉检测+动态RSI阈值+防假突破+震荡市过滤
+   - **用途**：专业级黄金期货技术分析交易
    - **风险**：🟡 中等风险（技术策略）
-   
+
    ```python
    # 推荐参数配置
    {
-       "ma_short": 5,            # 短期均线5周期
-       "ma_long": 20,            # 长期均线20周期  
+       "ema_fast": 10,           # 快线EMA10
+       "ema_slow": 30,           # 慢线EMA30
        "rsi_period": 14,         # RSI 14周期
-       "rsi_overbought": 70,     # RSI超买线
-       "rsi_oversold": 30,       # RSI超卖线
-       "stop_loss_pct": 0.02,    # 2%止损
-       "take_profit_pct": 0.03,  # 3%止盈
+       "atr_period": 14,         # ATR周期
+       "atr_multiplier": 2.0,    # ATR止损倍数
+       "trailing_start": 0.02,   # 移动止损启动(2%)
        "trade_volume": 1,        # 1手交易
        "max_position": 5         # 最大5手持仓
    }
    ```
 
-3. **MultiModeAdaptiveStrategy** ⭐⭐⭐⭐
+3. **MaRsiComboStrategy** ⭐⭐⭐⭐
+   - **状态**：✅ 代码完善，调试信息详细
+   - **特点**：双均线+RSI技术分析，风控完善
+   - **用途**：稳健的技术分析交易
+   - **风险**：🟡 中等风险（技术策略）
+
+4. **MultiModeAdaptiveStrategy** ⭐⭐⭐⭐
    - **状态**：✅ 结构完整，多模式支持
    - **特点**：支持趋势/均值回归/突破多种模式
    - **用途**：适应不同市场环境的综合策略
    - **风险**：🟡 中等风险（复杂策略）
 
 ### **第三阶段：专业策略**
-4. **LargeOrderFollowingStrategy** ⭐⭐⭐
+5. **LargeOrderFollowingStrategy** ⭐⭐⭐
    - **特点**：大单跟踪，微观结构分析
    - **用途**：跟随大资金流向
    - **风险**：🟠 较高风险（高频策略）
 
-5. **VWAPDeviationReversionStrategy** ⭐⭐⭐
+6. **VWAPDeviationReversionStrategy** ⭐⭐⭐
    - **特点**：VWAP偏离回归，均值回归策略
    - **用途**：价格偏离修正交易
    - **风险**：🟡 中等风险（均值回归）
@@ -86,47 +88,41 @@ ARBIG量化交易系统目前包含7个完整的交易策略，每个策略都�
 
 ### **策略适用性排名（针对黄金交易）**
 
-#### **🏆 第1名：MaRsiComboStrategy** ⭐⭐⭐⭐⭐
+#### **🏆 第1名：EnhancedMaRsiComboStrategy** ⭐⭐⭐⭐⭐ 🆕
 **最适合黄金交易的原因：**
-- 🎯 **专门设计**：文档明确说明"专门针对上期所黄金期货优化"
+- 🎯 **专业设计**：增强版MA+RSI组合，专为黄金期货优化
+- 📊 **智能过滤**：防假突破 + 震荡市过滤，减少错误信号
+- 🛡️ **动态风控**：ATR止损 + 移动止损 + 分批止盈
+- 📈 **自适应**：动态RSI阈值，适应不同市场波动
+- ✅ **调试完善**：CSV指标日志，便于回测分析
+
+#### **🥈 第2名：MaRsiComboStrategy** ⭐⭐⭐⭐
+**黄金交易优势：**
+- 🎯 **专门设计**：专门针对上期所黄金期货优化
 - 📊 **技术指标经典**：MA5/MA20 + RSI14，黄金交易的黄金组合
 - 🛡️ **风控合理**：2%止损 + 3%止盈，符合黄金日内波动特性
-- 📈 **调试完善**：详细的决策日志，便于监控和优化
-- ✅ **代码质量高**：注释详细，逻辑清晰，维护性好
+- ✅ **代码质量高**：注释详细，逻辑清晰
 
-**黄金市场匹配度：**
-- ✅ 黄金趋势性强 → 双均线系统高效
-- ✅ 黄金波动适中 → RSI敏感度合适
-- ✅ 黄金流动性好 → 技术分析有效性高
-- ✅ 2-3%波动范围 → 止损止盈参数合理
-
-#### **🥈 第2名：VWAPDeviationReversionStrategy** ⭐⭐⭐⭐
+#### **🥉 第3名：VWAPDeviationReversionStrategy** ⭐⭐⭐⭐
 **黄金交易优势：**
 - 🎯 **VWAP有效性**：黄金成交量大，VWAP作为公允价格参考有效
 - 📊 **均值回归特性**：黄金日内经常出现偏离后回归现象
 - ⚡ **日内交易适配**：适合黄金T+0交易特点
 - 🏛️ **机构参考**：大型机构常用VWAP作为执行基准
 
-#### **🥉 第3名：MultiModeAdaptiveStrategy** ⭐⭐⭐⭐
+#### **第4名：MultiModeAdaptiveStrategy** ⭐⭐⭐⭐
 **多模式优势：**
 - 🔄 **环境适应**：能适应黄金的趋势/震荡/突破不同状态
 - 📊 **指标全面**：MA + RSI + 布林带，技术分析覆盖面广
 - 💪 **风控较强**：5%止损 + 8%止盈，适合波动较大时期
 - 🧠 **智能决策**：自动模式切换，减少人工干预
 
-#### **第4名：SystemIntegrationTestStrategy** ⭐⭐⭐⭐
+#### **第5名：SystemIntegrationTestStrategy** ⭐⭐⭐⭐
 **系统验证价值：**
 - ✅ **实盘验证**：已在真实环境稳定运行
 - 🔧 **架构参考**：持仓管理和风控机制可作为模板
 - 📊 **系统测试**：验证黄金交易系统的稳定性
 - 🛡️ **风险可控**：随机信号，测试用途，风险较低
-
-#### **第5名：MaCrossoverTrendStrategy** ⭐⭐⭐
-**经典策略特点：**
-- 📈 **经典有效**：双均线交叉，黄金趋势交易的基础策略
-- 🔧 **简单可靠**：逻辑简单，新手容易理解
-- 📚 **学习价值**：适合学习技术分析的基本原理
-- ⚠️ **局限性**：震荡市场表现一般，缺少辅助指标
 
 #### **第6名：LargeOrderFollowingStrategy** ⭐⭐⭐
 **大单跟踪特点：**
@@ -135,23 +131,15 @@ ARBIG量化交易系统目前包含7个完整的交易策略，每个策略都�
 - 💼 **专业工具**：需要对市场微观结构有深入理解
 - ⚠️ **风险较高**：高频策略，需要更多经验
 
-#### **第7名：ComponentFrameworkStrategy** ⭐⭐⭐
-**框架策略特点：**
-- 🏗️ **架构灵活**：组件化设计，可根据黄金特点定制
-- 🔧 **扩展性强**：可以集成多种策略逻辑
-- 💡 **开发价值**：适合作为复杂策略的开发基础
-- ⚠️ **复杂度高**：需要深入理解框架设计
-
 ### **黄金交易测试建议顺序：**
 
 ```
-🥇 MaRsiComboStrategy          → 首选，专为黄金设计
-🥈 VWAPDeviationReversionStrategy → 次选，VWAP策略有效
-🥉 MultiModeAdaptiveStrategy    → 备选，功能强大
-4️⃣ SystemIntegrationTestStrategy → 系统验证用
-5️⃣ MaCrossoverTrendStrategy    → 学习用，简单经典
+🥇 EnhancedMaRsiComboStrategy   → 首选，专业增强版策略
+🥈 MaRsiComboStrategy          → 次选，经典稳健
+🥉 VWAPDeviationReversionStrategy → 备选，VWAP策略有效
+4️⃣ MultiModeAdaptiveStrategy    → 多模式，功能强大
+5️⃣ SystemIntegrationTestStrategy → 系统验证用
 6️⃣ LargeOrderFollowingStrategy → 高级用户，风险较高
-7️⃣ ComponentFrameworkStrategy  → 开发用，复杂度高
 ```
 
 ---
@@ -274,6 +262,6 @@ ARBIG量化交易系统目前包含7个完整的交易策略，每个策略都�
 
 ---
 
-**最后更新**：2025-08-30  
-**文档版本**：v1.0  
-**适用版本**：ARBIG v1.0+  
+**最后更新**：2025-12-05
+**文档版本**：v2.0
+**适用版本**：ARBIG v1.0+
