@@ -31,7 +31,7 @@ STRATEGIES = {
         "name": "GoldMaRsi",
         "type": "MaRsiComboStrategy",
         "symbol": "au2602",
-        "display_name": "MA-RSI组合策略",
+        "display_name": "均线RSI组合策略",
         "description": "基于双均线交叉和RSI指标的技术分析策略",
         "params": {
             "ma_short": 5,
@@ -46,16 +46,22 @@ STRATEGIES = {
         }
     },
     3: {
-        "name": "GoldMaCross",
-        "type": "MaCrossoverTrendStrategy",
+        "name": "GoldEnhancedMaRsi",
+        "type": "EnhancedMaRsiComboStrategy",
         "symbol": "au2602",
-        "display_name": "均线交叉趋势策略",
-        "description": "基于移动平均线交叉的趋势跟踪策略",
+        "display_name": "增强型均线RSI组合策略",
+        "description": "增强版双均线+RSI策略，包含趋势强度过滤和防假突破机制",
         "params": {
-            "ma_short": 10,
-            "ma_long": 30,
+            "fast_window": 10,
+            "slow_window": 30,
+            "rsi_window": 14,
+            "rsi_long_level": 45,
+            "rsi_short_level": 55,
+            "trend_threshold": 0.0015,
+            "min_cross_distance": 0.002,
+            "confirmation_bars": 1,
             "trade_volume": 1,
-            "max_position": 2
+            "max_position": 3
         }
     },
     4: {
@@ -85,17 +91,6 @@ STRATEGIES = {
         }
     },
     6: {
-        "name": "GoldComponent",
-        "type": "ComponentFrameworkStrategy",
-        "symbol": "au2602",
-        "display_name": "组件框架策略",
-        "description": "基于组件化框架的综合策略",
-        "params": {
-            "trade_volume": 1,
-            "max_position": 3
-        }
-    },
-    7: {
         "name": "GoldMultiMode",
         "type": "MultiModeAdaptiveStrategy",
         "symbol": "au2602",
