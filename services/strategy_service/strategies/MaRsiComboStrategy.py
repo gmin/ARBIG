@@ -522,12 +522,6 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
         """处理成交回调"""
         self.write_log(f"✅ 成交: {trade.direction} {trade.volume}手 @ {trade.price:.2f}")
         self.write_log(f"   当前持仓: {self.pos}")
-        
-        # 成交后的基本处理（入场价格由上期所管理）
-            
-        # 重要成交发送邮件通知
-        if abs(trade.volume) >= 3:
-            self.send_email(f"大额成交: {trade.direction} {trade.volume}手")
             
     def on_stop_order(self, stop_order):
         """处理停止单回调"""
