@@ -51,7 +51,9 @@ class TradingService:
         try:
             logger.info("启动核心交易服务...")
             self.running = True
+            self.system_status = "running"  # 启动成功后设置系统状态为运行中
             logger.info("✅ 核心交易服务启动成功")
+            logger.info(f"✅ 系统状态: {self.system_status}")
             return True
         except Exception as e:
             logger.error(f"启动核心交易服务失败: {e}")
