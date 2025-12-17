@@ -165,12 +165,10 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
 
         在基类ARBIGCtaTemplate的on_bar调用链中执行
         """
-
-
         logger.info(f"[策略服务-GoldMaRsi] 📊 收到K线数据: {bar.symbol} 时间={bar.datetime} 收盘价={bar.close_price}")
 
         if not self.trading:
-            logger.info(f"[策略服务-GoldMaRsi] 🔧 策略未启用交易，跳过处理")
+            logger.warning(f"[策略服务-GoldMaRsi] ⚠️ 策略未启用交易(self.trading={self.trading})，跳过处理")
             return
 
         # 🎯 标准架构：策略引擎已在源头控制交易时间 → 策略更新ArrayManager → 计算指标 → 生成信号
@@ -178,6 +176,7 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
 
         # 确保有足够的数据
         if not self.am.inited:
+            logger.debug(f"[策略服务-GoldMaRsi] 🔧 ArrayManager未初始化(inited={self.am.inited})，跳过处理")
             return
 
         # 🎯 性能优化：每个K线只计算一次指标，后续复用
@@ -202,14 +201,19 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
 
         # 检查信号间隔（避免频繁交易）
         current_time = time.time()
-        if current_time - self.last_signal_time < self.min_signal_interval:
+        time_since_last_signal = current_time - self.last_signal_time
+        if time_since_last_signal < self.min_signal_interval:
+            logger.debug(f"[策略服务-GoldMaRsi] ⏱️ 信号间隔限制: {time_since_last_signal:.2f}s < {self.min_signal_interval}s，跳过处理")
             return
 
+        logger.info(f"[策略服务-GoldMaRsi] ✅ 通过所有检查，准备生成交易信号")
         # 🎯 应用优化的信号生成机制
         self._generate_trading_signal(bar)
 
     def _generate_trading_signal(self, bar: BarData):
         """🎯 生成交易信号 - 分离信号生成和执行"""
+        logger.info(f"🔍 [SHFE策略] 开始生成交易信号: {bar.symbol} 时间={bar.datetime} 价格={bar.close_price}")
+
         # 🚨 信号生成前置检查
         if self.signal_lock:
             logger.info(f"🔒 [SHFE策略] 信号生成被锁定，等待交易完成")
@@ -652,32 +656,33 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
 
         logger.info(f"🔍 [智能平仓] {action_name}{volume}手: 今仓{today_pos}手, 昨仓{yesterday_pos}手")
 
+        # 🔧 修改策略：优先平昨仓（更稳定），再平今仓
         # 判断是否需要拆分订单
-        if today_pos > 0 and yesterday_pos > 0 and volume > today_pos:
-            # 需要拆分：今昨仓都有，且平仓数量超过今仓
-            today_volume = min(volume, today_pos)
-            yesterday_volume = volume - today_volume
+        if today_pos > 0 and yesterday_pos > 0 and volume > yesterday_pos:
+            # 需要拆分：今昨仓都有，且平仓数量超过昨仓
+            yesterday_volume = min(volume, yesterday_pos)
+            today_volume = volume - yesterday_volume
 
-            logger.info(f"📋 [智能平仓] 拆分订单: 先平今仓{today_volume}手, 再平昨仓{yesterday_volume}手")
+            logger.info(f"📋 [智能平仓] 拆分订单: 先平昨仓{yesterday_volume}手, 再平今仓{today_volume}手")
 
-            # 先平今仓
-            if today_volume > 0:
-                if direction == 'LONG':
-                    self.sell(price, today_volume, stop=False)
-                else:
-                    self.cover(price, today_volume, stop=False)
-                logger.info(f"✅ [智能平仓] 已发送平今仓订单: {today_volume}手")
-                time.sleep(0.1)  # 短暂延迟，避免订单冲突
-
-            # 再平昨仓
+            # 先平昨仓（更稳定）
             if yesterday_volume > 0:
                 if direction == 'LONG':
                     self.sell(price, yesterday_volume, stop=False)
                 else:
                     self.cover(price, yesterday_volume, stop=False)
                 logger.info(f"✅ [智能平仓] 已发送平昨仓订单: {yesterday_volume}手")
+                time.sleep(0.1)  # 短暂延迟，避免订单冲突
+
+            # 再平今仓
+            if today_volume > 0:
+                if direction == 'LONG':
+                    self.sell(price, today_volume, stop=False)
+                else:
+                    self.cover(price, today_volume, stop=False)
+                logger.info(f"✅ [智能平仓] 已发送平今仓订单: {today_volume}手")
         else:
-            # 不需要拆分：只有今仓或只有昨仓，或平仓数量不超过今仓
+            # 不需要拆分：只有昨仓或只有今仓，或平仓数量不超过昨仓
             logger.info(f"📋 [智能平仓] 无需拆分，直接{action_name}{volume}手")
             if direction == 'LONG':
                 self.sell(price, volume, stop=False)
@@ -701,7 +706,8 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
         long_price = position_info.get("long_price", 0)
         short_price = position_info.get("short_price", 0)
 
-        logger.info(f"� [持仓管理] 当前持仓: 多头={long_position}手@{long_price:.2f}, 空头={short_position}手@{short_price:.2f}")
+        logger.info(f"🔍 [持仓管理] 当前持仓: 多头={long_position}手@{long_price:.2f}, 空头={short_position}手@{short_price:.2f}")
+        logger.info(f"🔍 [持仓管理] 信号决策: {signal_decision}")
 
         # 计算交易数量
         trade_volume = self._calculate_position_size(signal_decision.get('strength', 1.0))
@@ -760,12 +766,15 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
             # 1. 检查多头持仓 - 盈利则平仓
             if long_position > 0:
                 long_pnl = (current_price - long_price) * long_position  # 多头盈亏
+                logger.info(f"🔍 [持仓管理] 多头持仓检查: 持仓={long_position}手, 均价={long_price:.2f}, 当前价={current_price:.2f}, 盈亏={long_pnl:.2f}元")
                 if long_pnl > 0:  # 多头盈利
-                    logger.info(f"� [持仓管理] 多头盈利{long_pnl:.2f}元，平多{long_position}手")
+                    logger.info(f"✅ [持仓管理] 多头盈利{long_pnl:.2f}元，平多{long_position}手")
                     self._smart_close_position('LONG', long_position, current_price)
                     need_delay = True
                 else:
                     logger.info(f"📉 [持仓管理] 多头亏损{abs(long_pnl):.2f}元，保留多头{long_position}手")
+            else:
+                logger.info(f"🔍 [持仓管理] 无多头持仓，跳过平多检查")
 
             # 2. 检查空头持仓限制（最多2手）
             if short_position >= 2:

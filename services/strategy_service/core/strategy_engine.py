@@ -654,9 +654,12 @@ class StrategyEngine:
             logger.info(f"[策略服务-引擎] 🔧 分发bar数据给 {len(self.active_strategies)} 个策略")
             for strategy_name in self.active_strategies:
                 strategy = self.strategies[strategy_name]
+                logger.info(f"[策略服务-引擎] 🔍 检查策略匹配: {strategy_name} symbol={strategy.symbol} vs bar.symbol={symbol}")
                 if strategy.symbol == symbol:
-                    logger.debug(f"[策略服务-引擎] 🔧 发送bar给策略: {strategy_name}")
+                    logger.info(f"[策略服务-引擎] ✅ 发送bar给策略: {strategy_name}")
                     strategy.on_bar(bar)
+                else:
+                    logger.warning(f"[策略服务-引擎] ⚠️ 策略symbol不匹配: {strategy_name} ({strategy.symbol}) != {symbol}")
                     
         except Exception as e:
             logger.error(f"Bar数据处理异常: {e}")

@@ -330,20 +330,21 @@ class ARBIGCtaTemplate(ABC):
     def on_bar(self, bar: BarData) -> None:
         """
         Bar数据回调
-        
+
         Args:
             bar: Bar数据
         """
         if not self.active:
+            logger.warning(f"[{self.strategy_name}] ⚠️ 策略未激活(active={self.active})，跳过bar处理")
             return
-        
+
         self.bar = bar
         self.bars.append(bar)
-        
+
         # 限制历史数据长度
         if len(self.bars) > 1000:
             self.bars = self.bars[-1000:]
-        
+
         # 调用策略实现
         try:
             self.on_bar_impl(bar)
