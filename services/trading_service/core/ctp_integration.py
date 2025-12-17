@@ -418,20 +418,40 @@ class CtpIntegration:
         logger.info(f"📍 [持仓更新] {position.symbol} {position.direction.value}: volume={position.volume}, yd_volume={position.yd_volume}")
 
     def refresh_positions(self):
-        """主动刷新持仓数据 - 从CTP网关重新查询"""
+        """主动刷新持仓数据 - 从CTP网关重新查询
+
+        关键：清空缓存后重新查询，确保获取最新的今昨仓数据
+        特别是跨越结算时间（15:00-21:00）后，今仓会变成昨仓
+        """
         try:
             if not self.td_connected or not self.td_login_status:
                 logger.warning("⚠️ 交易服务器未连接，无法刷新持仓")
                 return False
 
-            logger.info("🔄 [持仓刷新] 主动查询CTP持仓数据...")
+            # 🔧 关键：清空旧的缓存数据，强制使用CTP返回的最新数据
+            old_positions = self.positions.copy()
+            self.positions.clear()
+
+            logger.info("🔄 [持仓刷新] 清空缓存，主动查询CTP持仓数据...")
             self.ctp_gateway.query_position()
 
-            # 等待一段时间让CTP返回数据
+            # 等待CTP返回数据（最多等待2秒）
             import time
-            time.sleep(0.5)
+            max_wait = 2.0
+            wait_interval = 0.1
+            waited = 0
 
-            logger.info(f"✅ [持仓刷新] 完成，当前缓存持仓数: {len(self.positions)}")
+            while waited < max_wait:
+                time.sleep(wait_interval)
+                waited += wait_interval
+                if len(self.positions) > 0:
+                    break
+
+            if len(self.positions) == 0 and len(old_positions) > 0:
+                # 如果没有收到新数据，恢复旧数据（可能是无持仓）
+                logger.warning(f"⚠️ [持仓刷新] 未收到CTP数据，可能无持仓")
+
+            logger.info(f"✅ [持仓刷新] 完成，当前持仓数: {len(self.positions)}")
             return True
 
         except Exception as e:
@@ -556,9 +576,13 @@ class CtpIntegration:
                 reference=order_reference
             )
 
-            # 发送订单
+            # 发送订单前检查网关状态
+            logger.info(f"🔍 发送订单前检查: td_login_status={self.td_login_status}, ctp_gateway={self.ctp_gateway is not None}")
+
             order_id = self.ctp_gateway.send_order(req)
-            
+
+            logger.info(f"🔍 CTP网关返回订单ID: {order_id}")
+
             if order_id:
                 logger.info(f"✅ 订单发送成功: {symbol} {direction} {volume}@{order_price} ({offset}) [订单ID: {order_id}]")
 
@@ -1320,10 +1344,12 @@ class CtpIntegration:
             return positions
 
     def get_position_detail(self, symbol: str, direction: str):
-        """获取仓位详情，包含今昨仓信息"""
+        """获取仓位详情，包含今昨仓信息
+
+        直接使用CTP返回的yd_volume（昨仓数量），不做任何自己的计算
+        """
         try:
-            # 🔧 关键修复：在查询前主动刷新持仓数据
-            # 确保获取的是最新的持仓信息，而不是缓存的过期数据
+            # 🔧 关键：在查询前主动刷新持仓数据，确保获取最新数据
             self.refresh_positions()
 
             # 查找对应的持仓记录
@@ -1340,87 +1366,15 @@ class CtpIntegration:
                         self.volume = position.volume
                         self.price = position.price
 
-                        # 从CTP持仓数据获取今昨仓信息
-                        self.today_position = getattr(position, 'today_position', 0)
-                        self.yesterday_position = getattr(position, 'yesterday_position', 0)
+                        # 🎯 直接使用CTP返回的yd_volume，不做任何自己的计算
+                        # CTP的yd_volume就是昨仓数量，今仓 = 总持仓 - 昨仓
+                        yd_volume = getattr(position, 'yd_volume', 0)
 
-                        # 优先使用vnpy提供的真实今昨仓数据
-                        yd_volume = getattr(position, 'yd_volume', -1)  # 昨仓数量，-1表示未提供
+                        self.yesterday_position = int(yd_volume)
+                        self.today_position = int(position.volume - yd_volume)
 
-                        # 调试日志：查看vnpy提供的所有相关属性
-                        logger.info(f"🔍 调试vnpy持仓属性: {position.symbol} {position.direction}")
-                        logger.info(f"  volume: {position.volume}")
-                        logger.info(f"  yd_volume: {yd_volume}")
-                        logger.info(f"  frozen: {getattr(position, 'frozen', 'N/A')}")
-                        logger.info(f"  price: {getattr(position, 'price', 'N/A')}")
-                        logger.info(f"  pnl: {getattr(position, 'pnl', 'N/A')}")
-
-                        # 🔧 关键修复：动态计算今昨仓，考虑日期变更
-                        # 黄金期货交易规则：
-                        # - 日盘：09:00-11:30, 13:30-15:00
-                        # - 夜盘：21:00-23:59, 00:00-02:30
-                        # - 日期划分：15:00 收盘后到 21:00 开盘前为结算时间
-                        # - 21:00 后的持仓自动变为昨仓（即使是当天日盘开的）
-
-                        import datetime as dt
-                        now = dt.datetime.now()
-                        current_hour = now.hour
-                        current_date = now.date()
-
-                        # 获取持仓的开仓时间
-                        open_time = getattr(position, 'open_time', None)
-
-                        logger.info(f"🔍 [仓位判断] {position.symbol} {position.direction} 总持仓={position.volume}手")
-                        logger.info(f"   当前时间: {now.strftime('%Y-%m-%d %H:%M:%S')}")
-                        logger.info(f"   开仓时间: {open_time}")
-                        logger.info(f"   vnpy yd_volume: {yd_volume}")
-
-                        # 优先使用 yd_volume（如果 > 0）
-                        if yd_volume > 0:
-                            self.yesterday_position = int(yd_volume)
-                            self.today_position = int(position.volume - yd_volume)
-                            logger.info(f"✅ 使用vnpy yd_volume: 今仓={self.today_position}手, 昨仓={self.yesterday_position}手")
-                        elif open_time:
-                            # 根据开仓时间和当前时间动态计算
-                            open_date = open_time.date() if hasattr(open_time, 'date') else open_time
-                            open_hour = open_time.hour if hasattr(open_time, 'hour') else 0
-
-                            # 🔧 关键逻辑：日期变更后，持仓自动变为昨仓
-                            if open_date < current_date:
-                                # 开仓日期早于当前日期，肯定是昨仓
-                                self.today_position = 0
-                                self.yesterday_position = int(position.volume)
-                                logger.info(f"✅ 开仓日期({open_date}) < 当前日期({current_date}): 全部为昨仓")
-                            elif open_date == current_date:
-                                # 开仓日期等于当前日期，需要判断时间
-                                # 规则：21:00 后的持仓都是昨仓（即使是当天日盘开的）
-                                if 21 <= current_hour <= 23 or 0 <= current_hour <= 2:
-                                    # 当前在夜盘时间（21:00-02:30）
-                                    if 9 <= open_hour <= 15:
-                                        # 开仓在日盘（09:00-15:00），现在是夜盘，变成昨仓
-                                        self.today_position = 0
-                                        self.yesterday_position = int(position.volume)
-                                        logger.info(f"✅ 日期相同但跨越时段: 开仓日盘({open_hour}:00) → 当前夜盘({current_hour}:00): 全部为昨仓")
-                                    else:
-                                        # 开仓也在夜盘，还是今仓
-                                        self.today_position = int(position.volume)
-                                        self.yesterday_position = 0
-                                        logger.info(f"⚠️ 日期相同且都在夜盘: 开仓({open_hour}:00) → 当前({current_hour}:00): 全部为今仓")
-                                else:
-                                    # 当前在日盘时间（09:00-15:00），开仓也在日盘，是今仓
-                                    self.today_position = int(position.volume)
-                                    self.yesterday_position = 0
-                                    logger.info(f"⚠️ 日期相同且都在日盘: 开仓({open_hour}:00) → 当前({current_hour}:00): 全部为今仓")
-                            else:
-                                # 开仓日期晚于当前日期（不太可能，但保险起见）
-                                self.today_position = int(position.volume)
-                                self.yesterday_position = 0
-                                logger.warning(f"⚠️ 异常: 开仓日期({open_date}) > 当前日期({current_date}): 全部为今仓")
-                        else:
-                            # 没有开仓时间信息，保守估计全部为昨仓
-                            self.today_position = 0
-                            self.yesterday_position = int(position.volume)
-                            logger.warning(f"⚠️ 无法获取开仓时间，保守估计全部为昨仓")
+                        logger.info(f"🔍 [持仓详情] {position.symbol} {position.direction.value}: "
+                                   f"总持仓={position.volume}手, 今仓={self.today_position}手, 昨仓={self.yesterday_position}手")
 
                 return PositionDetail(position)
 
