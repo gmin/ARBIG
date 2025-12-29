@@ -328,27 +328,213 @@ def identify_market_regime(self):
         return "transition"  # 转换期
 
 def adjust_strategy_for_market_regime(self, market_regime):
-    """根据市场状态调整策略"""
+    """根据市场状态调整策略 - 旧版（已废弃）"""
     if market_regime == "ranging":
         # 震荡市：收紧参数，减少交易
         self.min_cross_distance = 0.003  # 提高交叉幅度要求
         self.trend_threshold = 0.002     # 提高趋势强度要求
         return False  # 暂停交易或减少仓位
-        
+
     elif market_regime == "trending":
         # 趋势市：放宽参数，积极交易
         self.min_cross_distance = 0.001
         self.trend_threshold = 0.001
         return True
-        
+
     elif market_regime == "volatile":
         # 高波动市：谨慎交易，严格止损
         self.min_cross_distance = 0.002
         return True
-        
+
     else:
         # 转换期：观望
         return False
+
+"""
+================================================================================
+5.2 差异化市场状态交易策略 (2025-12-06 实现)
+================================================================================
+
+核心思想：不同市场状态采用完全不同的交易逻辑，而不是简单的开关
+
+市场状态识别阈值（针对黄金期货优化）：
+- trending:   MA距离 > 0.2%  (约2元差距)
+- ranging:    MA距离 < 0.05% 且 波动率 < 0.8%
+- volatile:   波动率 > 1.5%
+- transition: 其他情况
+
+差异化交易策略：
++------------+---------------------------+----------+----------+
+| 市场状态   | 交易条件                  | 仓位比例 | 止损倍数 |
++------------+---------------------------+----------+----------+
+| ranging    | RSI<30做多, RSI>70做空    | 50%      | 1.0x     |
+| transition | MA交叉+放宽RSI条件        | 30%      | 1.0x     |
+| trending   | MA交叉+RSI确认+趋势强度   | 100%     | 1.0x     |
+| volatile   | RSI<25做多, RSI>75做空    | 50%      | 1.5x     |
++------------+---------------------------+----------+----------+
+"""
+
+# 新增参数
+REGIME_PARAMS = {
+    # 震荡市区间交易参数
+    'ranging_rsi_oversold': 30,       # 超卖阈值（做多）
+    'ranging_rsi_overbought': 70,     # 超买阈值（做空）
+    'ranging_tp_ratio': 0.5,          # 区间止盈比例
+    'ranging_position_ratio': 0.5,    # 震荡市仓位比例
+
+    # 转换期参数
+    'transition_position_ratio': 0.3, # 转换期仓位比例（轻仓试探）
+
+    # 高波动市参数
+    'volatile_stop_multiplier': 1.5,  # 高波动止损扩大倍数
+    'volatile_position_ratio': 0.5,   # 高波动仓位比例
+}
+
+def _generate_trading_signal(self, bar, fast_ma, slow_ma, rsi):
+    """
+    差异化市场状态交易信号生成 - 主分发函数
+
+    根据市场状态分发到不同交易逻辑
+    """
+    # 1. 识别市场状态
+    market_regime = self._identify_market_regime(fast_ma, slow_ma)
+    self.current_regime = market_regime
+
+    # 2. 根据市场状态分发到不同交易逻辑
+    if market_regime == "ranging":
+        self._generate_ranging_signal(bar, rsi, fast_ma, slow_ma)
+    elif market_regime == "transition":
+        self._generate_transition_signal(bar, fast_ma, slow_ma, rsi)
+    elif market_regime == "trending":
+        self._generate_trending_signal(bar, fast_ma, slow_ma, rsi)
+    elif market_regime == "volatile":
+        self._generate_volatile_signal(bar, fast_ma, slow_ma, rsi)
+
+def _generate_ranging_signal(self, bar, rsi, fast_ma, slow_ma):
+    """
+    震荡市区间交易策略
+
+    逻辑：
+    - RSI < 30 → 做多（超卖反弹）
+    - RSI > 70 → 做空（超买回落）
+    - 仓位：50%
+    - 止盈目标：区间中线
+    """
+    # 超卖做多
+    if rsi < self.ranging_rsi_oversold:
+        signal = {
+            'action': 'BUY',
+            'reason': f"震荡市RSI超卖反弹({rsi:.1f})",
+            'regime': 'ranging',
+            'position_ratio': self.ranging_position_ratio  # 0.5
+        }
+        self._process_trading_signal(signal, bar.close_price)
+
+    # 超买做空
+    elif rsi > self.ranging_rsi_overbought:
+        signal = {
+            'action': 'SELL',
+            'reason': f"震荡市RSI超买回落({rsi:.1f})",
+            'regime': 'ranging',
+            'position_ratio': self.ranging_position_ratio  # 0.5
+        }
+        self._process_trading_signal(signal, bar.close_price)
+
+def _generate_transition_signal(self, bar, fast_ma, slow_ma, rsi):
+    """
+    转换期轻仓试探策略
+
+    逻辑：
+    - 检测MA交叉信号
+    - 放宽RSI条件（金叉RSI<65，死叉RSI>35）
+    - 轻仓试探（仓位30%）
+    """
+    cross_signal = self._detect_ma_cross(bar.close_price, fast_ma, slow_ma)
+    if cross_signal == 0:
+        return
+
+    # 放宽的RSI条件
+    if cross_signal == 1 and rsi > 65:  # 金叉但RSI太高
+        return
+    if cross_signal == -1 and rsi < 35:  # 死叉但RSI太低
+        return
+
+    signal = {
+        'action': 'BUY' if cross_signal == 1 else 'SELL',
+        'reason': f"转换期{'金叉' if cross_signal == 1 else '死叉'}轻仓试探({rsi:.1f})",
+        'regime': 'transition',
+        'position_ratio': self.transition_position_ratio  # 0.3
+    }
+    self._process_trading_signal(signal, bar.close_price)
+
+def _generate_trending_signal(self, bar, fast_ma, slow_ma, rsi):
+    """
+    趋势市趋势跟踪策略
+
+    逻辑：
+    - MA交叉确认趋势
+    - RSI条件严格检查
+    - 趋势强度达标
+    - 防假突破过滤
+    - 完整仓位操作（100%）
+    """
+    cross_signal = self._detect_ma_cross(bar.close_price, fast_ma, slow_ma)
+    rsi_condition = self._check_rsi_condition(rsi, cross_signal)
+    trend_strength = self._measure_trend_strength(fast_ma, slow_ma)
+    breakout_valid = self._filter_false_breakout(cross_signal, bar.close_price)
+
+    if cross_signal != 0 and rsi_condition and trend_strength > self.trend_threshold and breakout_valid:
+        signal = {
+            'action': 'BUY' if cross_signal == 1 else 'SELL',
+            'reason': f"趋势市{'金叉' if cross_signal == 1 else '死叉'}({rsi:.1f})",
+            'regime': 'trending',
+            'position_ratio': 1.0  # 全仓
+        }
+        self._process_trading_signal(signal, bar.close_price)
+
+def _generate_volatile_signal(self, bar, fast_ma, slow_ma, rsi):
+    """
+    高波动市谨慎交易策略
+
+    逻辑：
+    - 只在极端RSI时交易（<25 或 >75）
+    - 减小仓位（50%）
+    - 扩大止损（1.5倍）
+    """
+    if rsi < 25:  # 极度超卖
+        signal = {
+            'action': 'BUY',
+            'reason': f"高波动市极度超卖({rsi:.1f})",
+            'regime': 'volatile',
+            'position_ratio': self.volatile_position_ratio,  # 0.5
+            'stop_multiplier': self.volatile_stop_multiplier  # 1.5
+        }
+        self._process_trading_signal(signal, bar.close_price)
+
+    elif rsi > 75:  # 极度超买
+        signal = {
+            'action': 'SELL',
+            'reason': f"高波动市极度超买({rsi:.1f})",
+            'regime': 'volatile',
+            'position_ratio': self.volatile_position_ratio,  # 0.5
+            'stop_multiplier': self.volatile_stop_multiplier  # 1.5
+        }
+        self._process_trading_signal(signal, bar.close_price)
+
+"""
+执行方法修改：
+
+_process_trading_signal() 需要处理新的参数：
+- position_ratio: 仓位比例
+- stop_multiplier: 止损倍数
+
+_execute_buy_signal() 和 _execute_sell_signal() 增加参数：
+- position_ratio: float = 1.0
+- stop_multiplier: float = 1.0
+
+_calculate_stop_loss() 增加参数：
+- stop_multiplier: float = 1.0
+"""
 
     """完整信号生成逻辑"""
 def generate_trading_signal(self):
@@ -733,17 +919,178 @@ class TradingExecutor:
             self.positions[order_id]['type'],
             self.positions[order_id]['stop_loss']
         )
-        
+
         # 更新止损
         if new_stop != self.positions[order_id]['stop_loss']:
             self.update_stop_loss(order_id, new_stop)
-            
+
         # 部分止盈检查
         close_percent = self.risk_system.partial_take_profit(
             market_data['close'],
             self.positions[order_id]['entry_price'],
             self.positions[order_id]['type']
         )
-        
+
         if close_percent > 0:
             self.partial_close(order_id, close_percent)
+
+---
+
+## 5.3 Bug修复：ATR为0导致止损价=入场价 (2025-12-08 修复)
+
+### 问题描述
+
+2025年12月8日上午9:49-9:51期间，策略出现异常交易行为：
+- 09:50:00 开多 @955.32
+- 09:50:12 止损触发 @955.34（仅12秒后！）
+- 09:51:00 再次开多 @955.12
+- 09:51:37 止损触发 @955.16（仅37秒后！）
+
+日志显示：`🛑 [止损触发] 当前价格=955.34, 止损价=955.34`
+
+**止损价 = 当前价格**，这完全不对！
+
+### 根本原因
+
+在 `_calculate_stop_loss` 函数中，条件检查有bug：
+
+```python
+# 修复前
+atr = self.am.atr(14) if len(self.am.close_array) >= 14 else entry_price * 0.01
+```
+
+**问题分析：**
+1. `len(self.am.close_array)` 总是等于数组初始化大小（100），所以条件总是 True
+2. 但 `self.am.atr(14)` 在 `self.am.inited = False` 时返回 0
+3. 当 ATR = 0 时：`stop_loss = entry_price - 2.0 * 0 = entry_price`
+4. 止损价 = 入场价，任何价格波动都会触发止损！
+
+### 修复方案
+
+```python
+# 修复后
+atr = self.am.atr(14) if self.am.inited else 0
+
+# 如果 ATR 为 0 或太小，使用 fallback 值（黄金期货约 0.5 元）
+min_atr = 0.5  # 黄金期货最小 ATR 约 0.5 元
+if atr < min_atr:
+    atr = max(min_atr, entry_price * 0.0005)  # 至少 0.05% 的价格
+    logger.warning(f"⚠️ [止损计算] ATR过小({atr:.4f})，使用最小值: {min_atr}")
+```
+
+### 修复效果
+
+| 场景 | 修复前 | 修复后 |
+|------|--------|--------|
+| ATR = 0 | 止损距离 = 0 | 止损距离 = 1.0元 (2×0.5) |
+| ATR = 0.44 | 止损距离 = 0.88元 | 止损距离 = 0.88元 |
+| ATR = 0.3 | 止损距离 = 0.6元 | 止损距离 = 1.0元 (使用最小值) |
+
+### 经验教训
+
+1. **数组长度检查不等于数据有效性检查**：`len(array)` 返回的是数组容量，不是有效数据数量
+2. **关键计算需要fallback值**：ATR等技术指标可能返回0，需要有合理的默认值
+3. **添加日志输出**：关键计算步骤需要日志，方便调试
+
+---
+
+## 5.4 Bug修复：信号间隔边界条件问题 (2025-12-09 修复)
+
+### 问题描述
+
+2025年12月9日上午交易中发现，每分钟都可能发出新信号，导致频繁开平仓：
+- 09:03:00 SHORT @954.90（开空）
+- 09:04:00 SHORT @955.16（再次开空信号）
+- 09:04:32 COVER @955.04（平仓）
+
+### 根本原因
+
+信号间隔检查使用 `<` 而非 `<=`：
+
+```python
+# 旧代码
+if current_time - self.last_signal_time < self.min_signal_interval:
+    return
+```
+
+当 `min_signal_interval = 60` 秒时：
+- 09:03:00 发信号，`last_signal_time = 09:03:00`
+- 09:04:00 检查：`09:04:00 - 09:03:00 = 60`，`60 < 60` 为 False，通过检查！
+
+### 修复方案
+
+将 `<` 改为 `<=`：
+
+```python
+# 修复后
+if current_time - self.last_signal_time <= self.min_signal_interval:
+    return
+```
+
+### 修改位置
+
+- 文件：`EnhancedMaRsiComboStrategy.py`
+- 行号：241
+
+### 经验教训
+
+1. **边界条件检查**：`<` 和 `<=` 的区别在边界情况下很重要
+2. **时间间隔应使用 `<=`**：确保间隔时间严格大于设定值
+
+---
+
+## 5.5 Bug修复：重复开仓问题 (2025-12-09 修复)
+
+### 问题描述
+
+2025年12月9日下午交易中发现，策略在已有持仓的情况下继续发送同方向开仓信号：
+- 14:35:00 SHORT @951.88（开空，此时有多头1手）
+- 14:36:00 SHORT @952.00（又开空，变成空头2手）
+- 14:36:34 COVER @952.26（平1手空）
+
+### 根本原因
+
+四个信号生成函数（`_generate_ranging_signal`、`_generate_transition_signal`、`_generate_trending_signal`、`_generate_volatile_signal`）在发送信号前**没有检查当前持仓状态**。
+
+当满足技术指标条件时，会直接发送开仓信号，不管是否已有同方向持仓。
+
+### 修复方案
+
+在每个信号生成函数开头添加持仓检查：
+
+```python
+# 检查当前持仓，避免重复开仓
+current_pos = self.cached_position
+
+# 做多信号时，检查是否已有多头
+if current_pos > 0:
+    logger.debug("已有多头持仓，跳过做多信号")
+    return
+
+# 做空信号时，检查是否已有空头
+if current_pos < 0:
+    logger.debug("已有空头持仓，跳过做空信号")
+    return
+```
+
+### 修改位置
+
+| 函数 | 行号 | 修改内容 |
+|------|------|----------|
+| `_generate_ranging_signal` | 287-334 | 添加 `current_pos` 检查 |
+| `_generate_transition_signal` | 336-378 | 添加 `current_pos` 检查 |
+| `_generate_trending_signal` | 380-425 | 添加 `current_pos` 检查 |
+| `_generate_volatile_signal` | 427-473 | 添加 `current_pos` 检查 |
+
+### 修复效果
+
+| 场景 | 修复前 | 修复后 |
+|------|--------|--------|
+| 已有空头，RSI超买 | 再发开空信号 | 跳过，不发信号 |
+| 已有多头，RSI超卖 | 再发开多信号 | 跳过，不发信号 |
+
+### 经验教训
+
+1. **信号生成前必须检查持仓**：避免在已有同方向持仓时重复开仓
+2. **使用 `cached_position` 而非查询**：避免查询延迟导致的误判
+3. **所有信号生成函数都需要统一检查**：确保一致性

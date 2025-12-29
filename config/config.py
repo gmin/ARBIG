@@ -6,7 +6,7 @@
 CONFIG = {
     # 主力合约配置
     'main_contract': {
-        'symbol': 'au2512',
+        'symbol': 'au2602',
         'name': '黄金主力',
         'exchange': 'SHFE',
         'description': '上海期货交易所黄金主力合约'
@@ -14,13 +14,13 @@ CONFIG = {
 
     # 支持的合约列表
     'supported_contracts': [
-        {'symbol': 'au2512', 'name': '黄金主力', 'exchange': 'SHFE', 'category': '贵金属', 'is_main': True},
-        {'symbol': 'ag2512', 'name': '白银主力', 'exchange': 'SHFE', 'category': '贵金属', 'is_main': False},
-        {'symbol': 'cu2512', 'name': '铜主力', 'exchange': 'SHFE', 'category': '有色金属', 'is_main': False}
+        {'symbol': 'au2602', 'name': '黄金主力', 'exchange': 'SHFE', 'category': '贵金属', 'is_main': True},
+        {'symbol': 'ag2602', 'name': '白银主力', 'exchange': 'SHFE', 'category': '贵金属', 'is_main': False},
+        {'symbol': 'cu2602', 'name': '铜主力', 'exchange': 'SHFE', 'category': '有色金属', 'is_main': False}
     ],
 
     # 自动订阅的合约
-    'auto_subscribe_contracts': ['au2512'],
+    'auto_subscribe_contracts': ['au2602'],
 
     # 数据源配置 (保留兼容性)
     'shfe': {

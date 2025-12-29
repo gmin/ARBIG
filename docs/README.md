@@ -2,7 +2,7 @@
 
 ## 📋 当前有效文档
 
-欢迎来到ARBIG量化交易系统的文档中心！以下是当前有效和需要更新的文档状态。
+欢迎来到ARBIG量化交易系统的文档中心！
 
 > 🎯 **快速开始**: 如果您是新用户，建议先阅读 [项目README](../README.md) 了解系统概况和启动方法
 
@@ -10,172 +10,70 @@
 
 | 文档 | 描述 | 状态 |
 |------|------|------|
-| [**当前系统架构**](CURRENT_ARCHITECTURE.md) ⭐ | 微服务架构详细说明 | ✅ v3.1 已更新 |
-| [**历史架构文档**](archive/) | 历史架构文档归档 | 📚 历史参考 |
+| [**系统架构**](architecture/system_architecture.md) ⭐ | 微服务架构详细说明 | ✅ 最新 |
+| [**完整架构**](architecture/full_architecture.md) | 完整系统架构图 | ✅ 最新 |
+| [**数据流序列图**](architecture/data_flow_sequence.md) | 数据流详细说明 | ✅ 最新 |
 
 ### 📖 用户文档
 
 | 文档 | 描述 | 适用对象 |
 |------|------|----------|
-| [**用户手册**](USER_MANUAL.md) | 完整的用户使用指南 ⚠️ 需要更新 | 👥 所有用户 |
-| [**API接口参考**](API_REFERENCE.md) | 当前API接口文档 ✅ 最新 | 👨‍💻 开发者 |
+| [**用户手册**](USER_MANUAL.md) | 完整的用户使用指南 | 👥 所有用户 |
+| [**API接口参考**](API_REFERENCE.md) | 当前API接口文档 | 👨‍💻 开发者 |
+| [**换月操作指南**](HOW_TO_CHANGE_MAIN_CONTRACT.md) | 合约换月操作说明 | 👥 所有用户 |
 
 ### 🔧 技术文档
 
-#### 🚀 部署和配置
 | 文档 | 描述 | 适用对象 |
 |------|------|----------|
-| [**CTP配置指南**](../CTP_SETUP.md) ⭐ | CTP连接配置与问题解决 | 🔧 所有用户 |
 | [**部署指南**](DEPLOYMENT_GUIDE.md) ⭐ | 系统部署和配置 | 🔧 运维人员 |
-
-
-#### 🛠️ 开发文档
-| 文档 | 描述 | 适用对象 |
-|------|------|----------|
-| [**FAK订单指南**](FAK_ORDER_GUIDE.md) ⭐ | FAK订单使用和问题解决 | 👨‍💻 开发者 |
-| [**交易服务指南**](TRADING_SERVICE_GUIDE.md) | 核心交易服务详细说明 | 👨‍💻 开发者 |
-| [**账户服务指南**](ACCOUNT_SERVICE_GUIDE.md) | 账户管理服务 | 👨‍💻 开发者 |
-| [**行情服务指南**](MARKET_DATA_SERVICE_GUIDE.md) | 市场数据服务 | 👨‍💻 开发者 |
-| [**API接口规范**](WEB_API_SPECIFICATION.md) | 完整的API接口文档 | 👨‍💻 开发者 |
+| [**CTP配置**](technical/CTP_SETUP.md) | CTP连接配置 | 🔧 所有用户 |
+| [**数据库信息**](technical/DATABASE_INFO.md) | 数据库配置说明 | 👨‍💻 开发者 |
+| [**持仓管理**](position_management.md) | 持仓数据管理 | 👨‍💻 开发者 |
 
 ### 📊 策略文档
 
 | 文档 | 描述 | 适用对象 |
 |------|------|----------|
-| [**策略总览**](strategies/README.md) | 策略文档导航和选择指南 | 📈 策略用户 |
-| [**基差套利指南**](strategies/SPREAD_THRESHOLD_GUIDE.md) | 基差套利阈值设置详解 | 📈 策略用户 |
+| [**策略索引**](STRATEGY_DOCUMENTATION_INDEX.md) ⭐ | 策略文档导航 | 📈 策略用户 |
+| [**策略使用指南**](strategies/STRATEGY_USAGE_GUIDE.md) | 策略测试和使用指南 | 📈 策略用户 |
+| [**黄金策略评估**](strategies/GOLD_TRADING_STRATEGY_EVALUATION.md) | 黄金期货策略评估 | 📈 策略用户 |
+| [**策略代码规范**](strategies/STRATEGY_CODE_STANDARDS.md) | 策略开发规范 | 👨‍💻 开发者 |
 
-### 🧪 测试和质量
-
-| 文档 | 描述 | 适用对象 |
-|------|------|----------|
-| [**测试指南**](../tests/README.md) | 测试框架和用例 | 👨‍💻 开发者 |
-| [**持仓管理**](position_management.md) | 持仓数据管理 | 👨‍💻 开发者 |
-
-### 🎨 设计文档 (历史参考)
+### 🎨 设计文档
 
 | 文档 | 描述 | 状态 |
 |------|------|------|
-| [**Web界面设计**](WEB_UI_DESIGN.md) | Web界面设计规范 | 📚 历史参考 |
-| [**历史设计文档**](archive/) | 历史设计思路和实施计划 | 📚 历史参考 |
+| [**Web界面设计**](WEB_UI_DESIGN.md) | Web界面设计规范 | 📚 参考文档 |
 
 ## 🎯 快速导航
 
 ### 👋 新用户入门
 1. 阅读 [项目README](../README.md) 了解项目概述和快速启动 ⭐
-2. 查看 [当前系统架构](CURRENT_ARCHITECTURE.md) 理解微服务设计
-3. 配置 [CTP连接](../CTP_SETUP.md) 解决连接问题
-4. 参考 [用户手册](USER_MANUAL.md) 开始使用系统
+2. 查看 [系统架构](architecture/system_architecture.md) 理解微服务设计
+3. 参考 [用户手册](USER_MANUAL.md) 开始使用系统
 
 ### 👨‍💻 开发者指南
-1. 了解 [当前系统架构](CURRENT_ARCHITECTURE.md) 和微服务设计 ⭐
+1. 了解 [系统架构](architecture/system_architecture.md) 和微服务设计 ⭐
 2. 参考 [API接口参考](API_REFERENCE.md) 了解当前API ⭐
 3. 查看 [持仓管理逻辑](position_management.md) 了解核心逻辑
-4. 查看 [Web界面设计](WEB_UI_DESIGN.md) 了解前端设计
+4. 查看 [策略代码规范](strategies/STRATEGY_CODE_STANDARDS.md) 开发策略
 
 ### 📈 策略用户
-1. 查看 [策略总览](strategies/README.md) 选择合适策略
-2. 阅读具体策略的详细文档
-3. 参考 [用户手册](USER_MANUAL.md) 进行配置
+1. 查看 [策略索引](STRATEGY_DOCUMENTATION_INDEX.md) 选择合适策略
+2. 阅读 [策略使用指南](strategies/STRATEGY_USAGE_GUIDE.md)
+3. 参考 [黄金策略评估](strategies/GOLD_TRADING_STRATEGY_EVALUATION.md) 了解策略特点
 4. 使用Web管理系统监控策略表现
 
 ### 🔧 运维人员
 1. 阅读 [项目README](../README.md) 了解启动和重启命令 ⭐
-2. 配置 [CTP连接](../CTP_SETUP.md) 解决连接问题
-3. 参考 [部署指南](DEPLOYMENT_GUIDE.md) 进行系统部署
-4. 了解 [当前系统架构](CURRENT_ARCHITECTURE.md) 便于维护
-
-## 📋 文档状态
-
-### ✅ 已完成文档
-- 当前系统架构文档 (v3.1微服务架构) ⭐
-- 新版部署指南 (基于当前架构) ⭐
-- 新版API接口参考 (基于当前实际API) ⭐
-- CTP配置和问题解决指南
-- 过时文档完全归档整理
-- 项目README更新 (启动命令、文档导航)
-- 文档中心重构
-
-### 🔄 需要更新的文档
-- [ ] 用户手册 (需要更新启动方式和功能描述)
-
-### 📁 已归档文档
-以下文档已移至 `archive/` 目录，基于旧架构，仅供参考：
-- ACCOUNT_SERVICE_GUIDE.md - 账户服务指南（旧架构）
-- MARKET_DATA_SERVICE_GUIDE.md - 行情服务指南（旧架构）
-- TRADING_SERVICE_GUIDE.md - 交易服务指南（旧架构）
-- DEPLOYMENT_V2.md - v2.0部署指南（旧架构）
-- WEB_API_SPECIFICATION.md - 旧API规范（旧架构）
-
-### 📝 计划新增文档
-- [ ] 故障排除指南
-- [ ] 性能优化指南
-- [ ] 安全配置指南
-- [ ] 监控告警配置
-- [ ] 策略开发教程
-
-## 🔍 文档搜索
-
-### 按功能查找
-- **系统启动**: [项目README](../README.md) - 启动命令和重启方法 ⭐
-- **CTP问题**: [CTP配置指南](../CTP_SETUP.md) - 连接问题解决 ⭐
-- **交易功能**: [用户手册](USER_MANUAL.md), [交易服务指南](TRADING_SERVICE_GUIDE.md)
-- **系统架构**: [当前架构](CURRENT_ARCHITECTURE.md) - 微服务架构说明
-- **API开发**: [API接口规范](WEB_API_SPECIFICATION.md), 各服务指南
-- **策略配置**: [策略总览](strategies/README.md), 具体策略文档
-
-### 按角色查找
-- **新用户**: [项目README](../README.md), [CTP配置](../CTP_SETUP.md) ⭐
-- **系统管理员**: [当前架构](CURRENT_ARCHITECTURE.md), [部署指南](DEPLOYMENT_V2.md)
-- **交易员**: [用户手册](USER_MANUAL.md), [策略文档](strategies/)
-- **开发者**: [当前架构](CURRENT_ARCHITECTURE.md), [API规范](WEB_API_SPECIFICATION.md)
-- **运维人员**: [项目README](../README.md), [CTP配置](../CTP_SETUP.md)
-
-## 📞 文档反馈
-
-### 问题反馈
-- **文档错误**: 请在GitHub Issues中报告
-- **内容建议**: 欢迎提交Pull Request
-- **新文档需求**: 在Issues中提出需求
-
-### 贡献指南
-1. Fork项目仓库
-2. 在docs目录中编辑或新增文档
-3. 遵循Markdown格式规范
-4. 提交Pull Request
-
-### 文档规范
-- **格式**: 使用Markdown格式
-- **命名**: 使用英文大写+下划线 (如: `USER_MANUAL.md`)
-- **结构**: 包含目录、正文、示例代码
-- **更新**: 重大变更需要更新版本号和日期
-
-## 🎯 文档路线图
-
-### 短期目标 (1个月)
-- [ ] 完善用户手册的v2.0内容
-- [ ] 更新所有服务指南的模块路径
-- [ ] 创建故障排除指南
-- [ ] 完善策略开发文档
-
-### 中期目标 (3个月)
-- [ ] 创建完整的开发者指南
-- [ ] 增加更多策略文档
-- [ ] 建立文档自动化测试
-- [ ] 创建视频教程
-
-### 长期目标 (6个月)
-- [ ] 建立在线文档网站
-- [ ] 多语言文档支持
-- [ ] 交互式文档体验
-- [ ] 社区贡献文档
+2. 参考 [部署指南](DEPLOYMENT_GUIDE.md) 进行系统部署
+3. 了解 [系统架构](architecture/system_architecture.md) 便于维护
 
 ---
 
-**文档维护**: 本文档中心由ARBIG开发团队维护，欢迎社区贡献！
+**文档维护**: 本文档中心由ARBIG开发团队维护
 
-**最后更新**: 2025-01-12
-**文档版本**: v3.0 (微服务架构)
+**最后更新**: 2025-12-05
+**文档版本**: v4.0
 **维护状态**: ✅ 当前有效
-
-
