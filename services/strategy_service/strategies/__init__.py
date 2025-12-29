@@ -7,9 +7,8 @@ from .MaRsiComboStrategy import MaRsiComboStrategy
 from .MaRsiATRExecutionStrategy import MaRsiATRExecutionStrategy
 from .LargeOrderFollowingStrategy import LargeOrderFollowingStrategy
 from .VWAPDeviationReversionStrategy import VWAPDeviationReversionStrategy
-from .MaCrossoverTrendStrategy import MaCrossoverTrendStrategy
 from .MultiModeAdaptiveStrategy import MultiModeAdaptiveStrategy
-from .ComponentFrameworkStrategy import ComponentFrameworkStrategy
+from .EnhancedMaRsiComboStrategy import EnhancedMaRsiComboStrategy
 
 __all__ = [
     "SystemIntegrationTestStrategy",
@@ -17,7 +16,6 @@ __all__ = [
     "MaRsiATRExecutionStrategy",
     "LargeOrderFollowingStrategy",
     "VWAPDeviationReversionStrategy",
-    "MaCrossoverTrendStrategy",
     "MultiModeAdaptiveStrategy",
-    "ComponentFrameworkStrategy"
+    "EnhancedMaRsiComboStrategy"
 ]

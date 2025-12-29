@@ -82,7 +82,8 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
     # 风险控制参数
     stop_loss_pct = 0.006  # 止损百分比：0.6%固定止损，控制单笔损失
     take_profit_pct = 0.008 # 止盈百分比：0.8%目标止盈，锁定利润
-    
+    add_loss_pct = 0.001   # 加仓亏损阈值：0.1%，只有亏损达到此阈值才允许加仓
+
     # 交易执行参数
     trade_volume = 1      # 基础交易手数：每次交易的标准手数
     max_position = 5      # 最大持仓限制：总持仓不超过5手，控制整体风险
@@ -116,6 +117,7 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
         self.rsi_oversold = setting.get('rsi_oversold', 30)
         self.stop_loss_pct = setting.get('stop_loss_pct', 0.006)
         self.take_profit_pct = setting.get('take_profit_pct', 0.008)
+        self.add_loss_pct = setting.get('add_loss_pct', 0.001)
         self.trade_volume = setting.get('trade_volume', 1)
         self.max_position = setting.get('max_position', 5)
         
@@ -139,6 +141,7 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
         logger.info(f"   双均线: {self.ma_short}/{self.ma_long}")
         logger.info(f"   RSI参数: {self.rsi_period}({self.rsi_oversold}-{self.rsi_overbought})")
         logger.info(f"   风控: 止损{self.stop_loss_pct*100}% 止盈{self.take_profit_pct*100}%")
+        logger.info(f"   加仓控制: 亏损阈值{self.add_loss_pct*100}%")
         logger.info(f"   🔧 已集成优化的持仓管理和风控机制")
     
     def on_init(self):
@@ -162,12 +165,10 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
 
         在基类ARBIGCtaTemplate的on_bar调用链中执行
         """
-
-
         logger.info(f"[策略服务-GoldMaRsi] 📊 收到K线数据: {bar.symbol} 时间={bar.datetime} 收盘价={bar.close_price}")
 
         if not self.trading:
-            logger.info(f"[策略服务-GoldMaRsi] 🔧 策略未启用交易，跳过处理")
+            logger.warning(f"[策略服务-GoldMaRsi] ⚠️ 策略未启用交易(self.trading={self.trading})，跳过处理")
             return
 
         # 🎯 标准架构：策略引擎已在源头控制交易时间 → 策略更新ArrayManager → 计算指标 → 生成信号
@@ -175,6 +176,7 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
 
         # 确保有足够的数据
         if not self.am.inited:
+            logger.debug(f"[策略服务-GoldMaRsi] 🔧 ArrayManager未初始化(inited={self.am.inited})，跳过处理")
             return
 
         # 🎯 性能优化：每个K线只计算一次指标，后续复用
@@ -199,14 +201,19 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
 
         # 检查信号间隔（避免频繁交易）
         current_time = time.time()
-        if current_time - self.last_signal_time < self.min_signal_interval:
+        time_since_last_signal = current_time - self.last_signal_time
+        if time_since_last_signal < self.min_signal_interval:
+            logger.debug(f"[策略服务-GoldMaRsi] ⏱️ 信号间隔限制: {time_since_last_signal:.2f}s < {self.min_signal_interval}s，跳过处理")
             return
 
+        logger.info(f"[策略服务-GoldMaRsi] ✅ 通过所有检查，准备生成交易信号")
         # 🎯 应用优化的信号生成机制
         self._generate_trading_signal(bar)
 
     def _generate_trading_signal(self, bar: BarData):
         """🎯 生成交易信号 - 分离信号生成和执行"""
+        logger.info(f"🔍 [SHFE策略] 开始生成交易信号: {bar.symbol} 时间={bar.datetime} 价格={bar.close_price}")
+
         # 🚨 信号生成前置检查
         if self.signal_lock:
             logger.info(f"🔒 [SHFE策略] 信号生成被锁定，等待交易完成")
@@ -308,14 +315,14 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
             # 价格确认 - 收盘价应该在MA5之上
             price_confirmation = current_price > ma5_values[1]
 
-            if cross_strength >= 0.04 and price_confirmation:  # 交叉幅度 + 价格确认
+            if cross_strength >= 0.05 and price_confirmation:  # 交叉幅度降到0.05，提高灵敏度
                 logger.info(f"🌟 [均线信号] 确认金叉: MA5({ma5_values[1]:.2f}) 上穿 MA20({ma20_values[1]:.2f})")
                 logger.info(f"🌟 [交叉详情] 交叉幅度:{cross_strength:.2f} | 价格:{current_price:.2f} > MA5:{ma5_values[1]:.2f}")
                 return "GOLDEN_CROSS"
             else:
                 reason = []
-                if cross_strength < 0.04:
-                    reason.append(f"幅度不足({cross_strength:.2f}<0.04)")
+                if cross_strength < 0.05:
+                    reason.append(f"幅度不足({cross_strength:.2f}<0.05)")
                 if not price_confirmation:
                     reason.append(f"价格未确认({current_price:.2f}≤{ma5_values[1]:.2f})")
                 logger.debug(f"🔍 [均线信号] 金叉未确认: {', '.join(reason)}")
@@ -335,17 +342,17 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
             # 价格确认 - 收盘价应该在MA5之下
             price_confirmation = current_price < ma5_values[1]
 
-            logger.debug(f"🔍 [死叉检测] 交叉幅度: {cross_strength:.2f} >= 0.04 = {cross_strength >= 0.04}")
+            logger.debug(f"🔍 [死叉检测] 交叉幅度: {cross_strength:.2f} >= 0.05 = {cross_strength >= 0.05}")
             logger.debug(f"🔍 [死叉检测] 价格确认: {current_price:.2f} < {ma5_values[1]:.2f} = {price_confirmation}")
 
-            if cross_strength >= 0.04 and price_confirmation:  # 交叉幅度 + 价格确认
+            if cross_strength >= 0.05 and price_confirmation:  # 交叉幅度降到0.05，提高灵敏度
                 logger.info(f"💀 [均线信号] 确认死叉: MA5({ma5_values[1]:.2f}) 下穿 MA20({ma20_values[1]:.2f})")
                 logger.info(f"💀 [交叉详情] 交叉幅度:{cross_strength:.2f} | 价格:{current_price:.2f} < MA5:{ma5_values[1]:.2f}")
                 return "DEATH_CROSS"
             else:
                 reason = []
-                if cross_strength < 0.04:
-                    reason.append(f"幅度不足({cross_strength:.2f}<0.04)")
+                if cross_strength < 0.05:
+                    reason.append(f"幅度不足({cross_strength:.2f}<0.05)")
                 if not price_confirmation:
                     reason.append(f"价格未确认({current_price:.2f}≥{ma5_values[1]:.2f})")
                 logger.debug(f"🔍 [均线信号] 死叉未确认: {', '.join(reason)}")
@@ -459,11 +466,19 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
                 logger.warning(f"⚠️ [风控] 持仓成本价无效: net_position={net_position}, entry_price={entry_price}")
                 return
 
-            # 计算盈亏比例
-            if self.pos > 0:  # 多头持仓
+            # 🔍 调试日志：验证 net_position 和 self.pos 是否一致
+            if net_position != self.pos:
+                logger.warning(f"⚠️ [风控] 持仓不同步! net_position={net_position}, self.pos={self.pos}, entry_price={entry_price:.2f}, current_price={current_price:.2f}")
+
+            logger.info(f"🔍 [风控检查] net_position={net_position}, self.pos={self.pos}, entry_price={entry_price:.2f}, current_price={current_price:.2f}")
+
+            # 计算盈亏比例 - 🔧 统一使用 net_position 判断方向，避免不同步问题
+            if net_position > 0:  # 多头持仓
                 pnl_pct = (current_price - entry_price) / entry_price
             else:  # 空头持仓
                 pnl_pct = (entry_price - current_price) / entry_price
+
+            logger.info(f"🔍 [风控检查] 盈亏比例={pnl_pct*100:.3f}%, 止损线={-self.stop_loss_pct*100:.2f}%, 止盈线={self.take_profit_pct*100:.2f}%")
 
             # 止损（使用小的容差处理浮点数精度问题）
             if pnl_pct <= -self.stop_loss_pct + 1e-6:
@@ -504,9 +519,9 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
         logger.info(f"🛑 [风控触发] ==========================================")
 
         if self.pos > 0:
-            self.sell(price, abs(self.pos), stop=False)  # 卖出平仓
+            self._smart_close_position('LONG', abs(self.pos), price)  # 智能平多仓
         else:
-            self.cover(price, abs(self.pos), stop=False)  # 买入平仓
+            self._smart_close_position('SHORT', abs(self.pos), price)  # 智能平空仓
 
         self.write_log(f"🛑 {reason}: 平仓 {self.pos}手 @ {price:.2f}, 盈亏{pnl_pct*100:+.2f}%")
         
@@ -522,12 +537,6 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
         """处理成交回调"""
         self.write_log(f"✅ 成交: {trade.direction} {trade.volume}手 @ {trade.price:.2f}")
         self.write_log(f"   当前持仓: {self.pos}")
-        
-        # 成交后的基本处理（入场价格由上期所管理）
-            
-        # 重要成交发送邮件通知
-        if abs(trade.volume) >= 3:
-            self.send_email(f"大额成交: {trade.direction} {trade.volume}手")
             
     def on_stop_order(self, stop_order):
         """处理停止单回调"""
@@ -551,7 +560,7 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
         }
 
     def _query_real_position(self) -> Optional[dict]:
-        """🔧 实时查询真实持仓 - 返回完整持仓信息"""
+        """🔧 实时查询真实持仓 - 返回完整持仓信息（包含今昨仓）"""
         try:
             import requests
 
@@ -572,19 +581,29 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
                     short_price = position_info.get("short_price", 0)
                     current_price = position_info.get("current_price", 0)
 
-                    logger.info(f"🔍 [SHFE策略] 查询到真实持仓: 多单={long_position}@{long_price:.2f}, 空单={short_position}@{short_price:.2f}, 净持仓={net_position}")
+                    # 获取今昨仓信息
+                    long_today = position_info.get("long_today", 0)
+                    long_yesterday = position_info.get("long_yesterday", 0)
+                    short_today = position_info.get("short_today", 0)
+                    short_yesterday = position_info.get("short_yesterday", 0)
+
+                    logger.info(f"🔍 [SHFE策略] 查询到真实持仓: 多单={long_position}@{long_price:.2f}(今{long_today}昨{long_yesterday}), 空单={short_position}@{short_price:.2f}(今{short_today}昨{short_yesterday}), 净持仓={net_position}")
 
                     # 更新缓存（只保留净持仓）
                     self.cached_position = net_position
 
-                    # 返回完整持仓信息（包含多空价格）
+                    # 返回完整持仓信息（包含多空价格和今昨仓）
                     return {
                         "net_position": net_position,
                         "long_position": long_position,
                         "short_position": short_position,
                         "long_price": long_price,
                         "short_price": short_price,
-                        "current_price": current_price
+                        "current_price": current_price,
+                        "long_today": long_today,
+                        "long_yesterday": long_yesterday,
+                        "short_today": short_today,
+                        "short_yesterday": short_yesterday
                     }
                 else:
                     logger.warning(f"⚠️ [SHFE策略] 持仓查询返回空数据")
@@ -597,62 +616,207 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
             logger.error(f"⚠️ [SHFE策略] 持仓查询异常: {e}")
             return None
 
-    def _process_trading_signal(self, signal_decision: dict, current_price: float):
-        """🔧 信号处理模块 - 主动查询持仓并执行交易"""
-        action = signal_decision['action']
+    def _smart_close_position(self, direction: str, volume: int, price: float):
+        """🔧 智能平仓 - 自动拆分今昨仓订单
 
-        logger.info(f"🔧 [SHFE策略] 信号处理模块：接收到{action}信号，开始处理")
-
-        # 🔧 主动查询持仓进行智能风控检查
-        if not self._pre_trade_safety_check(action):
-            logger.info(f"🔧 [SHFE策略] 信号处理模块：风控检查未通过，信号被拒绝")
+        Args:
+            direction: 'LONG' 表示平多仓，'SHORT' 表示平空仓
+            volume: 要平仓的总数量
+            price: 平仓价格
+        """
+        if volume <= 0:
+            logger.warning(f"⚠️ [智能平仓] 平仓数量无效: {volume}")
             return
 
-        # 🎯 风控通过，执行交易订单
-        logger.info(f"🔧 [SHFE策略] 信号处理模块：风控通过，执行{action}订单")
+        # 查询持仓今昨仓信息
+        position_info = self._query_real_position()
+        if not position_info:
+            logger.warning(f"⚠️ [智能平仓] 无法获取持仓信息，使用普通平仓")
+            if direction == 'LONG':
+                self.sell(price, volume, stop=False)
+            else:
+                self.cover(price, volume, stop=False)
+            return
+
+        # 根据方向获取今昨仓数量
+        if direction == 'LONG':
+            # 平多仓
+            today_pos = position_info.get("long_today", 0)
+            yesterday_pos = position_info.get("long_yesterday", 0)
+            action_name = "平多"
+        else:
+            # 平空仓
+            today_pos = position_info.get("short_today", 0)
+            yesterday_pos = position_info.get("short_yesterday", 0)
+            action_name = "平空"
+
+        total_pos = today_pos + yesterday_pos
+
+        # 检查持仓是否足够
+        if volume > total_pos:
+            logger.warning(f"⚠️ [智能平仓] {action_name}数量{volume}超过持仓{total_pos}，调整为{total_pos}")
+            volume = total_pos
+
+        # 调整后再次检查数量
+        if volume <= 0:
+            logger.warning(f"⚠️ [智能平仓] 调整后数量为0，取消平仓")
+            return
+
+        logger.info(f"🔍 [智能平仓] {action_name}{volume}手: 今仓{today_pos}手, 昨仓{yesterday_pos}手")
+
+        # 🔧 修改策略：优先平昨仓（更稳定），再平今仓
+        # 判断是否需要拆分订单
+        if today_pos > 0 and yesterday_pos > 0 and volume > yesterday_pos:
+            # 需要拆分：今昨仓都有，且平仓数量超过昨仓
+            yesterday_volume = min(volume, yesterday_pos)
+            today_volume = volume - yesterday_volume
+
+            logger.info(f"📋 [智能平仓] 拆分订单: 先平昨仓{yesterday_volume}手, 再平今仓{today_volume}手")
+
+            # 先平昨仓（更稳定）
+            if yesterday_volume > 0:
+                if direction == 'LONG':
+                    self.sell(price, yesterday_volume, stop=False)
+                else:
+                    self.cover(price, yesterday_volume, stop=False)
+                logger.info(f"✅ [智能平仓] 已发送平昨仓订单: {yesterday_volume}手")
+                time.sleep(0.1)  # 短暂延迟，避免订单冲突
+
+            # 再平今仓
+            if today_volume > 0:
+                if direction == 'LONG':
+                    self.sell(price, today_volume, stop=False)
+                else:
+                    self.cover(price, today_volume, stop=False)
+                logger.info(f"✅ [智能平仓] 已发送平今仓订单: {today_volume}手")
+        else:
+            # 不需要拆分：只有昨仓或只有今仓，或平仓数量不超过昨仓
+            logger.info(f"📋 [智能平仓] 无需拆分，直接{action_name}{volume}手")
+            if direction == 'LONG':
+                self.sell(price, volume, stop=False)
+            else:
+                self.cover(price, volume, stop=False)
+
+    def _process_trading_signal(self, signal_decision: dict, current_price: float):
+        """🔧 信号处理模块 - 新策略：盈利平仓+信号开仓"""
+        action = signal_decision['action']
+
+        logger.info(f"🔧 [持仓管理] 接收到{action}信号，当前价格={current_price:.2f}")
+
+        # 🔧 查询真实持仓信息（包含开仓均价）
+        position_info = self._query_real_position()
+        if position_info is None:
+            logger.warning(f"⚠️ [持仓管理] 无法查询持仓信息，停止交易")
+            return
+
+        long_position = position_info.get("long_position", 0)
+        short_position = position_info.get("short_position", 0)
+        long_price = position_info.get("long_price", 0)
+        short_price = position_info.get("short_price", 0)
+
+        logger.info(f"🔍 [持仓管理] 当前持仓: 多头={long_position}手@{long_price:.2f}, 空头={short_position}手@{short_price:.2f}")
+        logger.info(f"🔍 [持仓管理] 信号决策: {signal_decision}")
 
         # 计算交易数量
         trade_volume = self._calculate_position_size(signal_decision.get('strength', 1.0))
 
-        # 🎯 智能单向持仓管理
+        # 标记是否需要延迟（如果有平仓操作）
+        need_delay = False
+
+        # 🎯 新策略逻辑：金叉信号
         if action == 'BUY':
-            if self.pos < 0:  # 有空头持仓，优先平空仓
-                close_volume = min(trade_volume, abs(self.pos))
-                logger.info(f"� [持仓管理] 有空头持仓{self.pos}手，BUY信号优先平空仓{close_volume}手")
-                self.cover(current_price, close_volume, stop=False)  # 买入平仓
+            logger.info(f"🌟 [持仓管理] 金叉信号处理开始")
 
-                # 如果还有剩余信号强度，考虑开多仓
-                remaining_volume = trade_volume - close_volume
-                if remaining_volume > 0:
-                    logger.info(f"🔧 [持仓管理] 平空后剩余信号，开多仓{remaining_volume}手")
-                    self.buy(current_price, remaining_volume, stop=False)  # 买入开仓
-            else:  # 无持仓或有多头持仓，开多仓或加多仓
-                if self.pos == 0:
-                    logger.info(f"�🚀 [SHFE策略] 无持仓，执行开多仓！价格: {current_price}, 数量: {trade_volume}")
+            # 1. 检查空头持仓 - 盈利则平仓
+            if short_position > 0:
+                short_pnl = (short_price - current_price) * short_position  # 空头盈亏
+                if short_pnl > 0:  # 空头盈利
+                    logger.info(f"� [持仓管理] 空头盈利{short_pnl:.2f}元，平空{short_position}手")
+                    self._smart_close_position('SHORT', short_position, current_price)
+                    need_delay = True
                 else:
-                    logger.info(f"🚀 [SHFE策略] 有多头持仓{self.pos}手，执行加多仓！价格: {current_price}, 数量: {trade_volume}")
-                self.buy(current_price, trade_volume, stop=False)  # 买入开仓
+                    logger.info(f"📉 [持仓管理] 空头亏损{abs(short_pnl):.2f}元，保留空头{short_position}手")
 
+            # 2. 检查多头持仓限制（最多2手）
+            if long_position >= 2:
+                logger.warning(f"⚠️ [持仓管理] 多头持仓已达上限{long_position}手，不开新仓")
+            else:
+                # 🎯 加仓控制：只在没有持仓或亏损达到阈值时开仓
+                should_open = False
+
+                if long_position == 0:
+                    # 没有多头持仓，直接开仓
+                    should_open = True
+                    logger.info(f"✅ [加仓控制] 无多头持仓，允许开仓")
+                else:
+                    # 已有多头持仓，检查是否亏损达到阈值
+                    long_pnl_pct = (current_price - long_price) / long_price
+                    if long_pnl_pct <= -self.add_loss_pct:
+                        # 亏损达到阈值，允许加仓
+                        should_open = True
+                        logger.info(f"✅ [加仓控制] 多头亏损{long_pnl_pct*100:.2f}%（阈值{-self.add_loss_pct*100:.2f}%），允许加仓")
+                    else:
+                        # 亏损未达到阈值，不加仓
+                        logger.warning(f"⚠️ [加仓控制] 多头盈亏{long_pnl_pct*100:.2f}%，未达到加仓阈值{-self.add_loss_pct*100:.2f}%，不加仓")
+                        logger.info(f"📊 [加仓控制] 当前价格{current_price:.2f}，持仓均价{long_price:.2f}，价格差{current_price-long_price:.2f}")
+
+                if should_open:
+                    # 开新多仓
+                    if need_delay:
+                        time.sleep(0.1)
+                    logger.info(f"🚀 [持仓管理] 金叉信号：开多仓{trade_volume}手")
+                    self.buy(current_price, trade_volume, stop=False)
+
+        # 🎯 新策略逻辑：死叉信号
         elif action == 'SELL':
-            if self.pos > 0:  # 有多头持仓，优先平多仓
-                close_volume = min(trade_volume, abs(self.pos))
-                logger.info(f"🔧 [持仓管理] 有多头持仓{self.pos}手，SELL信号优先平多仓{close_volume}手")
-                self.sell(current_price, close_volume, stop=False)  # 卖出平仓
+            logger.info(f"💀 [持仓管理] 死叉信号处理开始")
 
-                # 如果还有剩余信号强度，考虑开空仓
-                remaining_volume = trade_volume - close_volume
-                if remaining_volume > 0:
-                    logger.info(f"🔧 [持仓管理] 平多后剩余信号，开空仓{remaining_volume}手")
-                    self.short(current_price, remaining_volume, stop=False)  # 卖出开仓
-            else:  # 无持仓或有空头持仓，开空仓或加空仓
-                if self.pos == 0:
-                    logger.info(f"🚀 [SHFE策略] 无持仓，执行开空仓！价格: {current_price}, 数量: {trade_volume}")
+            # 1. 检查多头持仓 - 盈利则平仓
+            if long_position > 0:
+                long_pnl = (current_price - long_price) * long_position  # 多头盈亏
+                logger.info(f"🔍 [持仓管理] 多头持仓检查: 持仓={long_position}手, 均价={long_price:.2f}, 当前价={current_price:.2f}, 盈亏={long_pnl:.2f}元")
+                if long_pnl > 0:  # 多头盈利
+                    logger.info(f"✅ [持仓管理] 多头盈利{long_pnl:.2f}元，平多{long_position}手")
+                    self._smart_close_position('LONG', long_position, current_price)
+                    need_delay = True
                 else:
-                    logger.info(f"🚀 [SHFE策略] 有空头持仓{self.pos}手，执行加空仓！价格: {current_price}, 数量: {trade_volume}")
-                self.short(current_price, trade_volume, stop=False)  # 卖出开仓
+                    logger.info(f"📉 [持仓管理] 多头亏损{abs(long_pnl):.2f}元，保留多头{long_position}手")
+            else:
+                logger.info(f"🔍 [持仓管理] 无多头持仓，跳过平多检查")
+
+            # 2. 检查空头持仓限制（最多2手）
+            if short_position >= 2:
+                logger.warning(f"⚠️ [持仓管理] 空头持仓已达上限{short_position}手，不开新仓")
+            else:
+                # 🎯 加仓控制：只在没有持仓或亏损达到阈值时开仓
+                should_open = False
+
+                if short_position == 0:
+                    # 没有空头持仓，直接开仓
+                    should_open = True
+                    logger.info(f"✅ [加仓控制] 无空头持仓，允许开仓")
+                else:
+                    # 已有空头持仓，检查是否亏损达到阈值
+                    short_pnl_pct = (short_price - current_price) / short_price
+                    if short_pnl_pct <= -self.add_loss_pct:
+                        # 亏损达到阈值，允许加仓
+                        should_open = True
+                        logger.info(f"✅ [加仓控制] 空头亏损{short_pnl_pct*100:.2f}%（阈值{-self.add_loss_pct*100:.2f}%），允许加仓")
+                    else:
+                        # 亏损未达到阈值，不加仓
+                        logger.warning(f"⚠️ [加仓控制] 空头盈亏{short_pnl_pct*100:.2f}%，未达到加仓阈值{-self.add_loss_pct*100:.2f}%，不加仓")
+                        logger.info(f"📊 [加仓控制] 当前价格{current_price:.2f}，持仓均价{short_price:.2f}，价格差{current_price-short_price:.2f}")
+
+                if should_open:
+                    # 开新空仓
+                    if need_delay:
+                        time.sleep(0.1)
+                    logger.info(f"🚀 [持仓管理] 死叉信号：开空仓{trade_volume}手")
+                    self.short(current_price, trade_volume, stop=False)
 
         # 更新信号时间
         self.last_signal_time = time.time()
+        logger.info(f"✅ [持仓管理] {action}信号处理完成")
 
     def _pre_trade_safety_check(self, action: str) -> bool:
         """🔧 交易前安全检查 - 智能持仓风控模块"""
@@ -886,6 +1050,11 @@ STRATEGY_TEMPLATE = {
             "type": "float",
             "default": 0.008,
             "description": "止盈百分比"
+        },
+        "add_loss_pct": {
+            "type": "float",
+            "default": 0.001,
+            "description": "加仓亏损阈值"
         },
         "trade_volume": {
             "type": "int",

@@ -26,10 +26,6 @@ SERVICE_RISK = "risk"
 # 交易所代码
 EXCHANGE_SHFE = "SHFE"  # 上海期货交易所
 
-# 合约代码
-SYMBOL_AU_MAIN = "AU2509"  # 黄金主力合约
-SYMBOL_AU_NEXT = "AU2512"  # 黄金次主力合约
-
 # 风险级别
 RISK_LEVEL_LOW = "LOW"
 RISK_LEVEL_MEDIUM = "MEDIUM"

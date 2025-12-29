@@ -15,17 +15,16 @@
 ### **策略分类**
 
 #### A. 高收益策略（新开发）
-1. **大单跟踪策略** (`large_order_following_strategy.py`) - 跟踪大资金流向
-2. **VWAP偏离回归策略** (`vwap_deviation_reversion_strategy.py`) - 基于VWAP偏离回归
+1. **大单跟踪策略** (`LargeOrderFollowingStrategy.py`) - 跟踪大资金流向
+2. **VWAP偏离回归策略** (`VWAPDeviationReversionStrategy.py`) - 基于VWAP偏离回归
 
 #### B. 经典策略（已有）
-3. **均线交叉趋势策略** (`ma_crossover_trend_strategy.py`) - 经典均线金叉死叉
-4. **均线RSI组合策略** (`ma_rsi_combo_strategy.py`) - 双均线+RSI过滤
-5. **多模式自适应策略** (`multi_mode_adaptive_strategy.py`) - 多策略模式切换
-6. **组件框架策略** (`component_framework_strategy.py`) - 组件化架构实现
+3. **均线RSI组合策略** (`MaRsiComboStrategy.py`) - 双均线+RSI过滤
+4. **增强型均线RSI组合策略** (`EnhancedMaRsiComboStrategy.py`) - 增强版双均线+RSI，包含趋势强度过滤和防假突破机制
+5. **多模式自适应策略** (`MultiModeAdaptiveStrategy.py`) - 多策略模式切换
 
 #### C. 测试策略
-7. **系统集成测试策略** (`system_integration_test_strategy.py`) - 系统功能测试
+6. **系统集成测试策略** (`SystemIntegrationTestStrategy.py`) - 系统功能测试
 
 ## 📊 全策略对比分析
 
@@ -35,16 +34,15 @@
 |---------|------|----------|----------|----------|----------|--------|--------|--------|
 | **大单跟踪策略** | 高收益 | 大单跟踪+价格跳跃 | 中频(10-30/天) | 5-30分钟 | 60-65% | 1:2.5 | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ |
 | **VWAP偏离回归策略** | 高收益 | VWAP偏离+RSI极值 | 高频(50-100/天) | 1-10分钟 | 70-75% | 1:1.5 | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ |
-| **均线交叉趋势策略** | 经典 | MA金叉死叉 | 低频(5-15/天) | 30-120分钟 | 45-55% | 1:2.0 | ⭐⭐ | ⭐⭐⭐ |
 | **均线RSI组合策略** | 经典 | 双均线+RSI过滤 | 中频(15-25/天) | 10-60分钟 | 50-60% | 1:1.5 | ⭐⭐⭐ | ⭐⭐⭐ |
+| **增强型均线RSI组合策略** | 经典 | 双均线+RSI+趋势强度+防假突破 | 中频(10-20/天) | 15-90分钟 | 55-65% | 1:2.0 | ⭐⭐⭐⭐ | ⭐⭐⭐⭐ |
 | **多模式自适应策略** | 综合 | 多策略模式切换 | 中频(20-40/天) | 15-45分钟 | 55-65% | 1:1.8 | ⭐⭐⭐⭐ | ⭐⭐⭐⭐ |
-| **组件框架策略** | 框架 | 组件化决策引擎 | 中频(10-30/天) | 20-60分钟 | 55-65% | 1:2.0 | ⭐⭐⭐⭐⭐ | ⭐⭐⭐ |
 | **系统集成测试策略** | 测试 | 随机信号测试 | 固定间隔 | 固定时间 | ~50% | 1:1.0 | ⭐ | ⭐ |
 
 ### **详细策略分析**
 
-#### **1. 微观结构策略** ⭐⭐⭐⭐⭐ 强烈推荐
-**文件**: `microstructure_strategy.py`
+#### **1. 大单跟踪策略** ⭐⭐⭐⭐⭐ 强烈推荐
+**文件**: `LargeOrderFollowingStrategy.py`
 **定位**: 高收益tick级策略
 **核心优势**:
 - 利用市场微观信息，信息优势明显
@@ -64,8 +62,8 @@
 - 时间止损: 30分钟
 - 最大仓位: 15手
 
-#### **2. 高频均值回归策略** ⭐⭐⭐⭐⭐ 强烈推荐
-**文件**: `mean_reversion_strategy.py`
+#### **2. VWAP偏离回归策略** ⭐⭐⭐⭐⭐ 强烈推荐
+**文件**: `VWAPDeviationReversionStrategy.py`
 **定位**: 高频价格回归策略
 **核心优势**:
 - 高胜率策略，适合震荡市
@@ -85,26 +83,29 @@
 - 时间止损: 5分钟
 - 最大仓位: 12手
 
-#### **3. 双均线策略** ⭐⭐⭐ 一般推荐
-**文件**: `double_ma_strategy.py`
-**定位**: 经典趋势跟踪策略
+#### **3. 增强型均线RSI组合策略** ⭐⭐⭐⭐ 推荐
+**文件**: `EnhancedMaRsiComboStrategy.py`
+**定位**: 增强版趋势跟踪+过滤策略
 **优势**:
-- 逻辑简单，易于理解和维护
-- 在强趋势市场表现稳定
-- 风险相对可控
+- 包含趋势强度过滤，避免震荡市假信号
+- 防假突破机制，提高信号质量
+- 确认K线机制，平衡速度和可靠性
+- 参数可调优，适应不同市场环境
 
-**劣势**:
-- 信号滞后，容易错过最佳入场点
-- 在震荡市容易被反复打脸
-- 胜率偏低，依赖少数大盈利
+**核心特性**:
+- 快慢均线交叉（默认10/30周期）
+- RSI动态阈值（多头45/空头55）
+- 趋势强度过滤（0.15%阈值）
+- 最小交叉幅度要求（0.2%）
+- 1-2根K线确认机制
 
 **核心逻辑**:
 - 快线(5)上穿慢线(20): 买入
 - 快线下穿慢线: 卖出
 - 固定止损止盈: 2%/4%
 
-#### **4. 简化SHFE策略** ⭐⭐⭐ 一般推荐
-**文件**: `simple_shfe_strategy.py`
+#### **4. 均线RSI组合策略** ⭐⭐⭐ 一般推荐
+**文件**: `MaRsiComboStrategy.py`
 **定位**: 双均线+RSI组合策略
 **优势**:
 - 在双均线基础上增加RSI过滤
@@ -121,8 +122,8 @@
 - 双均线死叉+RSI>30: 卖出
 - RSI极值独立信号
 
-#### **5. SHFE量化策略** ⭐⭐⭐⭐ 推荐
-**文件**: `shfe_quant_strategy.py`
+#### **5. 多模式自适应策略** ⭐⭐⭐⭐ 推荐
+**文件**: `MultiModeAdaptiveStrategy.py`
 **定位**: 多策略类型综合
 **优势**:
 - 支持趋势、均值回归、突破三种模式
@@ -140,26 +141,8 @@
 - 市场方向置信度评估
 - 动态仓位调整
 
-#### **6. 高级SHFE策略** ⭐⭐⭐ 一般推荐
-**文件**: `advanced_shfe_strategy.py`
-**定位**: 组件化框架策略
-**优势**:
-- 使用DecisionEngine和SignalGenerator
-- 架构设计先进，扩展性好
-- 多时间周期分析
-
-**劣势**:
-- 过度工程化，复杂度高
-- 依赖框架组件，维护成本高
-- 实际收益可能不如预期
-
-**核心特点**:
-- 组件化设计
-- 多层决策过滤
-- 智能风险控制
-
-#### **7. 测试策略** ⭐ 仅供测试
-**文件**: `test_strategy.py`
+#### **6. 系统集成测试策略** ⭐ 仅供测试
+**文件**: `SystemIntegrationTestStrategy.py`
 **定位**: 系统集成测试
 **用途**:
 - 验证策略引擎功能
@@ -174,21 +157,20 @@
 ## 🎯 策略选择建议
 
 ### **第一梯队 - 强烈推荐**
-1. **微观结构策略**: 适合趋势市，中频交易，高盈亏比
-2. **高频均值回归策略**: 适合震荡市，高频交易，高胜率
+1. **大单跟踪策略** (`LargeOrderFollowingStrategy`): 适合趋势市，中频交易，高盈亏比
+2. **VWAP偏离回归策略** (`VWAPDeviationReversionStrategy`): 适合震荡市，高频交易，高胜率
 
 ### **第二梯队 - 可选**
-3. **SHFE量化策略**: 综合性强，但需要精细调优
-4. **简化SHFE策略**: 逻辑清晰，适合保守投资者
+3. **增强型均线RSI组合策略** (`EnhancedMaRsiComboStrategy`): 包含趋势强度过滤和防假突破机制，适合稳健投资者
+4. **多模式自适应策略** (`MultiModeAdaptiveStrategy`): 综合性强，但需要精细调优
+5. **均线RSI组合策略** (`MaRsiComboStrategy`): 逻辑清晰，适合保守投资者
 
 ### **第三梯队 - 不推荐**
-5. **双均线策略**: 过于简单，收益率偏低
-6. **高级SHFE策略**: 过度复杂，性价比不高
-7. **测试策略**: 仅供测试使用
+6. **系统集成测试策略** (`SystemIntegrationTestStrategy`): 仅供测试使用
 
 ## 🔍 详细策略分析
 
-### **微观结构策略 vs 高频均值回归策略**
+### **大单跟踪策略 vs VWAP偏离回归策略**
 
 ## 💡 策略取舍建议
 
@@ -196,15 +178,15 @@
 ```python
 # 推荐的策略组合
 primary_strategies = {
-    "microstructure_strategy": {
+    "LargeOrderFollowingStrategy": {
         "allocation": "50%",  # 100万资金
         "reason": "tick级信息优势，适合趋势市",
         "expected_return": "15-25%年化",
         "max_drawdown": "15-20%"
     },
-    "mean_reversion_strategy": {
+    "VWAPDeviationReversionStrategy": {
         "allocation": "50%",  # 100万资金
-        "reason": "高胜率，适合震荡市，与微观结构互补",
+        "reason": "高胜率，适合震荡市，与大单跟踪互补",
         "expected_return": "20-30%年化",
         "max_drawdown": "10-15%"
     }
@@ -215,12 +197,12 @@ primary_strategies = {
 ```python
 # 如果主策略表现不佳时的备选
 backup_strategies = {
-    "shfe_quant_strategy": {
+    "MultiModeAdaptiveStrategy": {
         "condition": "主策略回撤>20%时启用",
         "reason": "多策略综合，风险分散",
         "allocation": "30%资金"
     },
-    "simple_shfe_strategy": {
+    "MaRsiComboStrategy": {
         "condition": "市场极度震荡时启用",
         "reason": "逻辑简单，风险可控",
         "allocation": "20%资金"
@@ -228,59 +210,17 @@ backup_strategies = {
 }
 ```
 
-### **淘汰策略 (不建议使用)**
+### **测试策略 (仅供测试)**
 ```python
-# 建议停用的策略
-deprecated_strategies = {
-    "double_ma_strategy": {
-        "reason": "信号滞后严重，胜率偏低，收益率不足",
-        "replacement": "用微观结构策略替代"
-    },
-    "advanced_shfe_strategy": {
-        "reason": "过度复杂，维护成本高，实际效果一般",
-        "replacement": "用SHFE量化策略替代"
-    },
-    "test_strategy": {
+# 测试策略
+test_strategies = {
+    "SystemIntegrationTestStrategy": {
         "reason": "仅供测试，无实际交易价值",
         "action": "保留用于系统测试"
     }
 }
 ```
 
-## 📈 实施路线图
-
-### **阶段一: 核心策略部署 (第1-2周)**
-1. **部署微观结构策略**
-   - 50万资金小规模测试
-   - 重点验证tick数据处理能力
-   - 优化大单识别和价格跳跃参数
-
-2. **部署高频均值回归策略**
-   - 50万资金小规模测试
-   - 重点验证VWAP计算和RSI信号
-   - 优化回归概率模型
-
-### **阶段二: 策略优化 (第3-4周)**
-1. **参数调优**
-   - 基于实盘数据优化关键参数
-   - A/B测试不同参数组合
-   - 建立动态参数调整机制
-
-2. **风控完善**
-   - 完善止损止盈逻辑
-   - 增加异常情况处理
-   - 建立实时监控系统
-
-### **阶段三: 规模化运行 (第5-8周)**
-1. **逐步增加仓位**
-   - 每周增加20%仓位
-   - 密切监控策略表现
-   - 及时调整策略配置
-
-2. **备选策略准备**
-   - 完善SHFE量化策略
-   - 准备应急切换方案
-   - 建立策略轮换机制
 
 ## 🔧 技术实施要点
 
@@ -289,16 +229,14 @@ deprecated_strategies = {
 # 建议的文件结构调整
 strategies/
 ├── active/                    # 活跃策略
-│   ├── microstructure_strategy.py
-│   ├── mean_reversion_strategy.py
-│   └── shfe_quant_strategy.py
+│   ├── LargeOrderFollowingStrategy.py
+│   ├── VWAPDeviationReversionStrategy.py
+│   ├── EnhancedMaRsiComboStrategy.py
+│   └── MultiModeAdaptiveStrategy.py
 ├── backup/                    # 备用策略
-│   └── simple_shfe_strategy.py
-├── deprecated/                # 废弃策略
-│   ├── double_ma_strategy.py
-│   └── advanced_shfe_strategy.py
+│   └── MaRsiComboStrategy.py
 ├── testing/                   # 测试策略
-│   └── test_strategy.py
+│   └── SystemIntegrationTestStrategy.py
 └── docs/
     └── STRATEGY_DESIGN_DOCUMENT.md
 ```
@@ -309,25 +247,25 @@ strategies/
 {
     "active_strategies": [
         {
-            "name": "microstructure_au2510",
-            "class": "MicrostructureStrategy",
-            "symbol": "au2510",
+            "name": "large_order_au2602",
+            "class": "LargeOrderFollowingStrategy",
+            "symbol": "au2602",
             "allocation": 0.5,
             "enabled": true
         },
         {
-            "name": "mean_reversion_au2510",
-            "class": "MeanReversionStrategy",
-            "symbol": "au2510",
+            "name": "vwap_deviation_au2602",
+            "class": "VWAPDeviationReversionStrategy",
+            "symbol": "au2602",
             "allocation": 0.5,
             "enabled": true
         }
     ],
     "backup_strategies": [
         {
-            "name": "shfe_quant_au2510",
-            "class": "SHFEQuantStrategy",
-            "symbol": "au2510",
+            "name": "multi_mode_au2602",
+            "class": "MultiModeAdaptiveStrategy",
+            "symbol": "au2602",
             "trigger_condition": "primary_drawdown > 0.2"
         }
     ]
@@ -360,7 +298,7 @@ monitoring_metrics = {
 ## 🎯 最终建议
 
 ### **核心策略组合 (强烈推荐)**
-- **主力**: 微观结构策略 + 高频均值回归策略
+- **主力**: 大单跟踪策略 + VWAP偏离回归策略
 - **资金分配**: 各50% (100万 + 100万)
 - **预期年化收益**: 18-28%
 - **预期最大回撤**: 10-15%
@@ -379,7 +317,7 @@ monitoring_metrics = {
 
 ---
 
-**总结**: 建议重点发展微观结构策略和高频均值回归策略，这两个策略在理论基础、技术实现和收益预期方面都具有明显优势。其他策略可以作为备选或在特定市场条件下使用。
+**总结**: 建议重点发展大单跟踪策略和VWAP偏离回归策略，这两个策略在理论基础、技术实现和收益预期方面都具有明显优势。其他策略可以作为备选或在特定市场条件下使用。
 
 ### **设计理念**
 基于市场微观结构理论，通过分析tick级别的交易数据，识别大资金的交易意图，跟随聪明钱的方向进行交易。
@@ -459,7 +397,7 @@ elif current_price near support:
 - **夏普比率**: 1.2-1.8
 - **胜率**: 60-65%
 
-## 🔍 策略B: 高频均值回归策略
+## 🔍 策略B: VWAP偏离回归策略
 
 ### **设计理念**
 基于均值回归理论，利用价格短期偏离均值后的回归特性，通过高频交易捕捉小幅价格波动获利。
@@ -604,20 +542,24 @@ if momentum_1min * momentum_5min < 0:  # 动量背离
 ### **文件结构**
 ```
 services/strategy_service/strategies/
-├── microstructure_strategy.py          # 微观结构策略实现
-├── mean_reversion_strategy.py          # 高频均值回归策略实现
+├── LargeOrderFollowingStrategy.py      # 大单跟踪策略实现
+├── VWAPDeviationReversionStrategy.py   # VWAP偏离回归策略实现
+├── MaRsiComboStrategy.py               # 均线RSI组合策略实现
+├── EnhancedMaRsiComboStrategy.py       # 增强型均线RSI组合策略实现
+├── MultiModeAdaptiveStrategy.py        # 多模式自适应策略实现
+├── SystemIntegrationTestStrategy.py    # 系统集成测试策略实现
 └── STRATEGY_DESIGN_DOCUMENT.md         # 本文档
 ```
 
 ### **策略注册和启动**
 
-#### 1. 注册微观结构策略
+#### 1. 注册大单跟踪策略
 ```python
 # 在策略服务中注册
 strategy_engine.register_strategy(
-    strategy_name="microstructure_au2510",
-    strategy_class=MicrostructureStrategy,
-    symbol="au2510",
+    strategy_name="large_order_au2602",
+    strategy_class=LargeOrderFollowingStrategy,
+    symbol="au2602",
     setting={
         "large_order_threshold": 3.0,
         "jump_threshold": 0.0008,
@@ -631,9 +573,9 @@ strategy_engine.register_strategy(
 ```python
 # 在策略服务中注册
 strategy_engine.register_strategy(
-    strategy_name="mean_reversion_au2510",
-    strategy_class=MeanReversionStrategy,
-    symbol="au2510",
+    strategy_name="vwap_deviation_au2602",
+    strategy_class=VWAPDeviationReversionStrategy,
+    symbol="au2602",
     setting={
         "vwap_deviation_threshold": 0.002,
         "rsi_oversold": 25,
@@ -645,7 +587,7 @@ strategy_engine.register_strategy(
 
 ### **关键参数调优建议**
 
-#### 微观结构策略参数
+#### 大单跟踪策略参数
 ```python
 # 保守设置（适合初期测试）
 conservative_params = {
