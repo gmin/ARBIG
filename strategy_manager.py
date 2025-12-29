@@ -101,6 +101,25 @@ STRATEGIES = {
             "max_position": 3,
             "mode_switch_threshold": 0.6
         }
+    },
+    8: {
+        "name": "GoldMaRsiATR",
+        "type": "MaRsiATRExecutionStrategy",
+        "symbol": "au2510",
+        "display_name": "MA+RSI+ATR执行策略",
+        "description": "1m驱动+5m过滤，GFD限价+1tick偏移，ATR风控(1.5/3)",
+        "params": {
+            "fast_ma": 10,
+            "slow_ma": 30,
+            "rsi_period": 14,
+            "atr_period": 14,
+            "fixed_qty": 1,
+            "max_position": 3,
+            "limit_offset_ticks": 1,
+            "min_signal_interval_seconds": 2,
+            "cooldown_seconds": 60,
+            "tick_size": 0.02
+        }
     }
 }
 
@@ -269,7 +288,7 @@ def main():
                 print_strategies()
             elif choice in ["2", "3", "4", "5"]:
                 print_strategies()
-                strategy_num = int(input("请输入策略编号 (1-7): "))
+                strategy_num = int(input("请输入策略编号 (1-8): "))
                 
                 if choice == "2":
                     register_strategy(strategy_num)
