@@ -57,9 +57,25 @@ class EnhancedMaRsiComboStrategy(ARBIGCtaTemplate):
     - **RSI14**：相对强弱指标，动态阈值避免追高杀跌
     - **ATR14**：平均真实波幅，用于动态止损和仓位计算
 
-    ## 信号生成条件
-    - 🟢 **买入信号**：金叉确认 + RSI条件满足 + 趋势强度达标 + 非震荡市
-    - 🔴 **卖出信号**：死叉确认 + RSI条件满足 + 趋势强度达标 + 非震荡市
+    ## 差异化市场状态交易策略
+    根据市场状态自动切换交易逻辑：
+
+    ### 📊 震荡市 (ranging) - 区间交易
+    - RSI < 30 → 做多（超卖反弹）
+    - RSI > 70 → 做空（超买回落）
+    - 仓位：50%
+
+    ### 🔄 转换期 (transition) - 轻仓试探
+    - MA交叉信号 + 放宽RSI条件
+    - 仓位：30%
+
+    ### 🔥 趋势市 (trending) - 趋势跟踪
+    - MA交叉 + RSI确认 + 趋势强度达标
+    - 仓位：100%
+
+    ### ⚡ 高波动 (volatile) - 谨慎交易
+    - 极端RSI（<25 或 >75）
+    - 仓位：50%，止损扩大1.5倍
     """
 
     author = "ARBIG Quant Team"
@@ -81,15 +97,29 @@ class EnhancedMaRsiComboStrategy(ARBIGCtaTemplate):
     # 风险控制参数
     stop_loss_atr = 2.0     # ATR止损倍数
     take_profit_atr = 3.0   # ATR止盈倍数
-    trailing_stop_pct = 0.5 # 移动止损回撤比例
+    trailing_stop_pct = 0.3 # 移动止损回撤比例（降低以避免过早止损）
 
     # 交易执行参数
     trade_volume = 1      # 基础交易手数
     max_position = 3      # 最大持仓限制
     min_signal_interval = 60  # 最小信号间隔（秒）
 
+    # 震荡市区间交易参数
+    ranging_rsi_oversold = 30    # 超卖阈值（做多）
+    ranging_rsi_overbought = 70  # 超买阈值（做空）
+    ranging_tp_ratio = 0.5       # 区间止盈比例（到中线的距离）
+    ranging_position_ratio = 0.5 # 震荡市仓位比例（相对正常仓位）
+
+    # 转换期参数
+    transition_position_ratio = 0.3  # 转换期仓位比例（轻仓试探）
+
+    # 高波动市参数
+    volatile_stop_multiplier = 1.5   # 高波动止损扩大倍数
+    volatile_position_ratio = 0.5    # 高波动仓位比例
+
     # 策略变量
     last_signal_time = 0
+    current_regime = "ranging"  # 当前市场状态
 
     def __init__(self, strategy_name: str, symbol: str, setting: dict, signal_sender=None, **kwargs):
         """初始化策略 - 兼容策略引擎参数"""
@@ -106,10 +136,21 @@ class EnhancedMaRsiComboStrategy(ARBIGCtaTemplate):
         self.trend_threshold = setting.get('trend_threshold', 0.0015)
         self.stop_loss_atr = setting.get('stop_loss_atr', 2.0)
         self.take_profit_atr = setting.get('take_profit_atr', 3.0)
-        self.trailing_stop_pct = setting.get('trailing_stop_pct', 0.5)
+        self.trailing_stop_pct = setting.get('trailing_stop_pct', 0.3)
         self.trade_volume = setting.get('trade_volume', 1)
         self.max_position = setting.get('max_position', 3)
         self.min_signal_interval = setting.get('min_signal_interval', 60)
+
+        # 震荡市区间交易参数
+        self.ranging_rsi_oversold = setting.get('ranging_rsi_oversold', 30)
+        self.ranging_rsi_overbought = setting.get('ranging_rsi_overbought', 70)
+        self.ranging_tp_ratio = setting.get('ranging_tp_ratio', 0.5)
+        self.ranging_position_ratio = setting.get('ranging_position_ratio', 0.5)
+
+        # 转换期/高波动参数
+        self.transition_position_ratio = setting.get('transition_position_ratio', 0.3)
+        self.volatile_stop_multiplier = setting.get('volatile_stop_multiplier', 1.5)
+        self.volatile_position_ratio = setting.get('volatile_position_ratio', 0.5)
 
         # 初始化ArrayManager
         self.am = ArrayManager(size=100)
@@ -195,9 +236,9 @@ class EnhancedMaRsiComboStrategy(ARBIGCtaTemplate):
         self._log_indicators_to_csv(bar, fast_ma, slow_ma, rsi, cross_signal,
                                      market_regime, trend_strength)
 
-        # 检查信号间隔
+        # 检查信号间隔（使用 <= 避免边界条件问题）
         current_time = time.time()
-        if current_time - self.last_signal_time < self.min_signal_interval:
+        if current_time - self.last_signal_time <= self.min_signal_interval:
             return
 
         # 生成交易信号
@@ -216,42 +257,219 @@ class EnhancedMaRsiComboStrategy(ARBIGCtaTemplate):
     # ==================== 信号生成方法 ====================
 
     def _generate_trading_signal(self, bar: BarData, fast_ma: float, slow_ma: float, rsi: float) -> None:
-        """生成交易信号"""
+        """
+        生成交易信号 - 差异化市场状态策略
+
+        根据不同市场状态采用不同交易逻辑：
+        - ranging: 区间交易（RSI超买超卖）
+        - transition: 轻仓试探（等待方向确认）
+        - trending: 趋势跟踪（MA交叉）
+        - volatile: 减仓扩止损
+        """
         if self.signal_lock:
-            logger.debug(f"🔒 [信号锁定] 等待交易完成")
+            logger.info(f"🔒 [信号锁定] 等待交易完成")
             return
 
-        # 1. 检测金叉死叉
+        # 1. 识别市场状态
+        market_regime = self._identify_market_regime(fast_ma, slow_ma)
+        self.current_regime = market_regime
+
+        # 2. 根据市场状态分发到不同交易逻辑
+        if market_regime == "ranging":
+            self._generate_ranging_signal(bar, rsi, fast_ma, slow_ma)
+        elif market_regime == "transition":
+            self._generate_transition_signal(bar, fast_ma, slow_ma, rsi)
+        elif market_regime == "trending":
+            self._generate_trending_signal(bar, fast_ma, slow_ma, rsi)
+        elif market_regime == "volatile":
+            self._generate_volatile_signal(bar, fast_ma, slow_ma, rsi)
+
+    def _generate_ranging_signal(self, bar: BarData, rsi: float, fast_ma: float, slow_ma: float) -> None:
+        """
+        震荡市区间交易策略
+
+        逻辑：
+        - RSI < 30 → 做多（超卖反弹）
+        - RSI > 70 → 做空（超买回落）
+        - 止盈目标：区间中线
+        - 已有同方向持仓时不重复开仓
+        """
+        current_price = bar.close_price
+
+        # 🔧 检查当前持仓，避免重复开仓
+        current_pos = self.cached_position
+
+        # 超卖做多（仅在无多头持仓时）
+        if rsi < self.ranging_rsi_oversold:
+            if current_pos > 0:
+                logger.info(f"📊 [震荡市] RSI超卖但已有多头持仓{current_pos}手，跳过")
+                return
+
+            logger.info(f"📊 [震荡市] RSI超卖={rsi:.1f} < {self.ranging_rsi_oversold}, 考虑做多")
+
+            signal_decision = {
+                'action': 'BUY',
+                'reason': f"震荡市RSI超卖反弹({rsi:.1f})",
+                'rsi': rsi,
+                'regime': 'ranging',
+                'position_ratio': self.ranging_position_ratio
+            }
+            self._process_trading_signal(signal_decision, current_price)
+
+        # 超买做空（仅在无空头持仓时）
+        elif rsi > self.ranging_rsi_overbought:
+            if current_pos < 0:
+                logger.info(f"📊 [震荡市] RSI超买但已有空头持仓{current_pos}手，跳过")
+                return
+
+            logger.info(f"📊 [震荡市] RSI超买={rsi:.1f} > {self.ranging_rsi_overbought}, 考虑做空")
+
+            signal_decision = {
+                'action': 'SELL',
+                'reason': f"震荡市RSI超买回落({rsi:.1f})",
+                'rsi': rsi,
+                'regime': 'ranging',
+                'position_ratio': self.ranging_position_ratio
+            }
+            self._process_trading_signal(signal_decision, current_price)
+
+    def _generate_transition_signal(self, bar: BarData, fast_ma: float, slow_ma: float, rsi: float) -> None:
+        """
+        转换期轻仓试探策略
+
+        逻辑：
+        - 检测MA交叉信号
+        - 轻仓试探（仓位减半）
+        - 等待趋势确认后加仓
+        - 已有同方向持仓时不重复开仓
+        """
+        # 检测交叉信号
+        cross_signal = self._detect_ma_cross(bar.close_price, fast_ma, slow_ma)
+        if cross_signal == 0:
+            return
+
+        # 🔧 检查当前持仓，避免重复开仓
+        current_pos = self.cached_position
+        if cross_signal == 1 and current_pos > 0:
+            logger.info(f"🔄 [转换期] 金叉但已有多头持仓{current_pos}手，跳过")
+            return
+        if cross_signal == -1 and current_pos < 0:
+            logger.info(f"🔄 [转换期] 死叉但已有空头持仓{current_pos}手，跳过")
+            return
+
+        # RSI条件（放宽标准）
+        if cross_signal == 1 and rsi > 65:  # 金叉但RSI太高
+            logger.info(f"⚠️ [转换期] 金叉但RSI过高({rsi:.1f})，观望")
+            return
+        if cross_signal == -1 and rsi < 35:  # 死叉但RSI太低
+            logger.info(f"⚠️ [转换期] 死叉但RSI过低({rsi:.1f})，观望")
+            return
+
+        logger.info(f"🔄 [转换期] {'金叉' if cross_signal == 1 else '死叉'}信号, RSI={rsi:.1f}, 轻仓试探")
+
+        signal_decision = {
+            'action': 'BUY' if cross_signal == 1 else 'SELL',
+            'reason': f"转换期{'金叉' if cross_signal == 1 else '死叉'}轻仓试探({rsi:.1f})",
+            'cross_signal': cross_signal,
+            'rsi': rsi,
+            'regime': 'transition',
+            'position_ratio': self.transition_position_ratio
+        }
+        self._process_trading_signal(signal_decision, bar.close_price)
+
+    def _generate_trending_signal(self, bar: BarData, fast_ma: float, slow_ma: float, rsi: float) -> None:
+        """
+        趋势市趋势跟踪策略
+
+        逻辑：
+        - MA交叉确认趋势
+        - 完整仓位操作
+        - 移动止损跟踪
+        - 已有同方向持仓时不重复开仓
+        """
+        # 检测交叉信号
         cross_signal = self._detect_ma_cross(bar.close_price, fast_ma, slow_ma)
 
-        # 2. 检查市场状态（震荡市过滤）
-        market_regime = self._identify_market_regime(fast_ma, slow_ma)
-        if market_regime == "ranging":
-            logger.debug(f"🔄 [市场过滤] 震荡市，暂停交易")
+        # 🔧 检查当前持仓，避免重复开仓
+        current_pos = self.cached_position
+        if cross_signal == 1 and current_pos > 0:
+            logger.info(f"🔥 [趋势市] 金叉但已有多头持仓{current_pos}手，跳过")
+            return
+        if cross_signal == -1 and current_pos < 0:
+            logger.info(f"🔥 [趋势市] 死叉但已有空头持仓{current_pos}手，跳过")
             return
 
-        # 3. 检查RSI条件
+        # RSI条件
         rsi_condition = self._check_rsi_condition(rsi, cross_signal)
 
-        # 4. 检查趋势强度
+        # 趋势强度
         trend_strength = self._measure_trend_strength(fast_ma, slow_ma)
 
-        # 5. 防假突破过滤
+        # 防假突破
         breakout_valid = self._filter_false_breakout(cross_signal, bar.close_price)
 
-        # 6. 综合判断
+        # 综合判断
         if cross_signal != 0 and rsi_condition and trend_strength > self.trend_threshold and breakout_valid:
-            logger.info(f"✅ [信号确认] 交叉={cross_signal}, RSI满足={rsi_condition}, "
-                       f"趋势强度={trend_strength:.4f}, 防假突破={breakout_valid}")
+            logger.info(f"🔥 [趋势市] 交叉={cross_signal}, RSI={rsi:.1f}, "
+                       f"趋势强度={trend_strength:.4f}, 全仓跟踪")
 
             signal_decision = {
                 'action': 'BUY' if cross_signal == 1 else 'SELL',
-                'reason': f"{'金叉' if cross_signal == 1 else '死叉'}信号+RSI确认({rsi:.1f})",
+                'reason': f"趋势市{'金叉' if cross_signal == 1 else '死叉'}({rsi:.1f})",
                 'cross_signal': cross_signal,
                 'rsi': rsi,
-                'trend_strength': trend_strength
+                'trend_strength': trend_strength,
+                'regime': 'trending',
+                'position_ratio': 1.0  # 全仓
             }
+            self._process_trading_signal(signal_decision, bar.close_price)
 
+    def _generate_volatile_signal(self, bar: BarData, fast_ma: float, slow_ma: float, rsi: float) -> None:
+        """
+        高波动市谨慎交易策略
+
+        逻辑：
+        - 只在极端RSI时交易
+        - 减小仓位
+        - 扩大止损
+        - 已有同方向持仓时不重复开仓
+        """
+        # 🔧 检查当前持仓，避免重复开仓
+        current_pos = self.cached_position
+
+        # 只在极端RSI时交易
+        if rsi < 25:  # 极度超卖
+            if current_pos > 0:
+                logger.info(f"⚡ [高波动] RSI超卖但已有多头持仓{current_pos}手，跳过")
+                return
+
+            logger.info(f"⚡ [高波动] RSI极度超卖={rsi:.1f}, 减仓做多")
+
+            signal_decision = {
+                'action': 'BUY',
+                'reason': f"高波动市极度超卖({rsi:.1f})",
+                'rsi': rsi,
+                'regime': 'volatile',
+                'position_ratio': self.volatile_position_ratio,
+                'stop_multiplier': self.volatile_stop_multiplier
+            }
+            self._process_trading_signal(signal_decision, bar.close_price)
+
+        elif rsi > 75:  # 极度超买
+            if current_pos < 0:
+                logger.info(f"⚡ [高波动] RSI超买但已有空头持仓{current_pos}手，跳过")
+                return
+
+            logger.info(f"⚡ [高波动] RSI极度超买={rsi:.1f}, 减仓做空")
+
+            signal_decision = {
+                'action': 'SELL',
+                'reason': f"高波动市极度超买({rsi:.1f})",
+                'rsi': rsi,
+                'regime': 'volatile',
+                'position_ratio': self.volatile_position_ratio,
+                'stop_multiplier': self.volatile_stop_multiplier
+            }
             self._process_trading_signal(signal_decision, bar.close_price)
 
     def _detect_ma_cross(self, current_price: float, fast_ma: float, slow_ma: float) -> int:
@@ -287,7 +505,7 @@ class EnhancedMaRsiComboStrategy(ARBIGCtaTemplate):
             # 2. 强度检测
             cross_strength = abs(current_diff) / current_slow if current_slow > 0 else 0
             if cross_strength < self.min_cross_distance:
-                logger.debug(f"🔍 [交叉过滤] 幅度不足: {cross_strength:.4f} < {self.min_cross_distance}")
+                logger.info(f"🔍 [交叉过滤] 幅度不足: {cross_strength:.4f} < {self.min_cross_distance}")
                 return 0
 
             # 3. 价格确认
@@ -297,7 +515,7 @@ class EnhancedMaRsiComboStrategy(ARBIGCtaTemplate):
                 price_confirm = current_price < current_fast
 
             if not price_confirm:
-                logger.debug(f"🔍 [交叉过滤] 价格未确认")
+                logger.info(f"🔍 [交叉过滤] 价格未确认")
                 return 0
 
             # 4. 确认检测
@@ -315,7 +533,7 @@ class EnhancedMaRsiComboStrategy(ARBIGCtaTemplate):
                     logger.info(f"✅ [交叉确认] {'金叉' if cross_type == 1 else '死叉'}确认完成")
                     return cross_type
             else:  # 反向交叉
-                logger.debug(f"⚠️ [交叉取消] 方向反转")
+                logger.info(f"⚠️ [交叉取消] 方向反转")
                 self.cross_status = 0
                 self.confirmation_count = 0
 
@@ -355,13 +573,13 @@ class EnhancedMaRsiComboStrategy(ARBIGCtaTemplate):
             # 多头条件：RSI不能太高（避免追高），但要有上升动力
             condition = adjusted_long_level <= rsi <= 65
             if condition:
-                logger.debug(f"✅ [RSI确认] 金叉RSI条件满足: RSI={rsi:.2f}")
+                logger.info(f"✅ [RSI确认] 金叉RSI条件满足: RSI={rsi:.2f}")
             return condition
         else:  # 死叉
             # 空头条件：RSI不能太低（避免杀跌），但要有下降动力
             condition = 35 <= rsi <= adjusted_short_level
             if condition:
-                logger.debug(f"✅ [RSI确认] 死叉RSI条件满足: RSI={rsi:.2f}")
+                logger.info(f"✅ [RSI确认] 死叉RSI条件满足: RSI={rsi:.2f}")
             return condition
 
     def _measure_trend_strength(self, fast_ma: float, slow_ma: float) -> float:
@@ -461,11 +679,16 @@ class EnhancedMaRsiComboStrategy(ARBIGCtaTemplate):
         处理交易信号
 
         Args:
-            signal: 信号字典，包含action, reason等
+            signal: 信号字典，包含action, reason, position_ratio, stop_multiplier等
             current_price: 当前价格
         """
         action = signal.get('action')
         reason = signal.get('reason', '')
+        position_ratio = signal.get('position_ratio', 1.0)  # 仓位比例
+        stop_multiplier = signal.get('stop_multiplier', 1.0)  # 止损倍数
+        regime = signal.get('regime', 'unknown')
+
+        logger.info(f"📌 [信号处理] 市场状态={regime}, 仓位比例={position_ratio}, 止损倍数={stop_multiplier}")
 
         # 查询真实持仓
         real_position = self._query_real_position()
@@ -479,15 +702,25 @@ class EnhancedMaRsiComboStrategy(ARBIGCtaTemplate):
 
         try:
             if action == 'BUY':
-                self._execute_buy_signal(real_position, current_price, reason)
+                self._execute_buy_signal(real_position, current_price, reason, position_ratio, stop_multiplier)
             elif action == 'SELL':
-                self._execute_sell_signal(real_position, current_price, reason)
+                self._execute_sell_signal(real_position, current_price, reason, position_ratio, stop_multiplier)
         finally:
             self.signal_lock = False
             self.last_signal_time = time.time()
 
-    def _execute_buy_signal(self, real_position: int, current_price: float, reason: str) -> None:
-        """执行买入信号"""
+    def _execute_buy_signal(self, real_position: int, current_price: float, reason: str,
+                            position_ratio: float = 1.0, stop_multiplier: float = 1.0) -> None:
+        """
+        执行买入信号
+
+        Args:
+            real_position: 当前真实持仓
+            current_price: 当前价格
+            reason: 交易原因
+            position_ratio: 仓位比例（0-1）
+            stop_multiplier: 止损倍数
+        """
         # 如果有空头持仓，先平仓
         if real_position < 0:
             logger.info(f"🔄 [平仓] 平空头持仓{abs(real_position)}手")
@@ -496,24 +729,36 @@ class EnhancedMaRsiComboStrategy(ARBIGCtaTemplate):
 
         # 开多仓
         if real_position <= 0:
-            # 计算仓位
-            volume = self._calculate_position_size(current_price)
+            # 计算仓位（应用仓位比例）
+            base_volume = self._calculate_position_size(current_price)
+            volume = max(1, int(base_volume * position_ratio))
+
             if volume > 0:
-                logger.info(f"📈 [开仓] 开多头仓位{volume}手 @ {current_price:.2f}")
+                logger.info(f"📈 [开仓] 开多头仓位{volume}手 @ {current_price:.2f} (比例:{position_ratio})")
                 logger.info(f"   原因: {reason}")
                 self.buy(current_price, volume)
 
-                # 更新风控状态
+                # 更新风控状态（应用止损倍数）
                 self.entry_price = current_price
-                self.stop_loss_price = self._calculate_stop_loss(current_price, 'long')
+                self.stop_loss_price = self._calculate_stop_loss(current_price, 'long', stop_multiplier)
                 self.best_price = current_price
                 self.tp1_hit = False
                 self.tp2_hit = False
 
                 self._update_position_cache_after_trade(volume)
 
-    def _execute_sell_signal(self, real_position: int, current_price: float, reason: str) -> None:
-        """执行卖出信号"""
+    def _execute_sell_signal(self, real_position: int, current_price: float, reason: str,
+                             position_ratio: float = 1.0, stop_multiplier: float = 1.0) -> None:
+        """
+        执行卖出信号
+
+        Args:
+            real_position: 当前真实持仓
+            current_price: 当前价格
+            reason: 交易原因
+            position_ratio: 仓位比例（0-1）
+            stop_multiplier: 止损倍数
+        """
         # 如果有多头持仓，先平仓
         if real_position > 0:
             logger.info(f"🔄 [平仓] 平多头持仓{real_position}手")
@@ -522,16 +767,18 @@ class EnhancedMaRsiComboStrategy(ARBIGCtaTemplate):
 
         # 开空仓
         if real_position >= 0:
-            # 计算仓位
-            volume = self._calculate_position_size(current_price)
+            # 计算仓位（应用仓位比例）
+            base_volume = self._calculate_position_size(current_price)
+            volume = max(1, int(base_volume * position_ratio))
+
             if volume > 0:
-                logger.info(f"📉 [开仓] 开空头仓位{volume}手 @ {current_price:.2f}")
+                logger.info(f"📉 [开仓] 开空头仓位{volume}手 @ {current_price:.2f} (比例:{position_ratio})")
                 logger.info(f"   原因: {reason}")
                 self.short(current_price, volume)
 
-                # 更新风控状态
+                # 更新风控状态（应用止损倍数）
                 self.entry_price = current_price
-                self.stop_loss_price = self._calculate_stop_loss(current_price, 'short')
+                self.stop_loss_price = self._calculate_stop_loss(current_price, 'short', stop_multiplier)
                 self.best_price = current_price
                 self.tp1_hit = False
                 self.tp2_hit = False
@@ -548,11 +795,11 @@ class EnhancedMaRsiComboStrategy(ARBIGCtaTemplate):
         """
         # 检查持仓限制
         if action == 'BUY' and real_position >= self.max_position:
-            logger.warning(f"⚠️ [安全检查] 多头持仓已达上限: {real_position}/{self.max_position}")
+            logger.info(f"⚠️ [安全检查] 多头持仓已达上限: {real_position}/{self.max_position}")
             return False
 
         if action == 'SELL' and real_position <= -self.max_position:
-            logger.warning(f"⚠️ [安全检查] 空头持仓已达上限: {real_position}/{-self.max_position}")
+            logger.info(f"⚠️ [安全检查] 空头持仓已达上限: {real_position}/{-self.max_position}")
             return False
 
         return True
@@ -586,24 +833,37 @@ class EnhancedMaRsiComboStrategy(ARBIGCtaTemplate):
         adjusted_volume = int(base_volume * adjustment)
         return max(1, min(adjusted_volume, self.max_position))
 
-    def _calculate_stop_loss(self, entry_price: float, position_type: str) -> float:
+    def _calculate_stop_loss(self, entry_price: float, position_type: str,
+                             stop_multiplier: float = 1.0) -> float:
         """
         计算止损价格 - 基于ATR的动态止损
 
         Args:
             entry_price: 入场价格
             position_type: 'long' 或 'short'
+            stop_multiplier: 止损倍数（用于高波动市扩大止损）
 
         Returns:
             止损价格
         """
-        atr = self.am.atr(14) if len(self.am.close_array) >= 14 else entry_price * 0.01
+        # 🔧 修复：使用 am.inited 检查，并确保 ATR 不为 0
+        atr = self.am.atr(14) if self.am.inited else 0
+
+        # 如果 ATR 为 0 或太小，使用 fallback 值（黄金期货约 0.5 元）
+        min_atr = 0.5  # 黄金期货最小 ATR 约 0.5 元
+        if atr < min_atr:
+            atr = max(min_atr, entry_price * 0.0005)  # 至少 0.05% 的价格
+            logger.info(f"⚠️ [止损计算] ATR过小({atr:.4f})，使用最小值: {min_atr}")
+
+        # 应用止损倍数
+        adjusted_stop_atr = self.stop_loss_atr * stop_multiplier
 
         if position_type == 'long':
-            stop_loss = entry_price - self.stop_loss_atr * atr
+            stop_loss = entry_price - adjusted_stop_atr * atr
         else:
-            stop_loss = entry_price + self.stop_loss_atr * atr
+            stop_loss = entry_price + adjusted_stop_atr * atr
 
+        logger.info(f"🛡️ [止损计算] ATR={atr:.2f}, 倍数={adjusted_stop_atr:.1f}, 止损={stop_loss:.2f}")
         return stop_loss
 
     # ==================== 风险控制方法 ====================
@@ -643,7 +903,7 @@ class EnhancedMaRsiComboStrategy(ARBIGCtaTemplate):
 
     def _execute_stop_loss(self, current_price: float, position_type: str) -> None:
         """执行止损"""
-        logger.warning(f"🛑 [止损触发] 当前价格={current_price:.2f}, 止损价={self.stop_loss_price:.2f}")
+        logger.info(f"🛑 [止损触发] 当前价格={current_price:.2f}, 止损价={self.stop_loss_price:.2f}, 方向={position_type}")
 
         if position_type == 'long':
             self.sell(current_price, abs(self.pos))
@@ -663,16 +923,18 @@ class EnhancedMaRsiComboStrategy(ARBIGCtaTemplate):
                 # 新止损 = 最高价 - (最高价 - 原止损) * 回撤比例
                 new_stop = self.best_price - (self.best_price - self.stop_loss_price) * self.trailing_stop_pct
                 if new_stop > self.stop_loss_price:
+                    old_stop = self.stop_loss_price
                     self.stop_loss_price = new_stop
-                    logger.debug(f"📈 [移动止损] 更新止损价: {self.stop_loss_price:.2f}")
+                    logger.info(f"📈 [移动止损] 多头止损上移: {old_stop:.2f} → {self.stop_loss_price:.2f}, 最高价={self.best_price:.2f}")
         else:
             # 空头：价格创新低时更新止损
             if current_price < self.best_price:
                 self.best_price = current_price
                 new_stop = self.best_price + (self.stop_loss_price - self.best_price) * self.trailing_stop_pct
                 if new_stop < self.stop_loss_price:
+                    old_stop = self.stop_loss_price
                     self.stop_loss_price = new_stop
-                    logger.debug(f"📉 [移动止损] 更新止损价: {self.stop_loss_price:.2f}")
+                    logger.info(f"📉 [移动止损] 空头止损下移: {old_stop:.2f} → {self.stop_loss_price:.2f}, 最低价={self.best_price:.2f}")
 
     def _check_take_profit(self, current_price: float, position_type: str) -> None:
         """检查分批止盈"""

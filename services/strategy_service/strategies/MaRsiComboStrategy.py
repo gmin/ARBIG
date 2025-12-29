@@ -466,11 +466,19 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
                 logger.warning(f"⚠️ [风控] 持仓成本价无效: net_position={net_position}, entry_price={entry_price}")
                 return
 
-            # 计算盈亏比例
-            if self.pos > 0:  # 多头持仓
+            # 🔍 调试日志：验证 net_position 和 self.pos 是否一致
+            if net_position != self.pos:
+                logger.warning(f"⚠️ [风控] 持仓不同步! net_position={net_position}, self.pos={self.pos}, entry_price={entry_price:.2f}, current_price={current_price:.2f}")
+
+            logger.info(f"🔍 [风控检查] net_position={net_position}, self.pos={self.pos}, entry_price={entry_price:.2f}, current_price={current_price:.2f}")
+
+            # 计算盈亏比例 - 🔧 统一使用 net_position 判断方向，避免不同步问题
+            if net_position > 0:  # 多头持仓
                 pnl_pct = (current_price - entry_price) / entry_price
             else:  # 空头持仓
                 pnl_pct = (entry_price - current_price) / entry_price
+
+            logger.info(f"🔍 [风控检查] 盈亏比例={pnl_pct*100:.3f}%, 止损线={-self.stop_loss_pct*100:.2f}%, 止盈线={self.take_profit_pct*100:.2f}%")
 
             # 止损（使用小的容差处理浮点数精度问题）
             if pnl_pct <= -self.stop_loss_pct + 1e-6:
