@@ -293,6 +293,9 @@ class CtpIntegration:
             'open_price': tick.open_price
         }
 
+        # 🔌 WebSocket 推送 tick 数据
+        self._ws_push_tick(tick_data)
+
         # 调用回调函数
         for callback in self.tick_callbacks:
             try:
@@ -358,6 +361,20 @@ class CtpIntegration:
 
         self.orders[order.orderid] = order
 
+        # 🔌 WebSocket 推送订单数据
+        order_data = {
+            'order_id': order.orderid,
+            'symbol': getattr(order, 'symbol', ''),
+            'direction': getattr(order, 'direction', '').value if hasattr(getattr(order, 'direction', ''), 'value') else str(getattr(order, 'direction', '')),
+            'offset': getattr(order, 'offset', '').value if hasattr(getattr(order, 'offset', ''), 'value') else str(getattr(order, 'offset', '')),
+            'status': getattr(order, 'status', '').value if hasattr(getattr(order, 'status', ''), 'value') else str(getattr(order, 'status', '')),
+            'volume': getattr(order, 'volume', 0),
+            'traded': getattr(order, 'traded', 0),
+            'price': getattr(order, 'price', 0),
+            'datetime': str(getattr(order, 'datetime', ''))
+        }
+        self._ws_push_order(order_data)
+
         # 调用回调函数
         for callback in self.order_callbacks:
             try:
@@ -383,6 +400,26 @@ class CtpIntegration:
         # 存储成交数据
         self.trades[trade.tradeid] = trade
         logger.info(f"🔥 [交易服务] 成交数据已存储，当前总成交数: {len(self.trades)}")
+
+        # 🔌 WebSocket 推送成交数据
+        direction_val = getattr(trade, 'direction', '')
+        offset_val = getattr(trade, 'offset', '')
+        direction_str = direction_val.value if hasattr(direction_val, 'value') else str(direction_val)
+        offset_str = offset_val.value if hasattr(offset_val, 'value') else str(offset_val)
+
+        logger.info(f"🔥 [成交详情] direction={direction_val}({direction_str}) offset={offset_val}({offset_str})")
+
+        trade_data = {
+            'trade_id': trade.tradeid,
+            'order_id': getattr(trade, 'orderid', ''),
+            'symbol': getattr(trade, 'symbol', ''),
+            'direction': direction_str,
+            'offset': offset_str,
+            'volume': getattr(trade, 'volume', 0),
+            'price': getattr(trade, 'price', 0),
+            'datetime': str(getattr(trade, 'datetime', ''))
+        }
+        self._ws_push_trade(trade_data)
 
         # 调用回调函数
         for callback in self.trade_callbacks:
@@ -411,11 +448,11 @@ class CtpIntegration:
         self.contracts[contract.symbol] = contract
 
     def _on_position(self, event):
-        """处理持仓更新"""
+        """处理持仓更新 - 仅缓存CTP原始持仓数据，均价计算由策略服务处理"""
         position = event.data
         position_key = f"{position.symbol}_{position.direction.value}"
         self.positions[position_key] = position
-        logger.info(f"📍 [持仓更新] {position.symbol} {position.direction.value}: volume={position.volume}, yd_volume={position.yd_volume}")
+        logger.debug(f"📍 [持仓缓存] {position.symbol} {position.direction.value}: {position.volume}手(昨{position.yd_volume})")
 
     def refresh_positions(self):
         """主动刷新持仓数据 - 从CTP网关重新查询
@@ -1198,20 +1235,7 @@ class CtpIntegration:
             long_pos = self.positions.get(long_key)
             short_pos = self.positions.get(short_key)
 
-            # 调试日志
-            logger.info(f"查询持仓 {symbol}: long_key={long_key}, short_key={short_key}")
-            logger.info(f"持仓数据: long_pos={long_pos is not None}, short_pos={short_pos is not None}")
-            if long_pos:
-                logger.info(f"多单: volume={long_pos.volume}, price={long_pos.price}")
-            if short_pos:
-                logger.info(f"空单: volume={short_pos.volume}, price={short_pos.price}")
-
-            # 获取当前行情价格 - 直接从ticks字典获取
-            current_price = 0
-            if symbol in self.ticks:
-                current_price = self.ticks[symbol].last_price
-
-            # 直接使用vnpy计算的盈亏数据
+            # vnpy 已计算盈亏
             long_pnl = long_pos.pnl if long_pos else 0
             short_pnl = short_pos.pnl if short_pos else 0
 
@@ -1225,17 +1249,11 @@ class CtpIntegration:
                 long_yd_volume = getattr(long_pos, 'yd_volume', 0)
                 long_yesterday = long_yd_volume
                 long_today = max(0, long_pos.volume - long_yd_volume)
-                # 🔧 添加详细调试日志
-                logger.info(f"🔍 多单详细信息: volume={long_pos.volume}, yd_volume={long_yd_volume}, frozen={getattr(long_pos, 'frozen', 0)}")
-                logger.info(f"   计算结果: 今仓={long_today}, 昨仓={long_yesterday}")
 
             if short_pos:
                 short_yd_volume = getattr(short_pos, 'yd_volume', 0)
                 short_yesterday = short_yd_volume
                 short_today = max(0, short_pos.volume - short_yd_volume)
-                # 🔧 添加详细调试日志
-                logger.info(f"🔍 空单详细信息: volume={short_pos.volume}, yd_volume={short_yd_volume}, frozen={getattr(short_pos, 'frozen', 0)}")
-                logger.info(f"   计算结果: 今仓={short_today}, 昨仓={short_yesterday}")
 
             return {
                 'symbol': symbol,
@@ -1244,7 +1262,6 @@ class CtpIntegration:
                 'net_position': (long_pos.volume if long_pos else 0) - (short_pos.volume if short_pos else 0),
                 'long_price': long_pos.price if long_pos else 0,
                 'short_price': short_pos.price if short_pos else 0,
-                'current_price': current_price,
                 'long_pnl': long_pnl,
                 'short_pnl': short_pnl,
                 'total_pnl': long_pnl + short_pnl,
@@ -1511,19 +1528,95 @@ class CtpIntegration:
     def add_tick_callback(self, callback: Callable):
         """添加行情回调"""
         self.tick_callbacks.append(callback)
-    
+
     def add_order_callback(self, callback: Callable):
         """添加订单回调"""
         self.order_callbacks.append(callback)
-    
+
     def add_trade_callback(self, callback: Callable):
         """添加成交回调"""
         self.trade_callbacks.append(callback)
 
-
     def add_account_callback(self, callback: Callable):
         """添加账户回调"""
         self.account_callbacks.append(callback)
+
+    # ==================== WebSocket 推送方法 ====================
+
+    def _ws_push_tick(self, tick_data: Dict[str, Any]):
+        """通过 WebSocket 推送 tick 数据"""
+        try:
+            from services.trading_service.api.websocket_api import get_trading_ws_manager
+            import asyncio
+
+            ws_manager = get_trading_ws_manager()
+            if ws_manager.active_connections:
+                # 在事件循环中调度异步推送
+                try:
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        asyncio.ensure_future(ws_manager.push_tick(tick_data))
+                    else:
+                        loop.run_until_complete(ws_manager.push_tick(tick_data))
+                except RuntimeError:
+                    # 没有事件循环，创建新的
+                    asyncio.run(ws_manager.push_tick(tick_data))
+            else:
+                # 每10秒打印一次无连接提示
+                current_time = time.time()
+                if not hasattr(self, '_last_ws_no_conn_log'):
+                    self._last_ws_no_conn_log = 0
+                if current_time - self._last_ws_no_conn_log > 10:
+                    logger.debug(f"🔌 [WS] 无活跃连接，跳过tick推送")
+                    self._last_ws_no_conn_log = current_time
+        except Exception as e:
+            logger.error(f"🔌 [WS] tick推送异常: {e}")
+
+    def _ws_push_order(self, order_data: Dict[str, Any]):
+        """通过 WebSocket 推送订单数据"""
+        try:
+            from services.trading_service.api.websocket_api import get_trading_ws_manager
+            import asyncio
+
+            ws_manager = get_trading_ws_manager()
+            logger.info(f"🔌 [WebSocket] 推送订单数据: {order_data.get('order_id')}")
+
+            if ws_manager.active_connections:
+                try:
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        asyncio.ensure_future(ws_manager.push_order(order_data))
+                    else:
+                        loop.run_until_complete(ws_manager.push_order(order_data))
+                except RuntimeError:
+                    asyncio.run(ws_manager.push_order(order_data))
+            else:
+                logger.debug(f"🔌 [WebSocket] 无连接，跳过订单推送")
+        except Exception as e:
+            logger.error(f"🔌 [WebSocket] 推送订单失败: {e}")
+
+    def _ws_push_trade(self, trade_data: Dict[str, Any]):
+        """通过 WebSocket 推送成交数据"""
+        try:
+            from services.trading_service.api.websocket_api import get_trading_ws_manager
+            import asyncio
+
+            ws_manager = get_trading_ws_manager()
+            logger.info(f"🔌 [WebSocket] 推送成交数据: {trade_data.get('trade_id')}")
+
+            if ws_manager.active_connections:
+                try:
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        asyncio.ensure_future(ws_manager.push_trade(trade_data))
+                    else:
+                        loop.run_until_complete(ws_manager.push_trade(trade_data))
+                except RuntimeError:
+                    asyncio.run(ws_manager.push_trade(trade_data))
+            else:
+                logger.debug(f"🔌 [WebSocket] 无连接，跳过成交推送")
+        except Exception as e:
+            logger.error(f"🔌 [WebSocket] 推送成交失败: {e}")
     
     def get_orders(self) -> List[Dict[str, Any]]:
         """获取所有订单信息"""

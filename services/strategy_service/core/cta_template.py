@@ -74,8 +74,18 @@ class ARBIGCtaTemplate(ABC):
         self.trading = False
         
         # 持仓信息
-        self.pos = 0            # 净持仓
-        self.target_pos = 0     # 目标持仓
+        self.pos = 0                    # 净持仓数量
+        self.target_pos = 0             # 目标持仓
+
+        # 多头持仓
+        self.long_pos = 0               # 多头数量
+        self.long_price = 0.0           # 多头均价
+        self.long_cost = 0.0            # 多头总成本
+
+        # 空头持仓
+        self.short_pos = 0              # 空头数量
+        self.short_price = 0.0          # 空头均价
+        self.short_cost = 0.0           # 空头总成本
         
         # 订单管理
         self.orders: Dict[str, OrderData] = {}
@@ -354,45 +364,93 @@ class ARBIGCtaTemplate(ABC):
     def on_order(self, order: OrderData) -> None:
         """
         订单状态回调
-        
+
         Args:
             order: 订单数据
         """
-        self.orders[order.order_id] = order
-        
+        # vnpy 用 orderid 而不是 order_id
+        order_id = getattr(order, 'orderid', getattr(order, 'order_id', ''))
+        self.orders[order_id] = order
+
         try:
             self.on_order_impl(order)
         except Exception as e:
             logger.error(f"策略 {self.strategy_name} 订单处理异常: {e}")
-    
+
     def on_trade(self, trade: TradeData) -> None:
         """
         成交回调
-        
+
         Args:
             trade: 成交数据
         """
-        self.trades[trade.trade_id] = trade
-        
-        # 更新持仓
+        # vnpy 用 tradeid 而不是 trade_id
+        trade_id = getattr(trade, 'tradeid', getattr(trade, 'trade_id', ''))
+        self.trades[trade_id] = trade
+
+        # 更新持仓和均价 - 兼容 vnpy 的 Offset 枚举
+        # Direction.LONG = 买, Direction.SHORT = 卖
+        # 买开 = 开多仓, 买平 = 平空仓
+        # 卖开 = 开空仓, 卖平 = 平多仓
+        offset_val = str(getattr(trade.offset, 'value', trade.offset)).upper()
+        is_open = offset_val in ["OPEN", "开"]
+        price = trade.price
+        volume = trade.volume
+
         if trade.direction == Direction.LONG:
-            if trade.offset == "OPEN":
-                self.pos += trade.volume
-            else:  # CLOSE
-                self.pos -= trade.volume
+            if is_open:
+                # 买开：增加多头
+                new_cost = self.long_cost + price * volume
+                new_volume = self.long_pos + volume
+                self.long_price = new_cost / new_volume if new_volume > 0 else 0
+                self.long_cost = new_cost
+                self.long_pos = new_volume
+                self.pos += volume
+                logger.info(f"📈 [均价] 多头开仓: {self.long_pos}手@{self.long_price:.2f}")
+            else:
+                # 买平：平空仓
+                new_volume = max(0, self.short_pos - volume)
+                if new_volume == 0:
+                    self.short_pos = 0
+                    self.short_price = 0.0
+                    self.short_cost = 0.0
+                    logger.info(f"📉 [均价] 空头全平")
+                else:
+                    self.short_pos = new_volume
+                    self.short_cost = new_volume * self.short_price
+                    logger.info(f"📉 [均价] 空头平仓: {self.short_pos}手@{self.short_price:.2f}")
+                self.pos += volume
         else:  # SHORT
-            if trade.offset == "OPEN":
-                self.pos -= trade.volume
-            else:  # CLOSE
-                self.pos += trade.volume
-        
+            if is_open:
+                # 卖开：增加空头
+                new_cost = self.short_cost + price * volume
+                new_volume = self.short_pos + volume
+                self.short_price = new_cost / new_volume if new_volume > 0 else 0
+                self.short_cost = new_cost
+                self.short_pos = new_volume
+                self.pos -= volume
+                logger.info(f"📈 [均价] 空头开仓: {self.short_pos}手@{self.short_price:.2f}")
+            else:
+                # 卖平：平多仓
+                new_volume = max(0, self.long_pos - volume)
+                if new_volume == 0:
+                    self.long_pos = 0
+                    self.long_price = 0.0
+                    self.long_cost = 0.0
+                    logger.info(f"📉 [均价] 多头全平")
+                else:
+                    self.long_pos = new_volume
+                    self.long_cost = new_volume * self.long_price
+                    logger.info(f"📉 [均价] 多头平仓: {self.long_pos}手@{self.long_price:.2f}")
+                self.pos -= volume
+
         # 更新统计
         self.total_trades += 1
         self.total_pnl += trade.pnl if hasattr(trade, 'pnl') else 0
-        
+
         logger.info(f"策略成交: {self.strategy_name} {trade.direction.value} "
-                   f"{trade.volume}@{trade.price} 持仓:{self.pos}")
-        
+                   f"{volume}@{price} 净持仓:{self.pos} 多:{self.long_pos}@{self.long_price:.2f} 空:{self.short_pos}@{self.short_price:.2f}")
+
         try:
             self.on_trade_impl(trade)
         except Exception as e:

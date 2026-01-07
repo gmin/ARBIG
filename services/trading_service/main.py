@@ -144,6 +144,14 @@ try:
 except ImportError as e:
     logger.warning(f"⚠️ 交易日志API路由导入失败: {e}")
 
+# 导入并注册 WebSocket API路由
+try:
+    from services.trading_service.api.websocket_api import router as ws_router
+    app.include_router(ws_router)
+    logger.info("✅ WebSocket API路由注册成功")
+except ImportError as e:
+    logger.warning(f"⚠️ WebSocket API路由导入失败: {e}")
+
 @app.on_event("startup")
 async def startup_event():
     """服务启动事件"""

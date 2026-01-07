@@ -1,12 +1,14 @@
 """
 策略执行引擎
 负责策略的生命周期管理和执行调度
+使用 WebSocket 接收实时数据（tick/order/trade）
 """
 
 import asyncio
 import threading
 import time
 import requests
+import websockets
 from typing import Dict, Any, Optional, List, Type
 from datetime import datetime, timedelta
 import json
@@ -78,13 +80,18 @@ class StrategyEngine:
         # 运行状态
         self.running = False
         self.data_thread: Optional[threading.Thread] = None
-        
+        self.ws_thread: Optional[threading.Thread] = None  # WebSocket 线程
+        self.ws_connected = False
+
         # 统计信息
         self.total_signals = 0
         self.successful_signals = 0
         self.failed_signals = 0
-        
-        logger.info("策略执行引擎初始化完成")
+
+        # WebSocket URL
+        self.ws_url = trading_service_url.replace("http://", "ws://").replace("https://", "wss://") + "/ws/trading"
+
+        logger.info(f"策略执行引擎初始化完成, WebSocket URL: {self.ws_url}")
     
     def _load_available_strategies(self):
         """加载所有可用的策略类"""
@@ -473,7 +480,14 @@ class StrategyEngine:
 
             self.running = True
 
-            # 启动数据处理线程
+            # 🔌 启动 WebSocket 连接线程
+            logger.info("🔌 创建 WebSocket 连接线程...")
+            self.ws_thread = threading.Thread(target=self._websocket_loop)
+            self.ws_thread.daemon = True
+            self.ws_thread.start()
+            logger.info("🔌 WebSocket 连接线程启动成功")
+
+            # 启动数据处理线程（保留用于K线生成等）
             logger.info("🔧 创建数据处理线程...")
             self.data_thread = threading.Thread(target=self._data_processing_loop)
             self.data_thread.daemon = True
@@ -543,7 +557,228 @@ class StrategyEngine:
                 threading.Event().wait(5.0)  # 出错后等待5秒
 
         logger.info("🔧 数据处理线程结束")
-    
+
+    def _websocket_loop(self) -> None:
+        """WebSocket 连接循环"""
+        logger.info("🔌 WebSocket 连接线程启动")
+
+        while self.running:
+            try:
+                # 创建新的事件循环
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+
+                # 运行 WebSocket 连接
+                loop.run_until_complete(self._websocket_connect())
+
+            except Exception as e:
+                logger.error(f"🔌 WebSocket 连接异常: {e}")
+                self.ws_connected = False
+
+            # 断开后等待重连
+            if self.running:
+                logger.info("🔌 WebSocket 断开，5秒后重连...")
+                time.sleep(5)
+
+        logger.info("🔌 WebSocket 连接线程结束")
+
+    async def _websocket_connect(self) -> None:
+        """WebSocket 连接和消息处理"""
+        try:
+            logger.info(f"🔌 正在连接 WebSocket: {self.ws_url}")
+
+            async with websockets.connect(self.ws_url) as ws:
+                self.ws_connected = True
+                logger.info("🔌 WebSocket 连接成功！")
+
+                # 接收消息循环
+                while self.running:
+                    try:
+                        message = await asyncio.wait_for(ws.recv(), timeout=30.0)
+                        data = json.loads(message)
+                        self._handle_ws_message(data)
+
+                    except asyncio.TimeoutError:
+                        # 发送心跳
+                        await ws.send(json.dumps({"type": "ping"}))
+
+        except websockets.exceptions.ConnectionClosed as e:
+            logger.warning(f"🔌 WebSocket 连接关闭: {e}")
+            self.ws_connected = False
+        except Exception as e:
+            logger.error(f"🔌 WebSocket 错误: {e}")
+            self.ws_connected = False
+
+    def _handle_ws_message(self, data: Dict[str, Any]) -> None:
+        """处理 WebSocket 消息"""
+        msg_type = data.get("type")
+
+        if msg_type == "connected":
+            logger.info(f"🔌 WebSocket 连接确认: {data.get('client_id')}")
+
+        elif msg_type == "pong":
+            pass  # 心跳响应
+
+        elif msg_type == "tick":
+            self._on_ws_tick(data.get("data", {}))
+
+        elif msg_type == "order":
+            self._on_ws_order(data.get("data", {}))
+
+        elif msg_type == "trade":
+            self._on_ws_trade(data.get("data", {}))
+
+        else:
+            logger.debug(f"🔌 未知消息类型: {msg_type}")
+
+    def _on_ws_tick(self, tick_info: Dict[str, Any]) -> None:
+        """处理 WebSocket 推送的 tick 数据"""
+        try:
+            # 🔌 调试：记录收到的 tick
+            symbol = tick_info.get("symbol", "unknown")
+            price = tick_info.get("last_price", 0)
+            logger.info(f"🔌 [WS] 收到tick推送: {symbol} @ {price:.2f}")
+
+            if not tick_info or not self.active_strategies:
+                logger.debug(f"🔌 [WS] 跳过tick: tick_info={bool(tick_info)}, active={len(self.active_strategies)}")
+                return
+
+            if not symbol:
+                return
+
+            # 创建 TickData 对象
+            tick = self._create_tick_data(tick_info)
+            self.tick_data[symbol] = tick
+
+            # 分发给策略
+            for strategy_name in self.active_strategies:
+                strategy = self.strategies[strategy_name]
+                if strategy.symbol == symbol:
+                    logger.debug(f"🔌 [WS] 分发tick给策略: {strategy_name}")
+                    strategy.on_tick(tick)
+
+            # 更新K线生成器
+            if symbol in self.bar_generators:
+                self.bar_generators[symbol].update_tick(tick)
+
+        except Exception as e:
+            logger.error(f"🔌 处理 tick 数据异常: {e}")
+
+    def _on_ws_order(self, order_info: Dict[str, Any]) -> None:
+        """处理 WebSocket 推送的订单数据"""
+        try:
+            if not order_info or not self.active_strategies:
+                return
+
+            symbol = order_info.get("symbol")
+            logger.info(f"🔌 收到订单推送: {order_info.get('order_id')} {symbol} {order_info.get('status')}")
+
+            # 创建 OrderData 对象
+            order = self._create_order_data(order_info)
+
+            # 分发给策略
+            for strategy_name in self.active_strategies:
+                strategy = self.strategies[strategy_name]
+                if strategy.symbol == symbol:
+                    logger.info(f"🔌 分发订单给策略: {strategy_name}")
+                    strategy.on_order(order)
+
+        except Exception as e:
+            logger.error(f"🔌 处理订单数据异常: {e}")
+
+    def _on_ws_trade(self, trade_info: Dict[str, Any]) -> None:
+        """处理 WebSocket 推送的成交数据"""
+        try:
+            if not trade_info or not self.active_strategies:
+                return
+
+            symbol = trade_info.get("symbol")
+            logger.info(f"🔌🔥 收到成交推送: {trade_info.get('trade_id')} {symbol} "
+                       f"{trade_info.get('direction')} {trade_info.get('volume')}@{trade_info.get('price')}")
+
+            # 创建 TradeData 对象
+            trade = self._create_trade_data(trade_info)
+
+            # 分发给策略
+            for strategy_name in self.active_strategies:
+                strategy = self.strategies[strategy_name]
+                if strategy.symbol == symbol:
+                    logger.info(f"🔌🔥 分发成交给策略: {strategy_name}")
+                    strategy.on_trade(trade)
+
+        except Exception as e:
+            logger.error(f"🔌 处理成交数据异常: {e}")
+
+    def _create_order_data(self, order_info: Dict[str, Any]) -> OrderData:
+        """创建 OrderData 对象"""
+        from core.types import OrderData, Direction, Status, Exchange
+
+        # 解析方向
+        direction_str = str(order_info.get('direction', '')).upper()
+        if 'LONG' in direction_str or '多' in direction_str:
+            direction = Direction.LONG
+        else:
+            direction = Direction.SHORT
+
+        # 解析状态
+        status_str = str(order_info.get('status', '')).upper()
+        status_map = {
+            'SUBMITTING': Status.SUBMITTING,
+            'NOTTRADED': Status.NOTTRADED,
+            'PARTTRADED': Status.PARTTRADED,
+            'ALLTRADED': Status.ALLTRADED,
+            'CANCELLED': Status.CANCELLED,
+            'REJECTED': Status.REJECTED,
+        }
+        status = status_map.get(status_str, Status.SUBMITTING)
+
+        return OrderData(
+            gateway_name="CTP",
+            symbol=order_info.get('symbol', ''),
+            exchange=Exchange.SHFE,
+            orderid=order_info.get('order_id', ''),
+            direction=direction,
+            volume=order_info.get('volume', 0),
+            price=order_info.get('price', 0),
+            traded=order_info.get('traded', 0),
+            status=status,
+            datetime=datetime.now()
+        )
+
+    def _create_trade_data(self, trade_info: Dict[str, Any]) -> TradeData:
+        """创建 TradeData 对象"""
+        from core.types import TradeData, Direction, Exchange, Offset
+
+        # 解析方向
+        direction_str = str(trade_info.get('direction', '')).upper()
+        if 'LONG' in direction_str or '多' in direction_str:
+            direction = Direction.LONG
+        else:
+            direction = Direction.SHORT
+
+        # 解析开平 - 处理各种格式: "Open", "OPEN", "Close Today", "CLOSETODAY" 等
+        offset_str = str(trade_info.get('offset', 'OPEN')).upper().replace(' ', '')
+        offset_map = {
+            'OPEN': Offset.OPEN,
+            'CLOSE': Offset.CLOSE,
+            'CLOSETODAY': Offset.CLOSETODAY,
+            'CLOSEYESTERDAY': Offset.CLOSEYESTERDAY,
+        }
+        offset = offset_map.get(offset_str, Offset.OPEN)
+
+        return TradeData(
+            gateway_name="CTP",
+            symbol=trade_info.get('symbol', ''),
+            exchange=Exchange.SHFE,
+            orderid=trade_info.get('order_id', ''),
+            tradeid=trade_info.get('trade_id', ''),
+            direction=direction,
+            offset=offset,
+            volume=trade_info.get('volume', 0),
+            price=trade_info.get('price', 0),
+            datetime=datetime.now()
+        )
+
     def _fetch_market_data(self) -> None:
         """获取实时行情数据"""
         try:
