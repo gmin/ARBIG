@@ -111,11 +111,9 @@ def get_logger(name='gold_arbitrage'):
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
 
-    # 基础日志文件名（不含日期，TimedRotatingFileHandler会自动添加）
+    # 🔧 统一日志文件，按日期自动切换
     log_file = os.path.join(log_dir, 'gold_arbitrage.log')
 
     logger = setup_logger(name, log_file)
-    print(f"📅 [日志系统] 初始化日志记录器: {name} -> {log_file}")
-    print(f"📅 [日志系统] 日志文件将在每天午夜自动切换，保留30天历史")
 
     return logger
