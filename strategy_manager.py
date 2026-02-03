@@ -18,7 +18,7 @@ STRATEGIES = {
     1: {
         "name": "TestSystem",
         "type": "SystemIntegrationTestStrategy",
-        "symbol": "au2602",
+        "symbol": "au2604",
         "display_name": "系统集成测试策略",
         "description": "随机信号生成，用于系统功能验证",
         "params": {
@@ -30,7 +30,7 @@ STRATEGIES = {
     2: {
         "name": "GoldMaRsi",
         "type": "MaRsiComboStrategy",
-        "symbol": "au2602",
+        "symbol": "au2604",
         "display_name": "均线RSI组合策略",
         "description": "基于双均线交叉和RSI指标的技术分析策略",
         "params": {
@@ -39,16 +39,18 @@ STRATEGIES = {
             "rsi_period": 14,
             "rsi_oversold": 30,
             "rsi_overbought": 70,
-            "stop_loss_pct": 0.02,
-            "take_profit_pct": 0.03,
-            "max_position": 3,
+            "long_stop_loss_pct": 0.008,      # 多单止损 0.8%
+            "long_take_profit_pct": 0.05,   # 多单止盈 5%
+            "short_stop_loss_pct": 0.008,     # 空单止损 0.8%
+            "short_take_profit_pct": 0.05,  # 空单止盈 5%
+            "max_position": 1,
             "trade_volume": 1
         }
     },
     3: {
         "name": "GoldEnhancedMaRsi",
         "type": "EnhancedMaRsiComboStrategy",
-        "symbol": "au2602",
+        "symbol": "au2604",
         "display_name": "增强型均线RSI组合策略",
         "description": "增强版双均线+RSI策略，包含趋势强度过滤和防假突破机制",
         "params": {
@@ -67,7 +69,7 @@ STRATEGIES = {
     4: {
         "name": "GoldVWAP",
         "type": "VWAPDeviationReversionStrategy",
-        "symbol": "au2602",
+        "symbol": "au2604",
         "display_name": "VWAP偏离回归策略",
         "description": "基于VWAP偏离度的均值回归策略",
         "params": {
@@ -80,7 +82,7 @@ STRATEGIES = {
     5: {
         "name": "GoldLargeOrder",
         "type": "LargeOrderFollowingStrategy",
-        "symbol": "au2602",
+        "symbol": "au2604",
         "display_name": "大单跟踪策略",
         "description": "跟踪大额订单流向的策略",
         "params": {
@@ -93,7 +95,7 @@ STRATEGIES = {
     6: {
         "name": "GoldMultiMode",
         "type": "MultiModeAdaptiveStrategy",
-        "symbol": "au2602",
+        "symbol": "au2604",
         "display_name": "多模式自适应策略",
         "description": "根据市场条件自适应切换的多模式策略",
         "params": {
