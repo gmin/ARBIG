@@ -80,19 +80,6 @@ STRATEGIES = {
         }
     },
     5: {
-        "name": "GoldLargeOrder",
-        "type": "LargeOrderFollowingStrategy",
-        "symbol": "au2604",
-        "display_name": "大单跟踪策略",
-        "description": "跟踪大额订单流向的策略",
-        "params": {
-            "large_order_threshold": 10,
-            "follow_ratio": 0.3,
-            "trade_volume": 1,
-            "max_position": 2
-        }
-    },
-    6: {
         "name": "GoldMultiMode",
         "type": "MultiModeAdaptiveStrategy",
         "symbol": "au2604",
