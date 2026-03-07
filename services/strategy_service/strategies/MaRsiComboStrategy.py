@@ -83,8 +83,23 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
         self.rsi_period = setting.get('rsi_period', 14)
         self.rsi_overbought = setting.get('rsi_overbought', 70)
         self.rsi_oversold = setting.get('rsi_oversold', 30)
-        self.stop_loss_pct = setting.get('stop_loss_pct', 0.006)
-        self.take_profit_pct = setting.get('take_profit_pct', 0.008)
+
+        # 多单止损止盈参数
+        self.long_stop_loss_pct = setting.get('long_stop_loss_pct', 0.02)    # 多单止损 2%
+        self.long_take_profit_pct = setting.get('long_take_profit_pct', 0.008)  # 多单止盈 0.8%
+
+        # 空单止损止盈参数
+        self.short_stop_loss_pct = setting.get('short_stop_loss_pct', 0.02)   # 空单止损 2%
+        self.short_take_profit_pct = setting.get('short_take_profit_pct', 0.008)  # 空单止盈 0.8%
+
+        # 兼容旧参数（如果没有设置多空分开的参数，使用统一参数）
+        if 'stop_loss_pct' in setting and 'long_stop_loss_pct' not in setting:
+            self.long_stop_loss_pct = setting['stop_loss_pct']
+            self.short_stop_loss_pct = setting['stop_loss_pct']
+        if 'take_profit_pct' in setting and 'long_take_profit_pct' not in setting:
+            self.long_take_profit_pct = setting['take_profit_pct']
+            self.short_take_profit_pct = setting['take_profit_pct']
+
         self.trade_volume = setting.get('trade_volume', 1)
         self.max_position = setting.get('max_position', 2)
         
@@ -124,7 +139,8 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
         self._load_real_positions()  # 启动时从文件加载到父类属性
 
         logger.info(f"✅ {self.strategy_name} 初始化完成 | 品种:{self.symbol} | EMA{self.ma_short}/{self.ma_long} | RSI{self.rsi_period}")
-        logger.info(f"   风控:止损{self.stop_loss_pct*100:.1f}%/止盈{self.take_profit_pct*100:.1f}% | 加仓:ATR×{self.add_loss_atr_multiplier} | 最大持仓:{self.max_position}手")
+        logger.info(f"   风控-多单:止损{self.long_stop_loss_pct*100:.1f}%/止盈{self.long_take_profit_pct*100:.1f}% | 空单:止损{self.short_stop_loss_pct*100:.1f}%/止盈{self.short_take_profit_pct*100:.1f}%")
+        logger.info(f"   加仓:ATR×{self.add_loss_atr_multiplier} | 最大持仓:{self.max_position}手")
     
     def on_init(self):
         """策略初始化回调"""
@@ -554,52 +570,59 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
             }
 
     def _check_risk_control(self, current_price: float):
-        """检查风险控制 - 基于父类维护的真实持仓均价"""
-        if self.pos == 0:
-            return
-
+        """检查风险控制 - 多单和空单分别检查止损止盈（使用各自的止损止盈参数）"""
         try:
-            # 🎯 直接使用父类维护的均价（不再查询CTP）
-            if self.pos > 0:
-                # 净多头持仓
-                entry_price = self.long_price
-                if entry_price <= 0:
-                    logger.warning(f"⚠️ [风控] 多头均价无效: {entry_price}")
-                    return
-            else:
-                # 净空头持仓
-                entry_price = self.short_price
-                if entry_price <= 0:
-                    logger.warning(f"⚠️ [风控] 空头均价无效: {entry_price}")
-                    return
+            # 🎯 分别检查多单和空单的止损止盈
 
-            # 计算盈亏比例
-            if self.pos > 0:  # 多头持仓
-                pnl_pct = (current_price - entry_price) / entry_price
-            else:  # 空头持仓
-                pnl_pct = (entry_price - current_price) / entry_price
+            # 检查多单
+            if self.long_pos > 0 and self.long_price > 0:
+                long_pnl_pct = (current_price - self.long_price) / self.long_price
+                logger.info(f"🛡️ [风控-多单] {self.long_pos}手@{self.long_price:.2f} 现价={current_price:.2f} 盈亏={long_pnl_pct*100:.2f}% 止损线={-self.long_stop_loss_pct*100:.1f}% 止盈线={self.long_take_profit_pct*100:.1f}%")
 
-            # 当前持仓数量（绝对值）
-            current_position = abs(self.pos)
+                # 多单止损
+                if long_pnl_pct <= -self.long_stop_loss_pct + 1e-6:
+                    logger.info(f"🛑 [风控] 多单触发止损! pnl={long_pnl_pct*100:.2f}% <= 止损线{-self.long_stop_loss_pct*100:.1f}%")
+                    self._close_position_by_direction('LONG', self.long_pos, current_price, self.long_price, "多单止损")
+                # 多单止盈
+                elif long_pnl_pct >= self.long_take_profit_pct - 1e-6:
+                    logger.info(f"🎯 [风控] 多单触发止盈! pnl={long_pnl_pct*100:.2f}% >= 止盈线{self.long_take_profit_pct*100:.1f}%")
+                    self._close_position_by_direction('LONG', self.long_pos, current_price, self.long_price, "多单止盈")
 
-            # 🔍 调试：打印风控计算详情
-            logger.info(f"🛡️ [风控计算] pos={self.pos} 入场={entry_price:.2f} 现价={current_price:.2f} 盈亏={pnl_pct*100:.2f}% 止损线={-self.stop_loss_pct*100:.1f}% 仓位={current_position}/{self.max_position}")
+            # 检查空单
+            if self.short_pos > 0 and self.short_price > 0:
+                short_pnl_pct = (self.short_price - current_price) / self.short_price
+                logger.info(f"🛡️ [风控-空单] {self.short_pos}手@{self.short_price:.2f} 现价={current_price:.2f} 盈亏={short_pnl_pct*100:.2f}% 止损线={-self.short_stop_loss_pct*100:.1f}% 止盈线={self.short_take_profit_pct*100:.1f}%")
 
-            # 止损：只有达到最大持仓才止损（未满仓可等待加仓摊薄成本）
-            if pnl_pct <= -self.stop_loss_pct + 1e-6:
-                if current_position >= self.max_position:
-                    logger.info(f"🛑 [风控] 触发止损! pnl={pnl_pct*100:.2f}% 已满仓({current_position}/{self.max_position})")
-                    self._close_all_positions(current_price, entry_price, "止损")
-                else:
-                    logger.info(f"⚠️ [风控] 触及止损线但未满仓({current_position}/{self.max_position})，等待加仓")
-
-            # 止盈：不考虑仓位，直接止盈
-            elif pnl_pct >= self.take_profit_pct - 1e-6:
-                logger.info(f"🎯 [风控] 触发止盈! pnl={pnl_pct*100:.2f}% >= 止盈线{self.take_profit_pct*100:.1f}%")
-                self._close_all_positions(current_price, entry_price, "止盈")
+                # 空单止损
+                if short_pnl_pct <= -self.short_stop_loss_pct + 1e-6:
+                    logger.info(f"🛑 [风控] 空单触发止损! pnl={short_pnl_pct*100:.2f}% <= 止损线{-self.short_stop_loss_pct*100:.1f}%")
+                    self._close_position_by_direction('SHORT', self.short_pos, current_price, self.short_price, "空单止损")
+                # 空单止盈
+                elif short_pnl_pct >= self.short_take_profit_pct - 1e-6:
+                    logger.info(f"🎯 [风控] 空单触发止盈! pnl={short_pnl_pct*100:.2f}% >= 止盈线{self.short_take_profit_pct*100:.1f}%")
+                    self._close_position_by_direction('SHORT', self.short_pos, current_price, self.short_price, "空单止盈")
 
         except Exception as e:
             logger.error(f"⚠️ [风控] 风控检查异常: {e}")
+
+    def _close_position_by_direction(self, direction: str, volume: int, price: float, entry_price: float, reason: str):
+        """平掉指定方向的持仓"""
+        if volume <= 0:
+            return
+
+        # 计算盈亏
+        if direction == 'LONG':
+            pnl_amount = (price - entry_price) * volume
+            pnl_pct = (price - entry_price) / entry_price
+        else:
+            pnl_amount = (entry_price - price) * volume
+            pnl_pct = (entry_price - price) / entry_price
+
+        # 📊 风控触发记录
+        logger.info(f"🛑 [风控触发] {reason} | {direction} {volume}手 | 入场:{entry_price:.2f} → 平仓:{price:.2f} | 盈亏:{pnl_amount:+.2f}元({pnl_pct*100:+.2f}%)")
+
+        self._smart_close_position(direction, volume, price)
+        self.write_log(f"🛑 {reason}: 平{direction} {volume}手 @ {price:.2f}, 盈亏{pnl_pct*100:+.2f}%")
             
     def _close_all_positions(self, price: float, entry_price: float, reason: str):
         """平掉所有持仓"""
@@ -803,98 +826,49 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
         # 标记是否需要延迟（如果有平仓操作）
         need_delay = False
 
-        # 🎯 新策略逻辑：金叉信号
+        # 🎯 金叉信号：平空 → 开多/加多
         if action == 'BUY':
 
-            # 1. 检查空头持仓 - 盈利则平仓
+            # 1. 平掉所有空单（不管盈亏）
             if short_position > 0:
-                short_pnl = (short_price - current_price) * short_position  # 空头盈亏
-                if short_pnl > 0:  # 空头盈利
-                    logger.info(f"✅ [平仓] 空头盈利{short_pnl:.2f}元 → 平仓{short_position}手")
-                    self._smart_close_position('SHORT', short_position, current_price)
-                    need_delay = True
-                else:
-                    logger.info(f"🔒 [保留] 空头亏损{abs(short_pnl):.2f}元，等待ATR加仓")
+                short_pnl = (short_price - current_price) * short_position
+                logger.info(f"🔄 [平仓] 金叉平空 {short_position}手 盈亏={short_pnl:.2f}元")
+                self._smart_close_position('SHORT', short_position, current_price)
+                need_delay = True
 
-            # 2. 检查多头持仓限制
+            # 2. 开多/加多仓
             if long_position >= self.max_position:
-                logger.warning(f"⚠️ [持仓管理] 多头持仓已达上限{long_position}/{self.max_position}手，不开新仓")
+                logger.warning(f"⚠️ [持仓管理] 多头已达上限{long_position}/{self.max_position}手，不开新仓")
             else:
-                # 🎯 加仓控制：只在没有持仓或亏损达到阈值时开仓
-                should_open = False
-
+                if need_delay:
+                    time.sleep(0.1)
                 if long_position == 0:
-                    # 没有多头持仓，直接开仓
-                    should_open = True
-                    logger.info(f"✅ [加仓控制] 无多头持仓，允许开仓")
-                else:
-                    # 已有多头持仓，检查是否亏损达到 ATR 动态阈值
-                    # 2025-01-03 改进：使用 ATR 动态阈值，而非固定百分比
-                    price_loss = long_price - current_price  # 多头亏损金额（正数表示亏损）
-                    atr_threshold = self.current_atr * self.add_loss_atr_multiplier
-                    
-                    if price_loss >= atr_threshold:
-                        # 亏损达到 ATR 阈值，允许加仓
-                        should_open = True
-                        logger.info(f"✅ [加仓控制-ATR] 多头亏损{price_loss:.2f}元 >= {self.add_loss_atr_multiplier}倍ATR({atr_threshold:.2f}元)，允许加仓")
-                    else:
-                        # 亏损未达到阈值，不加仓
-                        logger.warning(f"⚠️ [加仓控制] 多头亏损{price_loss:.2f}元 < ATR阈值({atr_threshold:.2f}元)，不加仓")
-
-                if should_open:
-                    # 开新多仓
-                    if need_delay:
-                        time.sleep(0.1)
                     logger.info(f"🚀 [开仓] 金叉开多{trade_volume}手")
-                    self.buy(current_price, trade_volume, stop=False)
+                else:
+                    logger.info(f"🚀 [加仓] 金叉加多{trade_volume}手 (现有{long_position}手)")
+                self.buy(current_price, trade_volume, stop=False)
 
-        # 🎯 新策略逻辑：死叉信号
+        # 🎯 死叉信号：平多 → 开空/加空
         elif action == 'SELL':
 
-            # 1. 检查多头持仓 - 盈利则平仓
+            # 1. 平掉所有多单（不管盈亏）
             if long_position > 0:
-                long_pnl = (current_price - long_price) * long_position  # 多头盈亏
-                logger.info(f"🔍 [持仓管理] 多头持仓检查: 持仓={long_position}手, 均价={long_price:.2f}, 当前价={current_price:.2f}, 盈亏={long_pnl:.2f}元")
-                if long_pnl > 0:  # 多头盈利
-                    logger.info(f"✅ [平仓] 多头盈利{long_pnl:.2f}元 → 平仓{long_position}手")
-                    self._smart_close_position('LONG', long_position, current_price)
-                    need_delay = True
-                else:
-                    logger.info(f"🔒 [保留] 多头亏损{abs(long_pnl):.2f}元，等待ATR加仓")
-            else:
-                logger.info(f"🔍 [持仓管理] 无多头持仓，跳过平多检查")
+                long_pnl = (current_price - long_price) * long_position
+                logger.info(f"🔄 [平仓] 死叉平多 {long_position}手 盈亏={long_pnl:.2f}元")
+                self._smart_close_position('LONG', long_position, current_price)
+                need_delay = True
 
-            # 2. 检查空头持仓限制
+            # 2. 开空/加空仓
             if short_position >= self.max_position:
-                logger.warning(f"⚠️ [持仓管理] 空头持仓已达上限{short_position}/{self.max_position}手，不开新仓")
+                logger.warning(f"⚠️ [持仓管理] 空头已达上限{short_position}/{self.max_position}手，不开新仓")
             else:
-                # 🎯 加仓控制：只在没有持仓或亏损达到阈值时开仓
-                should_open = False
-
+                if need_delay:
+                    time.sleep(0.1)
                 if short_position == 0:
-                    # 没有空头持仓，直接开仓
-                    should_open = True
-                    logger.info(f"✅ [加仓控制] 无空头持仓，允许开仓")
-                else:
-                    # 已有空头持仓，检查是否亏损达到 ATR 动态阈值
-                    # 2025-01-03 改进：使用 ATR 动态阈值，而非固定百分比
-                    price_loss = current_price - short_price  # 空头亏损金额（正数表示亏损）
-                    atr_threshold = self.current_atr * self.add_loss_atr_multiplier
-                    
-                    if price_loss >= atr_threshold:
-                        # 亏损达到 ATR 阈值，允许加仓
-                        should_open = True
-                        logger.info(f"✅ [加仓控制-ATR] 空头亏损{price_loss:.2f}元 >= {self.add_loss_atr_multiplier}倍ATR({atr_threshold:.2f}元)，允许加仓")
-                    else:
-                        # 亏损未达到阈值，不加仓
-                        logger.warning(f"⚠️ [加仓控制] 空头亏损{price_loss:.2f}元 < ATR阈值({atr_threshold:.2f}元)，不加仓")
-
-                if should_open:
-                    # 开新空仓
-                    if need_delay:
-                        time.sleep(0.1)
                     logger.info(f"🚀 [开仓] 死叉开空{trade_volume}手")
-                    self.short(current_price, trade_volume, stop=False)
+                else:
+                    logger.info(f"🚀 [加仓] 死叉加空{trade_volume}手 (现有{short_position}手)")
+                self.short(current_price, trade_volume, stop=False)
 
         # 更新信号时间
         self.last_signal_time = time.time()

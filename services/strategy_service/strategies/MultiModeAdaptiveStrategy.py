@@ -157,45 +157,8 @@ class MultiModeAdaptiveStrategy(ARBIGCtaTemplate):
         """策略停止回调"""
         self.write_log("⏹️ 上海期货量化策略已停止")
         
-    def on_tick(self, tick: TickData):
-        """处理tick数据"""
-        if not self.trading:
-            return
-            
-        # 更新ArrayManager
-        self.am.update_tick(tick)
-        
-        # 检查风险控制
-        self._check_risk_control(tick.last_price)
-        
-        # 调用具体实现
-        self.on_tick_impl(tick)
-        
-    def on_bar(self, bar: BarData):
-        """处理bar数据"""
-        if not self.trading:
-            return
-            
-        # 更新ArrayManager
-        self.am.update_bar(bar)
-        
-        # 确保有足够的数据
-        if not self.am.inited:
-            return
-            
-        # 检查信号间隔
-        current_time = time.time()
-        if current_time - self.last_signal_time < self.min_signal_interval:
-            return
-            
-        # 更新市场方向判断
-        self._update_market_direction(bar)
-        
-        # 生成交易信号
-        self._generate_trading_signal(bar)
-        
-        # 调用具体实现
-        self.on_bar_impl(bar)
+    # on_tick 和 on_bar 由父类 ARBIGCtaTemplate 统一处理
+    # 父类会检查 active 状态、存储数据，然后调用 _impl 方法
         
     def _update_market_direction(self, bar: BarData):
         """更新市场方向判断"""
@@ -411,29 +374,34 @@ class MultiModeAdaptiveStrategy(ARBIGCtaTemplate):
         self.write_log(f"🛑 {reason}: 平仓 {self.pos}手 @ {price:.2f}")
         self.entry_price = 0.0
         
-    def on_order(self, order):
-        """处理订单回调"""
+    # on_order 和 on_trade 由父类 ARBIGCtaTemplate 统一处理
+    # 父类 on_trade 会自动更新 long_pos/short_pos/均价等持仓信息
+
+    def on_order_impl(self, order):
+        """订单状态处理实现"""
         self.write_log(f"订单状态: {order.orderid} - {order.status}")
-        
+
         # 如果订单被拒绝，重置入场价格
-        if order.status.value == "拒单":
+        status_val = str(getattr(order.status, 'value', order.status))
+        if status_val == "拒单":
             self.entry_price = 0.0
-            
-    def on_trade(self, trade):
-        """处理成交回调"""
+
+    def on_trade_impl(self, trade):
+        """成交处理实现 - 持仓更新已由父类完成"""
         self.write_log(f"✅ 成交: {trade.direction} {trade.volume}手 @ {trade.price:.2f}")
-        self.write_log(f"   当前持仓: {self.pos}")
-        
+        self.write_log(f"   当前持仓: {self.pos} 多:{self.long_pos} 空:{self.short_pos}")
+
         # 更新入场价格
-        if trade.offset.value == "开仓":
+        offset_val = str(getattr(trade.offset, 'value', trade.offset)).upper()
+        if offset_val in ["OPEN", "开", "开仓"]:
             self.entry_price = trade.price
         elif abs(self.pos) == 0:
             self.entry_price = 0.0
-            
+
         # 大额成交通知
         if abs(trade.volume) >= 5:
             self.send_email(f"大额成交: {trade.direction} {trade.volume}手")
-            
+
     def on_stop_order(self, stop_order):
         """处理停止单回调"""
         self.write_log(f"停止单触发: {stop_order.orderid}")
@@ -466,14 +434,34 @@ class MultiModeAdaptiveStrategy(ARBIGCtaTemplate):
         }
     
     def on_tick_impl(self, tick: TickData) -> None:
-        """Tick数据处理实现"""
-        # 具体的tick处理逻辑已在on_tick中实现
-        pass
-    
+        """Tick数据处理实现 - 实时风控检查"""
+        if not self.trading:
+            return
+        # 检查风险控制
+        self._check_risk_control(tick.last_price)
+
     def on_bar_impl(self, bar: BarData) -> None:
-        """Bar数据处理实现"""
-        # 具体的bar处理逻辑已在on_bar中实现
-        pass
+        """Bar数据处理实现 - 核心交易逻辑"""
+        if not self.trading:
+            return
+
+        # 更新ArrayManager
+        self.am.update_bar(bar)
+
+        # 确保有足够的数据
+        if not self.am.inited:
+            return
+
+        # 检查信号间隔
+        current_time = time.time()
+        if current_time - self.last_signal_time < self.min_signal_interval:
+            return
+
+        # 更新市场方向判断
+        self._update_market_direction(bar)
+
+        # 生成交易信号
+        self._generate_trading_signal(bar)
 
 
 # 策略工厂函数

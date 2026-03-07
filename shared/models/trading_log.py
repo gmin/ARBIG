@@ -151,7 +151,7 @@ if __name__ == "__main__":
         log_type='ORDER',
         level='INFO',
         strategy_name='test_strategy',
-        symbol='au2602',
+        symbol='au2604',
         direction='BUY',
         offset='OPEN',
         volume=1,
