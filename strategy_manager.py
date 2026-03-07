@@ -48,38 +48,6 @@ STRATEGIES = {
         }
     },
     3: {
-        "name": "GoldEnhancedMaRsi",
-        "type": "EnhancedMaRsiComboStrategy",
-        "symbol": "au2604",
-        "display_name": "增强型均线RSI组合策略",
-        "description": "增强版双均线+RSI策略，包含趋势强度过滤和防假突破机制",
-        "params": {
-            "fast_window": 10,
-            "slow_window": 30,
-            "rsi_window": 14,
-            "rsi_long_level": 45,
-            "rsi_short_level": 55,
-            "trend_threshold": 0.0015,
-            "min_cross_distance": 0.002,
-            "confirmation_bars": 1,
-            "trade_volume": 1,
-            "max_position": 3
-        }
-    },
-    4: {
-        "name": "GoldVWAP",
-        "type": "VWAPDeviationReversionStrategy",
-        "symbol": "au2604",
-        "display_name": "VWAP偏离回归策略",
-        "description": "基于VWAP偏离度的均值回归策略",
-        "params": {
-            "vwap_period": 20,
-            "deviation_threshold": 0.5,
-            "trade_volume": 1,
-            "max_position": 2
-        }
-    },
-    5: {
         "name": "GoldMultiMode",
         "type": "MultiModeAdaptiveStrategy",
         "symbol": "au2604",
@@ -89,6 +57,52 @@ STRATEGIES = {
             "trade_volume": 1,
             "max_position": 3,
             "mode_switch_threshold": 0.6
+        }
+    },
+    4: {
+        "name": "GoldBreakout",
+        "type": "BreakoutStrategy",
+        "symbol": "au2604",
+        "display_name": "布林带突破策略",
+        "description": "布林带突破+回踩确认+RSI过滤的突破交易策略",
+        "params": {
+            "bollinger_period": 20,
+            "bollinger_std": 2.0,
+            "rsi_period": 14,
+            "rsi_overbought": 70,
+            "rsi_oversold": 30,
+            "breakout_confirm_bars": 2,
+            "min_breakout_strength": 0.002,
+            "long_stop_loss_pct": 0.008,
+            "long_take_profit_pct": 0.05,
+            "short_stop_loss_pct": 0.008,
+            "short_take_profit_pct": 0.05,
+            "max_position": 1,
+            "trade_volume": 1
+        }
+    },
+    5: {
+        "name": "GoldMeanReversion",
+        "type": "MeanReversionStrategy",
+        "symbol": "au2604",
+        "display_name": "均值回归策略",
+        "description": "布林带+RSI双重确认的震荡市均值回归策略",
+        "params": {
+            "bollinger_period": 20,
+            "bollinger_std": 2.0,
+            "rsi_period": 14,
+            "rsi_overbought": 75,
+            "rsi_oversold": 25,
+            "reversion_confirm_bars": 2,
+            "max_bandwidth_pct": 0.03,
+            "min_band_touch_pct": 0.001,
+            "use_middle_band_tp": True,
+            "long_stop_loss_pct": 0.006,
+            "long_take_profit_pct": 0.02,
+            "short_stop_loss_pct": 0.006,
+            "short_take_profit_pct": 0.02,
+            "max_position": 1,
+            "trade_volume": 1
         }
     }
 }
