@@ -70,49 +70,79 @@ class VWAPDeviationReversionStrategy(ARBIGCtaTemplate):
     # 时间过滤参数
     min_signal_interval = 30             # 最小信号间隔(秒)
     
-    # ==================== 策略变量 ====================
-    
+    # ==================== 策略变量（类型注解，实际初始化在__init__）====================
+
     # tick数据缓存
-    tick_buffer: Deque[TickData] = deque(maxlen=500)
-    
+    tick_buffer: Deque[TickData]
+
     # 技术指标
-    current_vwap = 0.0
-    current_rsi = 0.0
-    bb_upper = 0.0
-    bb_middle = 0.0
-    bb_lower = 0.0
-    tick_atr = 0.0
-    
+    current_vwap: float
+    current_rsi: float
+    rsi_initialized: bool  # RSI是否已初始化
+    bb_upper: float
+    bb_middle: float
+    bb_lower: float
+    tick_atr: float
+
     # 动量指标
-    short_momentum = 0.0
-    long_momentum = 0.0
-    
+    short_momentum: float
+    long_momentum: float
+
     # 信号状态
-    last_signal_time = 0
-    signal_count = 0
-    
+    last_signal_time: float
+    signal_count: int
+
     # 持仓管理
-    entry_time = 0
-    entry_price = 0.0
-    stop_loss_price = 0.0
-    take_profit_price = 0.0
-    
+    entry_time: float
+    entry_price: float
+    stop_loss_price: float
+    take_profit_price: float
+
     # 统计数据
-    vwap_signals = 0
-    rsi_signals = 0
-    bb_signals = 0
-    successful_trades = 0
+    vwap_signals: int
+    rsi_signals: int
+    bb_signals: int
+    successful_trades: int
     
     def __init__(self, strategy_name: str, symbol: str, setting: Dict[str, Any], signal_sender):
         """初始化高频均值回归策略"""
         super().__init__(strategy_name, symbol, setting, signal_sender)
-        
-        # 初始化数据结构
+
+        # 初始化数据结构（实例变量，避免多实例共享）
         self.tick_buffer = deque(maxlen=500)
-        
+
+        # 初始化技术指标
+        self.current_vwap = 0.0
+        self.current_rsi = 50.0
+        self.rsi_initialized = False  # RSI是否已初始化
+        self.bb_upper = 0.0
+        self.bb_middle = 0.0
+        self.bb_lower = 0.0
+        self.tick_atr = 0.0
+
+        # 初始化动量指标
+        self.short_momentum = 0.0
+        self.long_momentum = 0.0
+
+        # 初始化信号状态
+        self.last_signal_time = 0.0
+        self.signal_count = 0
+
+        # 初始化持仓管理
+        self.entry_time = 0.0
+        self.entry_price = 0.0
+        self.stop_loss_price = 0.0
+        self.take_profit_price = 0.0
+
+        # 初始化统计数据
+        self.vwap_signals = 0
+        self.rsi_signals = 0
+        self.bb_signals = 0
+        self.successful_trades = 0
+
         # 创建数组管理器用于K线数据
         self.am = ArrayManager(size=100)
-        
+
         logger.info(f"高频均值回归策略初始化完成: {strategy_name} - 策略B")
     
     def on_init(self) -> None:
