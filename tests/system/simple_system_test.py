@@ -70,7 +70,8 @@ def test_api_endpoints(service_name, base_url, endpoints):
         else:
             print(f"   ❌ {endpoint}: {result.get('error', '失败')}")
     
-    print(f"   📊 成功率: {success_count}/{total_count} ({success_count/total_count*100:.1f}%)")
+    rate = success_count / total_count * 100 if total_count else 0
+    print(f"   📊 成功率: {success_count}/{total_count} ({rate:.1f}%)")
     return success_count, total_count
 
 def check_processes():
@@ -107,7 +108,7 @@ def check_ports():
     ports_to_check = [
         ("交易服务", 8001),
         ("策略服务", 8002),
-        ("Web管理服务", 80)
+        ("Web管理服务", 8000)
     ]
     
     open_ports = []
@@ -133,14 +134,14 @@ def check_config_files():
     
     config_files = [
         "config/config.yaml",
-        "requirements.txt", 
-        "setup.py"
+        "requirements.txt",
     ]
     
     existing_files = []
+    project_root = os.path.join(os.path.dirname(__file__), '..', '..')
     
     for config_file in config_files:
-        file_path = os.path.join("/root/ARBIG", config_file)
+        file_path = os.path.join(project_root, config_file)
         if os.path.exists(file_path):
             file_size = os.path.getsize(file_path)
             print(f"   ✅ {config_file}: 存在 ({file_size} 字节)")
@@ -169,7 +170,7 @@ def main():
     services = {
         "交易服务": "http://localhost:8001/",
         "策略服务": "http://localhost:8002/",
-        "Web管理服务": "http://localhost:80/"
+        "Web管理服务": "http://localhost:8000/"
     }
     
     responsive_services = []
@@ -195,7 +196,7 @@ def main():
     
     if "Web管理服务" in responsive_services:
         endpoints = ["/api/v1/trading/status"]
-        passed, total = test_api_endpoints("Web管理服务", "http://localhost:80", endpoints)
+        passed, total = test_api_endpoints("Web管理服务", "http://localhost:8000", endpoints)
         passed_api_tests += passed
         total_api_tests += total
     
@@ -204,7 +205,7 @@ def main():
     print("📋 测试总结")
     print(f"🔄 运行中的服务: {len(running_services)}/3")
     print(f"🌐 开放的端口: {len(open_ports)}/3") 
-    print(f"📄 存在的配置文件: {len(existing_configs)}/3")
+    print(f"📄 存在的配置文件: {len(existing_configs)}/2")
     print(f"🌍 响应的服务: {len(responsive_services)}/3")
     if total_api_tests > 0:
         print(f"🔗 API测试通过: {passed_api_tests}/{total_api_tests} ({passed_api_tests/total_api_tests*100:.1f}%)")
@@ -217,7 +218,7 @@ def main():
     health_score = (
         (len(running_services)/3) + 
         (len(open_ports)/3) + 
-        (len(existing_configs)/3) + 
+        (len(existing_configs)/2) + 
         (len(responsive_services)/3) +
         (passed_api_tests/total_api_tests if total_api_tests > 0 else 0)
     ) / total_checks * 100
@@ -245,7 +246,9 @@ def main():
     }
     
     try:
-        results_file = f"/root/ARBIG/logs/simple_test_{timestamp}.json"
+        log_dir = os.path.join(os.path.dirname(__file__), '..', '..', 'logs')
+        os.makedirs(log_dir, exist_ok=True)
+        results_file = os.path.join(log_dir, f"simple_test_{timestamp}.json")
         with open(results_file, 'w', encoding='utf-8') as f:
             json.dump(results, f, ensure_ascii=False, indent=2)
         print(f"\n💾 测试结果已保存到: {results_file}")

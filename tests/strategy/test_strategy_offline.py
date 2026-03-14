@@ -16,7 +16,8 @@ import asyncio
 # 添加项目根目录到路径
 sys.path.append(os.path.join(os.path.dirname(__file__), '../..'))
 
-from core.types import TickData, BarData, Exchange
+from vnpy.trader.object import TickData, BarData
+from vnpy.trader.constant import Exchange
 from services.strategy_service.core.cta_template import ARBIGCtaTemplate
 from utils.logger import get_logger
 
@@ -389,7 +390,26 @@ def load_available_strategies():
     except ImportError as e:
         logger.warning(f"⚠️ 无法加载 MaRsiComboStrategy: {e}")
     
-    # 可以继续添加其他策略...
+    try:
+        from services.strategy_service.strategies.BreakoutStrategy import BreakoutStrategy
+        strategies['BreakoutStrategy'] = BreakoutStrategy
+        logger.info("✅ 加载策略: BreakoutStrategy")
+    except ImportError as e:
+        logger.warning(f"⚠️ 无法加载 BreakoutStrategy: {e}")
+    
+    try:
+        from services.strategy_service.strategies.MeanReversionStrategy import MeanReversionStrategy
+        strategies['MeanReversionStrategy'] = MeanReversionStrategy
+        logger.info("✅ 加载策略: MeanReversionStrategy")
+    except ImportError as e:
+        logger.warning(f"⚠️ 无法加载 MeanReversionStrategy: {e}")
+    
+    try:
+        from services.strategy_service.strategies.MultiModeAdaptiveStrategy import MultiModeAdaptiveStrategy
+        strategies['MultiModeAdaptiveStrategy'] = MultiModeAdaptiveStrategy
+        logger.info("✅ 加载策略: MultiModeAdaptiveStrategy")
+    except ImportError as e:
+        logger.warning(f"⚠️ 无法加载 MultiModeAdaptiveStrategy: {e}")
     
     return strategies
 

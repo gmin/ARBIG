@@ -20,7 +20,7 @@ import sys
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '../../..'))
 
-from core.types import TickData, BarData
+from vnpy.trader.object import TickData, BarData
 from services.strategy_service.core.cta_template import ARBIGCtaTemplate
 from services.strategy_service.core.data_tools import ArrayManager
 from utils.logger import get_logger
@@ -123,8 +123,6 @@ class BreakoutStrategy(ARBIGCtaTemplate):
         self.cached_position = 0
         self.last_position_update = 0
 
-        # 持仓持久化
-        self._real_positions_file = f"data/real_positions_{self.strategy_name}_{self.symbol}.json"
         self._load_real_positions()
 
         logger.info(f"✅ {self.strategy_name} 初始化完成 | 品种:{self.symbol}")
@@ -150,77 +148,7 @@ class BreakoutStrategy(ARBIGCtaTemplate):
 
     # ==================== 交易时间检查 ====================
 
-    def _is_trading_time(self) -> bool:
-        """检查当前是否在SHFE交易时间内"""
-        now = datetime.now()
-        hour = now.hour
-        minute = now.minute
-        t = hour * 100 + minute
-
-        # 日盘：09:00-10:15, 10:30-11:30, 13:30-15:00
-        if 900 <= t <= 1015:
-            return True
-        if 1030 <= t <= 1130:
-            return True
-        if 1330 <= t <= 1500:
-            return True
-
-        # 夜盘：21:00-23:59, 00:00-02:30
-        if 2100 <= t <= 2359:
-            return True
-        if 0 <= t <= 230:
-            return True
-
-        return False
-
-    # ==================== 持仓持久化 ====================
-
-    def _load_real_positions(self):
-        """从文件加载真实开仓均价到父类属性"""
-        try:
-            os.makedirs("data", exist_ok=True)
-            if os.path.exists(self._real_positions_file):
-                with open(self._real_positions_file, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                if "long" in data:
-                    self.long_pos = data["long"].get("volume", 0)
-                    self.long_price = data["long"].get("avg_price", 0.0)
-                    self.long_cost = data["long"].get("total_cost", 0.0)
-                if "short" in data:
-                    self.short_pos = data["short"].get("volume", 0)
-                    self.short_price = data["short"].get("avg_price", 0.0)
-                    self.short_cost = data["short"].get("total_cost", 0.0)
-                self.pos = self.long_pos - self.short_pos
-                logger.info(f"[均价] 加载: 多{self.long_pos}手@{self.long_price:.2f} 空{self.short_pos}手@{self.short_price:.2f}")
-            else:
-                logger.debug(f"[均价] 文件不存在，初始化为空")
-        except Exception as e:
-            logger.error(f"❌ [真实均价] 加载失败: {e}")
-
-    def _save_real_positions(self):
-        """保存父类的真实开仓均价到文件"""
-        try:
-            os.makedirs("data", exist_ok=True)
-            data = {}
-            if self.long_pos > 0:
-                data["long"] = {
-                    "volume": self.long_pos,
-                    "avg_price": round(self.long_price, 4),
-                    "total_cost": round(self.long_cost, 4),
-                    "update_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                }
-            if self.short_pos > 0:
-                data["short"] = {
-                    "volume": self.short_pos,
-                    "avg_price": round(self.short_price, 4),
-                    "total_cost": round(self.short_cost, 4),
-                    "update_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                }
-            with open(self._real_positions_file, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=2, ensure_ascii=False)
-            logger.debug(f"[均价] 已保存: 多{self.long_pos}@{self.long_price:.2f} 空{self.short_pos}@{self.short_price:.2f}")
-        except Exception as e:
-            logger.error(f"❌ [真实均价] 保存失败: {e}")
+    # _is_trading_time, _load/_save_real_positions 已移至基类 ARBIGCtaTemplate
 
     # ==================== 核心交易逻辑 ====================
 
@@ -569,47 +497,27 @@ class BreakoutStrategy(ARBIGCtaTemplate):
                 self.cover(price, volume, stop=False)
 
     def _query_real_position(self) -> Optional[dict]:
-        """实时查询真实持仓 - 返回完整持仓信息（包含今昨仓）"""
+        """通过 signal_sender 查询真实持仓（包含今昨仓）"""
         try:
-            import requests
-
-            url = f"http://localhost:8001/real_trading/positions?symbol={self.symbol}"
-            response = requests.get(url, timeout=2.0)
-
-            if response.status_code == 200:
-                position_data = response.json()
-                if position_data.get("success") and position_data.get("data"):
-                    position_info = position_data["data"]
-                    long_position = position_info.get("long_position", 0)
-                    short_position = position_info.get("short_position", 0)
-                    net_position = position_info.get("net_position", 0)
-                    long_price = position_info.get("long_price", 0)
-                    short_price = position_info.get("short_price", 0)
-                    current_price = position_info.get("current_price", 0)
-                    long_today = position_info.get("long_today", 0)
-                    long_yesterday = position_info.get("long_yesterday", 0)
-                    short_today = position_info.get("short_today", 0)
-                    short_yesterday = position_info.get("short_yesterday", 0)
-
-                    self.cached_position = net_position
-
-                    return {
-                        "net_position": net_position,
-                        "long_position": long_position,
-                        "short_position": short_position,
-                        "long_price": long_price,
-                        "short_price": short_price,
-                        "current_price": current_price,
-                        "long_today": long_today,
-                        "long_yesterday": long_yesterday,
-                        "short_today": short_today,
-                        "short_yesterday": short_yesterday
-                    }
-                else:
-                    logger.warning(f"⚠️ [持仓查询] 返回空数据")
-                    return None
+            position_data = self.signal_sender.get_positions()
+            if position_data.get("success") and position_data.get("data"):
+                info = position_data["data"]
+                net_position = info.get("net_position", 0)
+                self.cached_position = net_position
+                return {
+                    "net_position": net_position,
+                    "long_position": info.get("long_position", 0),
+                    "short_position": info.get("short_position", 0),
+                    "long_price": info.get("long_price", 0),
+                    "short_price": info.get("short_price", 0),
+                    "current_price": info.get("current_price", 0),
+                    "long_today": info.get("long_today", 0),
+                    "long_yesterday": info.get("long_yesterday", 0),
+                    "short_today": info.get("short_today", 0),
+                    "short_yesterday": info.get("short_yesterday", 0),
+                }
             else:
-                logger.warning(f"⚠️ [持仓查询] 失败: HTTP {response.status_code}")
+                logger.warning("⚠️ [持仓查询] 返回空数据")
                 return None
         except Exception as e:
             logger.warning(f"⚠️ [持仓查询] 异常: {e}")

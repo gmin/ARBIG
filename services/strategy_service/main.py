@@ -5,21 +5,17 @@ ARBIG策略执行服务
 """
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, Request, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Optional
 import json
+import sys
 import os
 from datetime import datetime
 import asyncio
 from contextlib import asynccontextmanager
 
-# 导入策略引擎和相关组件
-import sys
-import os
-
-# 添加项目根目录到Python路径
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
@@ -32,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 # 导入回测API
 try:
-    from api.backtest_api import router as backtest_router
+    from services.strategy_service.api.backtest_api import router as backtest_router
     BACKTEST_AVAILABLE = True
     logger.info("专业回测模块加载成功")
 except ImportError as e:
@@ -40,15 +36,6 @@ except ImportError as e:
     logger.warning(f"专业回测模块加载失败: {e}")
     backtest_router = None
 
-# 导入策略轻量回测API
-try:
-    from api.strategy_backtest_api import router as strategy_backtest_router
-    STRATEGY_BACKTEST_AVAILABLE = True
-    logger.info("策略轻量回测模块加载成功")
-except ImportError as e:
-    STRATEGY_BACKTEST_AVAILABLE = False
-    logger.warning(f"策略轻量回测模块加载失败: {e}")
-    strategy_backtest_router = None
 
 # 全局策略引擎实例
 strategy_engine: Optional[StrategyEngine] = None
@@ -105,10 +92,6 @@ if BACKTEST_AVAILABLE and backtest_router:
     app.include_router(backtest_router)
     logger.info("专业回测API路由注册成功")
 
-# 注册策略轻量回测API路由
-if STRATEGY_BACKTEST_AVAILABLE and strategy_backtest_router:
-    app.include_router(strategy_backtest_router)
-    logger.info("策略轻量回测API路由注册成功")
 
 # ==================== API 端点 ====================
 
@@ -242,7 +225,7 @@ async def register_strategy(request: Request):
         
         strategy_name = request_data.get("strategy_name")
         symbol = request_data.get("symbol") 
-        strategy_type = request_data.get("strategy_type", "DoubleMaStrategy")
+        strategy_type = request_data.get("strategy_type", "MaRsiComboStrategy")
         params = request_data.get("params", {})
         
         if not strategy_name or not symbol:
@@ -339,6 +322,64 @@ async def update_strategy_position(strategy_name: str, position_data: dict):
     return {
         "success": True,
         "message": f"策略 {strategy_name} 持仓已更新",
+        "timestamp": datetime.now().isoformat()
+    }
+
+@app.post("/emergency_stop")
+async def emergency_stop():
+    """紧急停止：停止所有策略。"""
+    if not strategy_engine:
+        raise HTTPException(status_code=503, detail="策略引擎未初始化")
+
+    stopped = []
+    for name in list(strategy_engine.active_strategies):
+        if strategy_engine.stop_strategy(name):
+            stopped.append(name)
+
+    return {
+        "success": True,
+        "message": f"紧急停止完成，已停止 {len(stopped)} 个策略",
+        "data": {
+            "stopped_strategies": stopped,
+            "cancel_orders_result": {
+                "success": False,
+                "message": "当前版本未执行统一撤单，紧急停止仅停止策略"
+            }
+        },
+        "timestamp": datetime.now().isoformat()
+    }
+
+@app.get("/strategies/triggers")
+async def get_strategy_triggers(
+    limit: int = 50,
+    strategy_name: Optional[str] = None
+):
+    """获取策略触发记录（从策略引擎的性能统计中汇总）"""
+    if not strategy_engine:
+        raise HTTPException(status_code=503, detail="策略引擎未初始化")
+
+    triggers = []
+    for sname, perf in strategy_engine.performance_stats.items():
+        if strategy_name and sname != strategy_name:
+            continue
+        for trade in getattr(perf, 'trades', []):
+            triggers.append({
+                "timestamp": trade.timestamp.isoformat() if hasattr(trade, 'timestamp') else None,
+                "strategy_name": sname,
+                "signal_type": "TRADE",
+                "direction": getattr(trade, 'direction', ''),
+                "volume": getattr(trade, 'volume', 0),
+                "price": getattr(trade, 'price', 0),
+                "order_id": getattr(trade, 'order_id', ''),
+            })
+
+    # 按时间降序，截取 limit 条
+    triggers.sort(key=lambda x: x.get("timestamp") or "", reverse=True)
+    triggers = triggers[:limit]
+
+    return {
+        "success": True,
+        "data": triggers,
         "timestamp": datetime.now().isoformat()
     }
 

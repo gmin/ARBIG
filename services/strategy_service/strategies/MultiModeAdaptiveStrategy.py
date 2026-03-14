@@ -40,7 +40,7 @@ import os
 # 添加项目根目录到路径
 sys.path.append(os.path.join(os.path.dirname(__file__), '../../..'))
 
-from core.types import TickData, BarData
+from vnpy.trader.object import TickData, BarData
 from services.strategy_service.core.cta_template import ARBIGCtaTemplate
 from services.strategy_service.core.data_tools import ArrayManager
 from utils.logger import get_logger

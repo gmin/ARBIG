@@ -1,267 +1,126 @@
-# ARBIG策略使用指南
+# ARBIG 策略使用指南
 
-## 📋 策略总览
+## 策略总览
 
-ARBIG量化交易系统目前包含6个完整的交易策略，每个策略都有不同的特点和适用场景。
+当前代码中的可用策略以 `services/strategy_service/strategies/` 目录为准。  
+截至当前版本，实际可用的核心策略如下：
 
-### 🎯 **策略分类**
+### 测试验证类
 
-#### **测试验证类**
-- **SystemIntegrationTestStrategy** - 系统集成测试策略
+- `SystemIntegrationTestStrategy`
+  - 用途：验证策略服务、交易服务、Web 监控链路是否正常
+  - 特点：更适合作为系统联调和回归测试入口
 
-#### **技术分析类**
-- **EnhancedMaRsiComboStrategy** - 增强型MA+RSI组合策略 🆕
-- **MaRsiComboStrategy** - MA+RSI组合策略
-- **MultiModeAdaptiveStrategy** - 多模式自适应策略
+### 技术分析类
 
-#### **高频交易类**
-- **LargeOrderFollowingStrategy** - 大单跟踪策略
-- **VWAPDeviationReversionStrategy** - VWAP偏离策略
+- `MaRsiComboStrategy`
+  - 用途：基于均线与 RSI 的黄金期货技术策略
+  - 特点：参数清晰，适合作为基础技术策略参考
 
----
+- `MultiModeAdaptiveStrategy`
+  - 用途：在趋势、均值回归、突破等模式之间切换
+  - 特点：结构更综合，适合验证多模式框架
 
-## 🚀 **推荐测试顺序**
+- `BreakoutStrategy`
+  - 用途：突破型交易
+  - 特点：更偏趋势延续和波动放大场景
 
-### **第一阶段：系统验证**
-1. **SystemIntegrationTestStrategy** ⭐⭐⭐⭐⭐
-   - **状态**：✅ 已在实盘验证成功
-   - **特点**：随机信号生成，专为系统测试设计
-   - **用途**：验证系统稳定性和基础功能
-   - **风险**：🟢 低风险（测试策略）
-   
-   ```python
-   # 推荐参数配置
-   {
-       "signal_interval": 30,    # 30秒信号间隔
-       "trade_volume": 1,        # 1手交易量
-       "max_position": 3         # 最大3手持仓
-   }
-   ```
+- `MeanReversionStrategy`
+  - 用途：均值回归交易
+  - 特点：更适合价格偏离后的回归场景
 
-### **第二阶段：技术策略**
-2. **EnhancedMaRsiComboStrategy** ⭐⭐⭐⭐⭐ 🆕
-   - **状态**：✅ 代码完善，专业级策略
-   - **特点**：增强型双均线+RSI，智能交叉检测+动态RSI阈值+防假突破+震荡市过滤
-   - **用途**：专业级黄金期货技术分析交易
-   - **风险**：🟡 中等风险（技术策略）
+## 推荐使用顺序
 
-   ```python
-   # 推荐参数配置
-   {
-       "ema_fast": 10,           # 快线EMA10
-       "ema_slow": 30,           # 慢线EMA30
-       "rsi_period": 14,         # RSI 14周期
-       "atr_period": 14,         # ATR周期
-       "atr_multiplier": 2.0,    # ATR止损倍数
-       "trailing_start": 0.02,   # 移动止损启动(2%)
-       "trade_volume": 1,        # 1手交易
-       "max_position": 5         # 最大5手持仓
-   }
-   ```
+建议按“先验证链路，再测试业务策略”的顺序推进：
 
-3. **MaRsiComboStrategy** ⭐⭐⭐⭐
-   - **状态**：✅ 代码完善，调试信息详细
-   - **特点**：双均线+RSI技术分析，风控完善
-   - **用途**：稳健的技术分析交易
-   - **风险**：🟡 中等风险（技术策略）
+1. `SystemIntegrationTestStrategy`
+   - 先验证服务启动、行情获取、信号发送、订单链路
 
-4. **MultiModeAdaptiveStrategy** ⭐⭐⭐⭐
-   - **状态**：✅ 结构完整，多模式支持
-   - **特点**：支持趋势/均值回归/突破多种模式
-   - **用途**：适应不同市场环境的综合策略
-   - **风险**：🟡 中等风险（复杂策略）
+2. `MaRsiComboStrategy`
+   - 作为第一批业务策略测试对象
+   - 参数相对直观，便于观察策略逻辑和风控效果
 
-### **第三阶段：专业策略**
-5. **LargeOrderFollowingStrategy** ⭐⭐⭐
-   - **特点**：大单跟踪，微观结构分析
-   - **用途**：跟随大资金流向
-   - **风险**：🟠 较高风险（高频策略）
+3. `MultiModeAdaptiveStrategy`
+   - 在基础链路稳定后测试
+   - 适合观察复杂参数对不同行情环境的适应性
 
-6. **VWAPDeviationReversionStrategy** ⭐⭐⭐
-   - **特点**：VWAP偏离回归，均值回归策略
-   - **用途**：价格偏离修正交易
-   - **风险**：🟡 中等风险（均值回归）
+4. `BreakoutStrategy` / `MeanReversionStrategy`
+   - 作为补充策略测试
+   - 用于验证不同风格策略在同一系统下的表现
 
----
+## 常见参数
 
-## 🥇 **黄金期货策略专业评估**
+不同策略参数不完全一致，但以下参数在当前策略中较常见：
 
-### **策略适用性排名（针对黄金交易）**
+| 参数名 | 说明 | 常见范围 |
+| -------- | ------ | ---------- |
+| `trade_volume` | 单次交易手数 | `1-3` |
+| `max_position` | 最大持仓 | `3-10` |
+| `signal_interval` | 信号间隔（秒） | `30-300` |
+| `ma_short` | 短周期均线 | `5-10` |
+| `ma_long` | 长周期均线 | `15-30` |
+| `rsi_period` | RSI 周期 | `14` |
+| `stop_loss_pct` | 止损比例 | `0.005-0.05` |
+| `take_profit_pct` | 止盈比例 | `0.008-0.08` |
 
-#### **🏆 第1名：EnhancedMaRsiComboStrategy** ⭐⭐⭐⭐⭐ 🆕
-**最适合黄金交易的原因：**
-- 🎯 **专业设计**：增强版MA+RSI组合，专为黄金期货优化
-- 📊 **智能过滤**：防假突破 + 震荡市过滤，减少错误信号
-- 🛡️ **动态风控**：ATR止损 + 移动止损 + 分批止盈
-- 📈 **自适应**：动态RSI阈值，适应不同市场波动
-- ✅ **调试完善**：CSV指标日志，便于回测分析
+实际参数定义请直接参考各策略文件中的 `STRATEGY_TEMPLATE` 或类默认参数。
 
-#### **🥈 第2名：MaRsiComboStrategy** ⭐⭐⭐⭐
-**黄金交易优势：**
-- 🎯 **专门设计**：专门针对上期所黄金期货优化
-- 📊 **技术指标经典**：MA5/MA20 + RSI14，黄金交易的黄金组合
-- 🛡️ **风控合理**：2%止损 + 3%止盈，符合黄金日内波动特性
-- ✅ **代码质量高**：注释详细，逻辑清晰
+## 测试建议
 
-#### **🥉 第3名：VWAPDeviationReversionStrategy** ⭐⭐⭐⭐
-**黄金交易优势：**
-- 🎯 **VWAP有效性**：黄金成交量大，VWAP作为公允价格参考有效
-- 📊 **均值回归特性**：黄金日内经常出现偏离后回归现象
-- ⚡ **日内交易适配**：适合黄金T+0交易特点
-- 🏛️ **机构参考**：大型机构常用VWAP作为执行基准
+### 环境检查
 
-#### **第4名：MultiModeAdaptiveStrategy** ⭐⭐⭐⭐
-**多模式优势：**
-- 🔄 **环境适应**：能适应黄金的趋势/震荡/突破不同状态
-- 📊 **指标全面**：MA + RSI + 布林带，技术分析覆盖面广
-- 💪 **风控较强**：5%止损 + 8%止盈，适合波动较大时期
-- 🧠 **智能决策**：自动模式切换，减少人工干预
+在测试策略前，建议先确认：
 
-#### **第5名：SystemIntegrationTestStrategy** ⭐⭐⭐⭐
-**系统验证价值：**
-- ✅ **实盘验证**：已在真实环境稳定运行
-- 🔧 **架构参考**：持仓管理和风控机制可作为模板
-- 📊 **系统测试**：验证黄金交易系统的稳定性
-- 🛡️ **风险可控**：随机信号，测试用途，风险较低
-
-#### **第6名：LargeOrderFollowingStrategy** ⭐⭐⭐
-**大单跟踪特点：**
-- 🎯 **机构跟踪**：黄金市场机构资金流向明显
-- ⚡ **高频特性**：适合捕捉短期大单引起的价格跳跃
-- 💼 **专业工具**：需要对市场微观结构有深入理解
-- ⚠️ **风险较高**：高频策略，需要更多经验
-
-### **黄金交易测试建议顺序：**
-
-```
-🥇 EnhancedMaRsiComboStrategy   → 首选，专业增强版策略
-🥈 MaRsiComboStrategy          → 次选，经典稳健
-🥉 VWAPDeviationReversionStrategy → 备选，VWAP策略有效
-4️⃣ MultiModeAdaptiveStrategy    → 多模式，功能强大
-5️⃣ SystemIntegrationTestStrategy → 系统验证用
-6️⃣ LargeOrderFollowingStrategy → 高级用户，风险较高
+```bash
+curl http://localhost:8001/health
+curl http://localhost:8002/status
+curl http://localhost:8000/  # 或直接打开 Web 页面
 ```
 
----
+### 建议步骤
 
-## 🛠️ **策略配置指南**
+1. 先启动 `SystemIntegrationTestStrategy`
+   - 确认服务间调用链正常
+   - 确认日志、持仓、状态查询都能正常返回
 
-### **通用参数说明**
+2. 再逐个测试业务策略
+   - 每次只启一个新策略
+   - 先用小仓位和保守参数
 
-| 参数名 | 类型 | 说明 | 建议值 |
-|--------|------|------|--------|
-| `trade_volume` | int | 每次交易手数 | 1-3手 |
-| `max_position` | int | 最大持仓限制 | 3-10手 |
-| `signal_interval` | int | 信号间隔(秒) | 30-300秒 |
+3. 观察关键指标
+   - 信号频率
+   - 订单执行成功率
+   - 持仓同步准确性
+   - 日志是否完整
 
-### **技术指标参数**
+## 使用注意事项
 
-| 参数名 | 类型 | 说明 | 建议值 |
-|--------|------|------|--------|
-| `ma_short` | int | 短期均线周期 | 5-10 |
-| `ma_long` | int | 长期均线周期 | 15-30 |
-| `rsi_period` | int | RSI计算周期 | 14 |
-| `rsi_overbought` | int | RSI超买阈值 | 70 |
-| `rsi_oversold` | int | RSI超卖阈值 | 30 |
+### 风险控制
 
-### **风控参数**
+- 建议始终从小仓位开始测试
+- 不同策略的止损止盈机制并不完全一致
+- 非交易时间的 CTP 异常不一定代表策略本身有问题
 
-| 参数名 | 类型 | 说明 | 建议值 |
-|--------|------|------|--------|
-| `stop_loss_pct` | float | 止损百分比 | 0.02-0.05 |
-| `take_profit_pct` | float | 止盈百分比 | 0.03-0.08 |
+### 监控建议
 
----
+- 通过 `http://localhost/strategy` 查看策略中心
+- 通过 `http://localhost/trading_logs` 查看交易日志
+- 通过 `http://localhost:8002/docs` 查看策略服务接口
 
-## 📊 **交易时间测试建议**
+### 紧急处理
 
-### **测试环境准备**
-1. **确保服务运行**
-   ```bash
-   # 检查服务状态
-   curl http://localhost:8001/health  # 交易服务
-   curl http://localhost:8002/health  # 策略服务
-   curl http://localhost/health       # Web管理服务
-   ```
+- 当前 Web 端保留“紧急停止”能力
+- 如需停止策略，优先使用策略中心或紧急停止接口
+- Web 端当前不再承担手动下单和平仓入口
 
-2. **准备测试资金**
-   - 建议使用小额资金测试（每手1-2万保证金）
-   - 设置较小的持仓限制（max_position: 3-5）
+## 参考位置
 
-### **测试步骤**
-1. **启动参考策略**
-   ```bash
-   # 通过Web界面或API注册SystemIntegrationTestStrategy
-   # 观察系统稳定性
-   ```
-
-2. **逐个测试技术策略**
-   ```bash
-   # 依次测试MaRsiComboStrategy等技术策略
-   # 观察信号生成和执行情况
-   ```
-
-3. **监控关键指标**
-   - 信号生成频率
-   - 交易执行成功率
-   - 持仓管理准确性
-   - 风控机制有效性
-
-### **预期表现**
-
-| 策略 | 信号频率 | 预期特点 | 监控重点 |
-|------|----------|----------|----------|
-| SystemIntegrationTestStrategy | 每30秒 | 随机信号 | 系统稳定性 |
-| MaRsiComboStrategy | 视市场而定 | 技术信号 | 信号质量 |
-| 其他策略 | 视策略而定 | 各有特色 | 功能验证 |
+- 策略代码：`services/strategy_service/strategies/`
+- 策略服务入口：`services/strategy_service/main.py`
+- 策略引擎：`services/strategy_service/core/strategy_engine.py`
+- 策略编码规范：`docs/strategies/STRATEGY_CODE_STANDARDS.md`
 
 ---
 
-## ⚠️ **注意事项**
-
-### **风险控制**
-- ✅ 所有策略都有持仓限制
-- ✅ 部分策略有止损止盈机制
-- ⚠️ 建议在小仓位下测试
-
-### **监控要点**
-- 📊 实时监控策略日志
-- 🔍 关注异常错误信息
-- 📈 观察持仓变化
-- 💰 跟踪盈亏情况
-
-### **应急措施**
-- 🛑 随时可以通过Web界面停止策略
-- 📞 保持对市场的人工监控
-- 🔧 准备好手动平仓的操作
-
----
-
-## 🎯 **成功指标**
-
-### **系统层面**
-- ✅ 策略能正常启动和停止
-- ✅ 持仓查询和同步正常
-- ✅ 交易指令正常执行
-- ✅ 日志记录完整清晰
-
-### **策略层面**
-- ✅ 信号生成符合策略逻辑
-- ✅ 风控机制有效运行
-- ✅ 参数调整生效
-- ✅ 性能表现稳定
-
----
-
-## 📚 **参考资料**
-
-- **测试工具**：`tests/strategy/` 目录下的各种测试脚本
-- **策略代码**：`services/strategy_service/strategies/` 目录
-- **API文档**：http://localhost:8002/docs （策略服务API）
-- **Web管理**：http://localhost/strategy （策略管理界面）
-
----
-
-**最后更新**：2025-12-05
-**文档版本**：v2.0
-**适用版本**：ARBIG v1.0+
+最后更新：2026-03-13  
+文档版本：v3.0

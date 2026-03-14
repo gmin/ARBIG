@@ -14,7 +14,7 @@ import os
 # 添加项目根目录到路径
 sys.path.append(os.path.join(os.path.dirname(__file__), '../../..'))
 
-from core.types import TickData, BarData
+from vnpy.trader.object import TickData, BarData
 from services.strategy_service.core.cta_template import ARBIGCtaTemplate
 from services.strategy_service.core.data_tools import ArrayManager
 from utils.logger import get_logger
@@ -134,9 +134,7 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
         self.pending_cross_extreme = 0.0   # 确认期间的极值（金叉记录最高价，死叉记录最低价）
         self.current_cross_signal = "NONE" # 当前K线的交叉信号缓存（避免重复调用）
 
-        # 🎯 真实开仓均价持久化 (均价计算已移到父类 cta_template)
-        self._real_positions_file = f"data/real_positions_{self.strategy_name}_{self.symbol}.json"
-        self._load_real_positions()  # 启动时从文件加载到父类属性
+        self._load_real_positions()
 
         logger.info(f"✅ {self.strategy_name} 初始化完成 | 品种:{self.symbol} | EMA{self.ma_short}/{self.ma_long} | RSI{self.rsi_period}")
         logger.info(f"   风控-多单:止损{self.long_stop_loss_pct*100:.1f}%/止盈{self.long_take_profit_pct*100:.1f}% | 空单:止损{self.short_stop_loss_pct*100:.1f}%/止盈{self.short_take_profit_pct*100:.1f}%")
@@ -155,63 +153,7 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
         self.write_log("⏹️ MA-RSI组合策略已停止")
         self._save_real_positions()  # 停止时保存真实持仓
     
-    # ==================== 真实开仓均价持久化（均价计算在父类）====================
-
-    def _load_real_positions(self):
-        """从文件加载真实开仓均价到父类属性"""
-        import json
-        import os
-
-        try:
-            os.makedirs("data", exist_ok=True)
-
-            if os.path.exists(self._real_positions_file):
-                with open(self._real_positions_file, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                # 加载到父类属性
-                if "long" in data:
-                    self.long_pos = data["long"].get("volume", 0)
-                    self.long_price = data["long"].get("avg_price", 0.0)
-                    self.long_cost = data["long"].get("total_cost", 0.0)
-                if "short" in data:
-                    self.short_pos = data["short"].get("volume", 0)
-                    self.short_price = data["short"].get("avg_price", 0.0)
-                    self.short_cost = data["short"].get("total_cost", 0.0)
-                # 计算净持仓
-                self.pos = self.long_pos - self.short_pos
-                logger.info(f"[均价] 加载: 多{self.long_pos}手@{self.long_price:.2f} 空{self.short_pos}手@{self.short_price:.2f}")
-            else:
-                logger.debug(f"[均价] 文件不存在，初始化为空")
-        except Exception as e:
-            logger.error(f"❌ [真实均价] 加载失败: {e}")
-
-    def _save_real_positions(self):
-        """保存父类的真实开仓均价到文件"""
-        import json
-        import os
-
-        try:
-            os.makedirs("data", exist_ok=True)
-            data = {}
-            if self.long_pos > 0:
-                data["long"] = {
-                    "volume": self.long_pos,
-                    "avg_price": round(self.long_price, 4),
-                    "total_cost": round(self.long_cost, 4),
-                    "update_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                }
-            if self.short_pos > 0:
-                data["short"] = {
-                    "volume": self.short_pos,
-                    "avg_price": round(self.short_price, 4),
-                    "total_cost": round(self.short_cost, 4),
-                    "update_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                }
-            with open(self._real_positions_file, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=2, ensure_ascii=False)
-            logger.debug(f"[均价] 已保存: 多{self.long_pos}@{self.long_price:.2f} 空{self.short_pos}@{self.short_price:.2f}")
-        except Exception as e:
-            logger.error(f"❌ [真实均价] 保存失败: {e}")
+    # _load/_save_real_positions 已移至基类 ARBIGCtaTemplate
 
     def get_real_avg_price(self, direction: str) -> float:
         """获取真实开仓均价（从父类属性）
@@ -671,58 +613,36 @@ class MaRsiComboStrategy(ARBIGCtaTemplate):
         }
 
     def _query_real_position(self) -> Optional[dict]:
-        """🔧 实时查询真实持仓 - 返回完整持仓信息（包含今昨仓）"""
+        """通过 signal_sender 查询真实持仓（包含今昨仓）"""
         try:
-            import requests
+            position_data = self.signal_sender.get_positions()
+            if position_data.get("success") and position_data.get("data"):
+                info = position_data["data"]
+                net_position = info.get("net_position", 0)
+                self.cached_position = net_position
 
-            # 查询交易服务的持仓API
-            url = f"http://localhost:8001/real_trading/positions?symbol={self.symbol}"
-            response = requests.get(url, timeout=2.0)
+                logger.debug(
+                    f"[持仓] 多:{info.get('long_position', 0)}手"
+                    f"(今{info.get('long_today', 0)}昨{info.get('long_yesterday', 0)}) "
+                    f"空:{info.get('short_position', 0)}手"
+                    f"(今{info.get('short_today', 0)}昨{info.get('short_yesterday', 0)})"
+                )
 
-            if response.status_code == 200:
-                position_data = response.json()
-                if position_data.get("success") and position_data.get("data"):
-                    position_info = position_data["data"]
-
-                    # 获取持仓信息
-                    long_position = position_info.get("long_position", 0)
-                    short_position = position_info.get("short_position", 0)
-                    net_position = position_info.get("net_position", 0)
-                    long_price = position_info.get("long_price", 0)
-                    short_price = position_info.get("short_price", 0)
-                    current_price = position_info.get("current_price", 0)
-
-                    # 获取今昨仓信息
-                    long_today = position_info.get("long_today", 0)
-                    long_yesterday = position_info.get("long_yesterday", 0)
-                    short_today = position_info.get("short_today", 0)
-                    short_yesterday = position_info.get("short_yesterday", 0)
-
-                    logger.debug(f"[持仓] 多:{long_position}手(今{long_today}昨{long_yesterday}) 空:{short_position}手(今{short_today}昨{short_yesterday})")
-
-                    # 更新缓存（只保留净持仓）
-                    self.cached_position = net_position
-
-                    # 返回完整持仓信息（包含多空价格和今昨仓）
-                    return {
-                        "net_position": net_position,
-                        "long_position": long_position,
-                        "short_position": short_position,
-                        "long_price": long_price,
-                        "short_price": short_price,
-                        "current_price": current_price,
-                        "long_today": long_today,
-                        "long_yesterday": long_yesterday,
-                        "short_today": short_today,
-                        "short_yesterday": short_yesterday
-                    }
-                else:
-                    logger.warning(f"⚠️ [SHFE策略] 持仓查询返回空数据")
-                    return None
+                return {
+                    "net_position": net_position,
+                    "long_position": info.get("long_position", 0),
+                    "short_position": info.get("short_position", 0),
+                    "long_price": info.get("long_price", 0),
+                    "short_price": info.get("short_price", 0),
+                    "current_price": info.get("current_price", 0),
+                    "long_today": info.get("long_today", 0),
+                    "long_yesterday": info.get("long_yesterday", 0),
+                    "short_today": info.get("short_today", 0),
+                    "short_yesterday": info.get("short_yesterday", 0),
+                }
             else:
-                logger.warning(f"⚠️ [SHFE策略] 持仓查询失败: HTTP {response.status_code}")
+                logger.warning("⚠️ [SHFE策略] 持仓查询返回空数据")
                 return None
-
         except Exception as e:
             logger.error(f"⚠️ [SHFE策略] 持仓查询异常: {e}")
             return None

@@ -21,7 +21,7 @@ from pathlib import Path
 # 添加项目根目录到路径
 sys.path.append(os.path.join(os.path.dirname(__file__), '../../..'))
 
-from core.types import TickData, BarData, OrderData, TradeData
+from vnpy.trader.object import TickData, BarData, OrderData, TradeData
 from utils.logger import get_logger
 from .cta_template import ARBIGCtaTemplate, StrategyStatus
 from .signal_sender import SignalSender
@@ -558,24 +558,57 @@ class StrategyEngine:
 
         logger.info("🔧 数据处理线程结束")
 
+    def _pause_all_strategies(self) -> None:
+        """Trading Service 断连时暂停所有运行中的策略"""
+        paused_count = 0
+        for name in list(self.active_strategies):
+            strategy = self.strategies.get(name)
+            if strategy and strategy.status == StrategyStatus.RUNNING:
+                strategy.pause()
+                paused_count += 1
+        if paused_count > 0:
+            logger.warning(f"Trading Service 断连，已暂停 {paused_count} 个策略")
+
+    def _align_and_resume_strategies(self) -> None:
+        """Trading Service 重连后：查持仓对齐 → 恢复暂停的策略"""
+        try:
+            remote = self.signal_sender.get_positions()
+            if remote.get("success") is False:
+                logger.error("重连后持仓查询失败，策略保持暂停")
+                return
+
+            logger.info(f"重连后持仓对齐完成: {remote}")
+        except Exception as e:
+            logger.error(f"重连后持仓对齐异常: {e}，策略保持暂停")
+            return
+
+        resumed_count = 0
+        for name in list(self.active_strategies):
+            strategy = self.strategies.get(name)
+            if strategy and strategy.status == StrategyStatus.PAUSED:
+                strategy.resume()
+                resumed_count += 1
+        if resumed_count > 0:
+            logger.info(f"持仓对齐完成，已恢复 {resumed_count} 个策略")
+
     def _websocket_loop(self) -> None:
         """WebSocket 连接循环"""
         logger.info("🔌 WebSocket 连接线程启动")
 
         while self.running:
             try:
-                # 创建新的事件循环
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
-
-                # 运行 WebSocket 连接
                 loop.run_until_complete(self._websocket_connect())
 
             except Exception as e:
                 logger.error(f"🔌 WebSocket 连接异常: {e}")
-                self.ws_connected = False
 
-            # 断开后等待重连
+            # 断连后立即暂停策略
+            if self.ws_connected:
+                self.ws_connected = False
+            self._pause_all_strategies()
+
             if self.running:
                 logger.info("🔌 WebSocket 断开，5秒后重连...")
                 time.sleep(5)
@@ -591,7 +624,9 @@ class StrategyEngine:
                 self.ws_connected = True
                 logger.info("🔌 WebSocket 连接成功！")
 
-                # 接收消息循环
+                # 重连成功后对齐持仓并恢复暂停的策略
+                self._align_and_resume_strategies()
+
                 while self.running:
                     try:
                         message = await asyncio.wait_for(ws.recv(), timeout=30.0)
@@ -599,7 +634,6 @@ class StrategyEngine:
                         self._handle_ws_message(data)
 
                     except asyncio.TimeoutError:
-                        # 发送心跳
                         await ws.send(json.dumps({"type": "ping"}))
 
         except websockets.exceptions.ConnectionClosed as e:
@@ -711,7 +745,8 @@ class StrategyEngine:
 
     def _create_order_data(self, order_info: Dict[str, Any]) -> OrderData:
         """创建 OrderData 对象"""
-        from core.types import OrderData, Direction, Status, Exchange
+        from vnpy.trader.object import OrderData
+        from vnpy.trader.constant import Direction, Status, Exchange
 
         # 解析方向
         direction_str = str(order_info.get('direction', '')).upper()
@@ -747,7 +782,8 @@ class StrategyEngine:
 
     def _create_trade_data(self, trade_info: Dict[str, Any]) -> TradeData:
         """创建 TradeData 对象"""
-        from core.types import TradeData, Direction, Exchange, Offset
+        from vnpy.trader.object import TradeData
+        from vnpy.trader.constant import Direction, Exchange, Offset
 
         # 解析方向
         direction_str = str(trade_info.get('direction', '')).upper()
@@ -841,7 +877,7 @@ class StrategyEngine:
     def _create_tick_data(self, tick_info: dict) -> TickData:
         """创建TickData对象"""
         try:
-            from core.types import TickData
+            from vnpy.trader.object import TickData
             from vnpy.trader.constant import Exchange
 
             # 🔧 创建TickData对象

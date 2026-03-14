@@ -7,23 +7,17 @@ from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 from enum import Enum
+import json
 import sys
 import os
 
-# 添加项目根目录到路径
-sys.path.append(os.path.join(os.path.dirname(__file__), '../../..'))
-
-# 确保能找到项目根目录
-import sys
-import os
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from core.types import (
-    TickData, BarData, OrderData, TradeData, SignalData,
-    Direction, OrderType, Status
-)
+from vnpy.trader.object import TickData, BarData, OrderData, TradeData
+from vnpy.trader.constant import Direction
+from .signal_sender import SignalData
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -32,6 +26,7 @@ class StrategyStatus(Enum):
     """策略状态"""
     INIT = "init"           # 初始化
     RUNNING = "running"     # 运行中
+    PAUSED = "paused"       # 已暂停（Trading Service 断连时自动触发，保留策略状态）
     STOPPED = "stopped"     # 已停止
     ERROR = "error"         # 错误状态
 
@@ -102,6 +97,9 @@ class ARBIGCtaTemplate(ABC):
         self.total_pnl = 0.0
         self.max_drawdown = 0.0
         
+        # 持仓持久化文件
+        self._real_positions_file = f"data/real_positions_{strategy_name}_{symbol}.json"
+
         # 初始化策略参数
         self.update_setting(setting)
         
@@ -156,8 +154,8 @@ class ARBIGCtaTemplate(ABC):
     
     def stop(self) -> None:
         """停止策略"""
-        if self.status != StrategyStatus.RUNNING:
-            logger.warning(f"策略 {self.strategy_name} 未在运行")
+        if self.status not in [StrategyStatus.RUNNING, StrategyStatus.PAUSED]:
+            logger.warning(f"策略 {self.strategy_name} 未在运行或暂停状态")
             return
         
         try:
@@ -169,6 +167,24 @@ class ARBIGCtaTemplate(ABC):
         except Exception as e:
             self.status = StrategyStatus.ERROR
             logger.error(f"策略停止失败 {self.strategy_name}: {e}")
+
+    def pause(self) -> None:
+        """暂停策略（Trading Service 断连时由引擎调用，冻结信号和下单，保留内部状态）"""
+        if self.status != StrategyStatus.RUNNING:
+            return
+
+        self.trading = False
+        self.status = StrategyStatus.PAUSED
+        logger.info(f"策略已暂停: {self.strategy_name}")
+
+    def resume(self) -> None:
+        """恢复策略（Trading Service 重连且持仓对齐后由引擎调用）"""
+        if self.status != StrategyStatus.PAUSED:
+            return
+
+        self.trading = True
+        self.status = StrategyStatus.RUNNING
+        logger.info(f"策略已恢复: {self.strategy_name}")
     
     # ==================== 标准交易方法 (vnpy风格) ====================
     
@@ -284,6 +300,9 @@ class ARBIGCtaTemplate(ABC):
         """
         发送订单信号到交易服务
 
+        架构决策 6：开仓(BUY/SHORT)前必须查询远程持仓，校验通过才发信号；
+        平仓(SELL/COVER)不阻塞，优先减少风险敞口。
+
         Args:
             direction: 交易方向
             action: 交易动作
@@ -299,19 +318,32 @@ class ARBIGCtaTemplate(ABC):
             logger.warning(f"策略 {self.strategy_name} 未激活或禁止交易")
             return ""
 
-        # 创建信号数据
+        # 架构决策 6：开仓前强制查询远程持仓；平仓（SELL/COVER）不阻塞，优先减少风险敞口
+        is_open = action in ("BUY", "SHORT")
+        if is_open:
+            try:
+                remote_positions = self.signal_sender.get_positions()
+                if remote_positions.get("success") is False:
+                    logger.error(
+                        f"[{self.strategy_name}] 开仓前持仓查询失败，拒绝发送信号: "
+                        f"{remote_positions.get('message', '未知错误')}"
+                    )
+                    return ""
+            except Exception as e:
+                logger.error(f"[{self.strategy_name}] 开仓前持仓查询异常，拒绝发送信号: {e}")
+                return ""
+
         signal = SignalData(
             strategy_name=self.strategy_name,
             symbol=self.symbol,
             direction=direction,
             action=action,
             volume=volume,
-            price=price if price > 0 else None,  # 0价格表示市价单
+            price=price if price > 0 else None,
             signal_type="TRADE",
             timestamp=datetime.now()
         )
 
-        # 通过信号发送器发送到交易服务（GFD激进价格）
         order_id = self.signal_sender.send_signal(signal, time_condition)
 
         logger.info(f"发送交易信号: {self.strategy_name} {action} {volume}@{price} (time_condition={time_condition})")
@@ -520,3 +552,71 @@ class ARBIGCtaTemplate(ABC):
             "parameters": self.get_parameters(),
             "variables": self.get_variables()
         }
+
+    # ==================== 交易时间判断（通用） ====================
+
+    @staticmethod
+    def _is_trading_time() -> bool:
+        """SHFE 交易时间判断（日盘 + 夜盘）"""
+        now = datetime.now()
+        t = now.hour * 100 + now.minute
+        if 900 <= t <= 1015:
+            return True
+        if 1030 <= t <= 1130:
+            return True
+        if 1330 <= t <= 1500:
+            return True
+        if 2100 <= t <= 2359:
+            return True
+        if 0 <= t <= 230:
+            return True
+        return False
+
+    # ==================== 持仓持久化（通用） ====================
+
+    def _load_real_positions(self):
+        """从文件恢复持仓均价（重启后保持状态连续）"""
+        try:
+            os.makedirs("data", exist_ok=True)
+            if os.path.exists(self._real_positions_file):
+                with open(self._real_positions_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if "long" in data:
+                    self.long_pos = data["long"].get("volume", 0)
+                    self.long_price = data["long"].get("avg_price", 0.0)
+                    self.long_cost = data["long"].get("total_cost", 0.0)
+                if "short" in data:
+                    self.short_pos = data["short"].get("volume", 0)
+                    self.short_price = data["short"].get("avg_price", 0.0)
+                    self.short_cost = data["short"].get("total_cost", 0.0)
+                self.pos = self.long_pos - self.short_pos
+                logger.info(
+                    f"[均价] 加载: 多{self.long_pos}手@{self.long_price:.2f} "
+                    f"空{self.short_pos}手@{self.short_price:.2f}"
+                )
+        except Exception as e:
+            logger.error(f"[真实均价] 加载失败: {e}")
+
+    def _save_real_positions(self):
+        """持久化持仓均价到文件"""
+        try:
+            os.makedirs("data", exist_ok=True)
+            data = {}
+            if self.long_pos > 0:
+                data["long"] = {
+                    "volume": self.long_pos,
+                    "avg_price": round(self.long_price, 4),
+                    "total_cost": round(self.long_cost, 4),
+                    "update_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                }
+            if self.short_pos > 0:
+                data["short"] = {
+                    "volume": self.short_pos,
+                    "avg_price": round(self.short_price, 4),
+                    "total_cost": round(self.short_cost, 4),
+                    "update_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                }
+            with open(self._real_positions_file, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"[真实均价] 保存失败: {e}")

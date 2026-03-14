@@ -20,7 +20,7 @@ class ARBIGTester:
         self.services = {
             "trading_service": "http://localhost:8001",
             "strategy_service": "http://localhost:8002", 
-            "web_admin_service": "http://localhost:80"
+            "web_admin_service": "http://localhost:8000"
         }
         self.test_results = {}
         
@@ -180,59 +180,10 @@ class ARBIGTester:
             
         return results
     
-    def test_database_connection(self) -> Dict[str, Any]:
-        """测试数据库连接"""
-        result = {"status": "unknown", "tables": []}
-        
-        try:
-            import pymysql
-            
-            # 使用pymysql进行数据库连接测试
-            try:
-                # 尝试连接数据库（使用默认配置）
-                conn = pymysql.connect(
-                    host='localhost',
-                    user='root',
-                    password='',  # 根据实际配置调整
-                    database='arbig_trading',  # 使用正确的数据库名
-                    charset='utf8mb4'
-                )
-                cursor = conn.cursor()
-                
-                # 测试连接
-                cursor.execute("SELECT 1")
-                cursor.fetchone()
-                result["status"] = "connected"
-                
-                # 获取表列表
-                cursor.execute("SHOW TABLES")
-                tables = cursor.fetchall()
-                result["tables"] = [table[0] for table in tables]
-                result["table_count"] = len(result["tables"])
-                
-                cursor.close()
-                conn.close()
-                
-            except Exception as e:
-                result["status"] = "error"
-                result["error"] = str(e)
-                
-        except ImportError as e:
-            # 如果pymysql不可用，尝试使用aiomysql（但这需要异步）
-            try:
-                import aiomysql
-                result = {"status": "available", "note": "aiomysql可用，但需要异步测试"}
-            except ImportError:
-                result = {"status": "import_error", "error": "No MySQL connector available"}
-            
-        return result
-    
     def test_config_files(self) -> Dict[str, Any]:
         """测试配置文件"""
         config_files = [
             "config/config.yaml",
-            "config/database.yaml", 
-            "config/trading.yaml",
             "requirements.txt"
         ]
         
@@ -309,18 +260,8 @@ class ARBIGTester:
                     status_emoji = "✅" if result["status"] == 200 else "❌"
                     print(f"{status_emoji} {endpoint}: HTTP {result['status']}")
         
-        # 5. 数据库连接测试
-        print("\n🗄️  5. 数据库连接测试")
-        db_result = self.test_database_connection()
-        self.test_results["database"] = db_result
-        
-        if db_result["status"] == "connected":
-            print(f"✅ 数据库连接成功，发现 {db_result['table_count']} 个表")
-        else:
-            print(f"❌ 数据库连接失败: {db_result.get('error', 'unknown error')}")
-        
-        # 6. 配置文件检查
-        print("\n⚙️  6. 配置文件检查")
+        # 5. 配置文件检查
+        print("\n⚙️  5. 配置文件检查")
         config_results = self.test_config_files()
         self.test_results["config_files"] = config_results
         
@@ -350,11 +291,7 @@ class ARBIGTester:
                         if result["status"] == 200:
                             passed_tests += 1
         
-        # 数据库和配置文件
-        total_tests += 1
-        if self.test_results["database"]["status"] == "connected":
-            passed_tests += 1
-            
+        # 配置文件
         for result in self.test_results["config_files"].values():
             total_tests += 1
             if result["status"] == "exists":
@@ -379,7 +316,9 @@ def main():
     
     # 保存测试结果
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    results_file = f"/root/ARBIG/logs/test_results_{timestamp}.json"
+    log_dir = os.path.join(os.path.dirname(__file__), '..', '..', 'logs')
+    os.makedirs(log_dir, exist_ok=True)
+    results_file = os.path.join(log_dir, f"test_results_{timestamp}.json")
     
     try:
         with open(results_file, 'w', encoding='utf-8') as f:

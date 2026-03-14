@@ -1,54 +1,50 @@
-# CTP环境配置指南
+# CTP 安装与排障指南
 
 ## 概述
 
-本文档说明如何在ARBIG项目中配置和使用CTP环境。
+本文档只关注当前版本 ARBIG 中真正还有效的两件事：
 
-## ⚠️ 重要提醒
+1. 如何准备 `vnpy` / `vnpy_ctp`
+2. 如何让 Trading Service 正常读取 `config/ctp_sim.json` 并连接 CTP
 
-**vnpy-ctp安装问题**：由于NumPy版本兼容性问题，预编译的vnpy-ctp包通常无法正常工作。**强烈建议直接跳转到文档末尾的"vnpy-ctp 安装问题解决方案"部分，使用从源码编译的方法安装vnpy-ctp**。
+旧版 `core/ctp/`、`libs/ctp/`、`config/ctp.json`、`test_ctp.py` 这类结构已经不再是当前项目的主路径，以下内容均以当前服务实现为准。
 
-## 文件结构
+## 当前实现位置
 
-```
-ARBIG/
-├── libs/
-│   └── ctp/
-│       ├── thosttraderapi_se.so    # CTP交易API库
-│       └── thostmduserapi_se.so    # CTP行情API库
-├── config/
-│   └── ctp.json                   # CTP环境配置文件
-├── core/
-│   └── ctp/
-│       ├── __init__.py
-│       ├── config.py              # 配置管理类
-│       └── gateway.py             # CTP网关
-└── test_ctp.py                   # 测试脚本
-```
+当前项目里，CTP 相关逻辑主要集中在以下位置：
 
-## 配置步骤
+- `services/trading_service/core/ctp_integration.py`
+- `services/trading_service/api/real_trading.py`
+- `config/ctp_sim.json`
 
-### 1. 放置API库文件
+其中：
 
-将CTP API库文件放到正确位置：
+- Trading Service 负责初始化 `vnpy_ctp.CtpGateway`
+- Web Admin 和 Strategy Service 都不直接管理 CTP 连接
+- CTP 配置文件默认从 `config/ctp_sim.json` 读取
+
+## 快速检查
+
+在启动系统前，建议先确认以下三项：
 
 ```bash
-# 创建目录
-mkdir -p libs/ctp
-
-# 将API库文件复制到目录中
-cp thosttraderapi_se.so libs/ctp/
-cp thostmduserapi_se.so libs/ctp/
+python -c "import vnpy; print('vnpy ok')"
+python -c "from vnpy_ctp import CtpGateway; print('vnpy_ctp ok')"
+python -c "from pathlib import Path; print(Path('config/ctp_sim.json').exists())"
 ```
 
-### 2. 配置连接参数
+如果这三项里任何一项失败，先不要启动服务，先解决环境问题。
 
-编辑 `config/ctp.json` 文件，设置正确的连接参数：
+## 配置文件
+
+当前使用的配置文件是 `config/ctp_sim.json`。
+
+示例：
 
 ```json
 {
-    "用户名": "242407",
-    "密码": "1234%^&*QWE",
+    "用户名": "your_username",
+    "密码": "your_password",
     "经纪商代码": "9999",
     "交易服务器": "182.254.243.31:30001",
     "行情服务器": "182.254.243.31:30011",
@@ -58,156 +54,37 @@ cp thostmduserapi_se.so libs/ctp/
 }
 ```
 
-### 3. 验证配置
+说明：
 
-运行测试脚本验证配置是否正确：
+- 实际地址请以 SimNow 或券商最新信息为准
+- `config/ctp_sim.json` 缺失时，Trading Service 会直接报配置文件不存在
 
-```bash
-python test_ctp.py
-```
+## 推荐启动验证路径
 
-## 使用方法
+建议按下面顺序验证，而不是一开始就启动整套系统：
 
-### 基本使用
+1. 先确认 Python 环境能导入 `vnpy` 和 `vnpy_ctp`
+2. 再确认 `config/ctp_sim.json` 存在且字段完整
+3. 再启动 `services/trading_service/main.py`
+4. 最后通过接口检查连接状态
 
-```python
-from core.ctp import CtpGateway, CtpConfig
-
-# 创建配置对象
-config = CtpConfig()
-
-# 创建网关
-gateway = CtpGateway(config)
-
-# 连接CTP环境
-if gateway.connect():
-    print("连接成功")
-    
-    # 订阅合约
-    gateway.subscribe(["AU2406", "AU2412"])
-    
-    # 获取行情
-    tick = gateway.get_tick("AU2406")
-    if tick:
-        print(f"最新价: {tick.last_price}")
-    
-    # 发送订单
-    order_id = gateway.send_order(
-        symbol="AU2406",
-        direction=Direction.LONG,
-        offset=Offset.OPEN,
-        volume=1,
-        price=500.0
-    )
-    
-    # 断开连接
-    gateway.disconnect()
-```
-
-### 在策略中使用
-
-```python
-from core.ctp import CtpGateway
-from core.strategy_base import StrategyBase
-
-class MyStrategy(StrategyBase):
-    def __init__(self):
-        super().__init__()
-        self.ctp_gateway = CtpGateway()
-        
-    def on_init(self):
-        """策略初始化"""
-        # 连接CTP环境
-        if self.ctp_gateway.connect():
-            # 订阅合约
-            self.ctp_gateway.subscribe(["AU2406"])
-            
-            # 设置回调函数
-            self.ctp_gateway.on_tick = self.on_tick
-            self.ctp_gateway.on_trade = self.on_trade
-            
-    def on_tick(self, tick):
-        """行情数据回调"""
-        # 处理行情数据
-        pass
-        
-    def on_trade(self, trade):
-        """成交数据回调"""
-        # 处理成交数据
-        pass
-```
-
-## 注意事项
-
-### 1. 库文件权限
-
-确保API库文件有执行权限：
+示例：
 
 ```bash
-chmod +x libs/ctp/*.so
+python services/trading_service/main.py --port 8001
+curl http://localhost:8001/real_trading/status
+curl http://localhost:8001/real_trading/test_connection
 ```
 
-### 2. 网络连接
-
-确保服务器能够访问CTP服务器：
-- 交易服务器：182.254.243.31:30001
-- 行情服务器：182.254.243.31:30011
-
-注意：CTP SimNow环境的服务器地址会定期更新，请以最新的官方地址为准。
-
-### 3. 账户信息
-
-使用正确的账户信息：
-- 用户名：242407
-- 密码：1234%^&*QWE
-- 经纪商代码：9999
-
-### 4. 交易时间
-
-CTP环境的交易时间：
-- 上午：09:00-11:30
-- 下午：13:30-15:00
-- 夜盘：21:00-02:30（次日）
-
-## 故障排除
-
-### 1. 连接失败
-
-- 检查网络连接
-- 验证服务器地址和端口
-- 确认账户信息正确
-
-### 2. 库文件加载失败
-
-- 检查库文件是否存在
-- 确认文件权限
-- 验证库文件版本兼容性
-
-### 3. 行情数据异常
-
-- 检查合约代码是否正确
-- 确认是否在交易时间内
-- 验证订阅是否成功
-
-## 开发建议
-
-1. **测试优先**：在实盘交易前，充分测试CTP环境
-2. **错误处理**：添加完善的错误处理机制
-3. **日志记录**：记录关键操作和异常情况
-4. **风控措施**：在CTP环境中测试风控逻辑
-
-## 相关文档
-
-- [CTP API文档](http://www.sfit.com.cn/)
-- [SimNow仿真环境](http://www.simnow.com.cn/)
-- [vnpy-ctp文档](https://www.vnpy.com/docs/cn/gateway/ctp.html)
+如果 Trading Service 能起来，但 `status` 里显示未连接，通常说明问题在 CTP 环境本身，而不是 Web 或 Strategy Service。
 
 ## vnpy-ctp 安装问题解决方案
 
 ### 问题描述
 
 在安装 `vnpy-ctp` 时，可能会遇到以下错误：
-```
+
+```text
 ImportError: /tmp/pip-install-xxxx/vnpy_ctp/api/libthostmduserapi_se.so: cannot open shared object file: No such file or directory
 ```
 
@@ -217,37 +94,42 @@ ImportError: /tmp/pip-install-xxxx/vnpy_ctp/api/libthostmduserapi_se.so: cannot 
 
 1. **NumPy版本冲突**：vnpy 4.x 要求 numpy>=2.2.3，但 CTP 库通常需要较老的 NumPy 版本
 2. **预编译包问题**：wheel 包在编译时硬编码了临时目录路径
-3. **环境兼容性**：不同 Python 环境（Anaconda vs 标准虚拟环境）的兼容性问题
+3. **环境兼容性**：不同 Python 环境之间可能存在编译和链接差异
 
 ### 解决方案
 
-#### 方法1：从源码重新编译（强烈推荐）⭐
+#### 方法1：从源码重新编译（强烈推荐）
 
 这是经过实际验证的最有效解决方案：
 
 1. **卸载现有版本**：
+
    ```bash
    pip uninstall vnpy-ctp -y
    ```
 
 2. **克隆源码**：
+
    ```bash
-   cd /root  # 或其他合适的目录
+   cd /tmp  # 或其他合适的目录
    git clone https://github.com/vnpy/vnpy_ctp.git
    cd vnpy_ctp
    ```
 
 3. **安装构建依赖**：
+
    ```bash
    pip install meson-python ninja pybind11
    ```
 
 4. **从源码编译安装**：
+
    ```bash
    pip install .
    ```
 
 5. **验证安装**：
+
    ```bash
    python -c "from vnpy_ctp import CtpGateway; print('vnpy-ctp 安装成功！')"
    ```
@@ -257,11 +139,13 @@ ImportError: /tmp/pip-install-xxxx/vnpy_ctp/api/libthostmduserapi_se.so: cannot 
 如果方法1不可行，可以尝试软链接：
 
 1. **查找vnpy-ctp安装目录**：
+
    ```bash
    python -c "import vnpy_ctp; print(vnpy_ctp.__file__)"
    ```
 
 2. **创建软链接**：
+
    ```bash
    # 找到实际的库文件路径，然后创建软链接到错误信息中的路径
    ln -sf /path/to/actual/libthostmduserapi_se.so /tmp/pip-install-xxxx/vnpy_ctp/api/libthostmduserapi_se.so
@@ -274,21 +158,21 @@ ImportError: /tmp/pip-install-xxxx/vnpy_ctp/api/libthostmduserapi_se.so: cannot 
 export LD_LIBRARY_PATH=/path/to/vnpy_ctp/api:$LD_LIBRARY_PATH
 ```
 
-### 完整测试流程
+### 安装后验证
 
-安装完成后，运行完整的CTP连接测试：
+安装完成后，至少做两步验证：
 
 ```bash
-# 在ARBIG项目根目录下
-python tests/ctp_connection_test.py
+python -c "from vnpy_ctp import CtpGateway; print('vnpy-ctp 安装成功！')"
+python services/trading_service/main.py --port 8001
 ```
 
-成功的输出应该包括：
-- ✅ 交易服务器连接成功
-- ✅ 交易服务器登录成功
-- ✅ 行情服务器连接成功
-- ✅ 行情服务器登录成功
-- ✅ 成功接收行情数据
+然后再访问：
+
+```bash
+curl http://localhost:8001/real_trading/status
+curl http://localhost:8001/real_trading/test_connection
+```
 
 ### 故障排除指南
 
@@ -317,7 +201,7 @@ pip install --upgrade pip setuptools wheel
 # 检查库文件是否存在
 find /path/to/python/site-packages -name "*thostmduserapi*"
 
-# 检查库文件依赖
+# Linux 下检查库文件依赖
 ldd /path/to/vnpy_ctp/api/vnctpmd*.so
 ```
 
@@ -331,14 +215,14 @@ chmod +x /path/to/vnpy_ctp/api/*.so
 
 ### 环境要求
 
-- **Python**: 3.8+ (推荐 3.11)
-- **操作系统**: Linux (推荐 Ubuntu 20.04+/CentOS 8+)
+- **Python**: 以当前 `vnpy` / `vnpy_ctp` 兼容性为准
+- **操作系统**: Linux 与 macOS 都可尝试，但以本机编译结果为准
 - **内存**: 至少 4GB RAM
 - **网络**: 能够访问CTP服务器
 
 ### 推荐环境配置
 
-#### Anaconda环境（推荐）
+#### 方案 A：conda 环境
 
 ```bash
 # 创建专用环境
@@ -348,10 +232,10 @@ conda activate vnpy
 # 安装基础依赖
 pip install vnpy
 
-# 从源码安装vnpy-ctp（按照方法1）
+# 从源码安装 vnpy-ctp（按照方法1）
 ```
 
-#### 标准虚拟环境
+#### 方案 B：标准虚拟环境
 
 ```bash
 # 创建虚拟环境
@@ -364,15 +248,15 @@ pip install --upgrade pip
 # 安装依赖
 pip install vnpy
 
-# 从源码安装vnpy-ctp（按照方法1）
+# 从源码安装 vnpy-ctp（按照方法1）
 ```
 
 ### 重要提醒
 
-1. **必须从源码编译**：预编译的wheel包在大多数环境下都会有兼容性问题
-2. **NumPy版本**：让pip自动处理NumPy版本依赖，不要手动指定版本
-3. **测试先行**：安装完成后务必运行完整的连接测试
-4. **环境隔离**：使用独立的Python环境避免依赖冲突
+1. 优先用独立环境，不要直接污染系统 Python
+2. 如果 `pip install vnpy-ctp` 失败，优先尝试源码安装
+3. 先验证 `vnpy_ctp` 可导入，再启动 Trading Service
+4. 非交易时间连接失败不一定代表安装失败
 
 ### 参考链接
 

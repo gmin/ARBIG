@@ -33,24 +33,21 @@ class ARBIGTestRunner:
             'strategy': {
                 'description': '策略相关测试',
                 'tests': [
+                    'strategy/test_strategy_offline.py',
                     'strategy/test_strategy_management.py'
                 ]
             },
             'integration': {
                 'description': '集成测试',
                 'tests': [
-                    # 待添加
+                    'integration/test_gfd_default.py'
                 ]
             },
             'legacy': {
-                'description': '遗留测试',
+                'description': '遗留测试（需CTP环境）',
                 'tests': [
                     'legacy/ctp_connection_test.py',
-                    'legacy/test_account_query.py',
-                    'legacy/test_frontend.py',
-                    'legacy/test_history_query.py',
-                    'legacy/test_order_placement.py',
-                    'legacy/test_web_trading.py'
+                    'legacy/test_order_placement.py'
                 ]
             }
         }

@@ -231,40 +231,30 @@ def get_adapted_strategies():
 
         # 策略文件映射 - 定义文件名到策略类名和显示名的映射
         strategy_mappings = {
-            "LargeOrderFollowingStrategy.py": {
-                "class_name": "LargeOrderFollowingStrategy",
-                "display_name": "LargeOrderFollowing",
-                "description": "大单跟踪策略"
-            },
-            "VWAPDeviationReversionStrategy.py": {
-                "class_name": "VWAPDeviationReversionStrategy",
-                "display_name": "VWAPDeviationReversion",
-                "description": "VWAP偏离回归策略"
-            },
-            "MaCrossoverTrendStrategy.py": {
-                "class_name": "MaCrossoverTrendStrategy",
-                "display_name": "MaCrossoverTrend",
-                "description": "均线交叉趋势策略"
-            },
-            "SystemIntegrationTestStrategy.py": {
-                "class_name": "SystemIntegrationTestStrategy",
-                "display_name": "SystemIntegrationTest",
-                "description": "系统集成测试策略"
-            },
-            "ComponentFrameworkStrategy.py": {
-                "class_name": "ComponentFrameworkStrategy",
-                "display_name": "ComponentFramework",
-                "description": "组件框架策略"
-            },
             "MaRsiComboStrategy.py": {
                 "class_name": "MaRsiComboStrategy",
                 "display_name": "MaRsiCombo",
                 "description": "MA-RSI组合策略"
             },
+            "MeanReversionStrategy.py": {
+                "class_name": "MeanReversionStrategy",
+                "display_name": "MeanReversion",
+                "description": "均值回归策略"
+            },
+            "BreakoutStrategy.py": {
+                "class_name": "BreakoutStrategy",
+                "display_name": "Breakout",
+                "description": "布林带突破策略"
+            },
             "MultiModeAdaptiveStrategy.py": {
                 "class_name": "MultiModeAdaptiveStrategy",
                 "display_name": "MultiModeAdaptive",
                 "description": "多模式自适应策略"
+            },
+            "SystemIntegrationTestStrategy.py": {
+                "class_name": "SystemIntegrationTestStrategy",
+                "display_name": "SystemIntegrationTest",
+                "description": "系统集成测试策略"
             }
         }
 

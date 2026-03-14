@@ -4,7 +4,7 @@
 """
 
 import requests
-import json
+from dataclasses import dataclass
 from typing import Dict, Any, Optional
 from datetime import datetime
 import sys
@@ -13,8 +13,29 @@ import os
 # 添加项目根目录到路径
 sys.path.append(os.path.join(os.path.dirname(__file__), '../../..'))
 
-from core.types import SignalData
+from vnpy.trader.constant import Direction
 from utils.logger import get_logger
+
+
+@dataclass
+class SignalData:
+    """策略信号数据"""
+    strategy_name: str
+    symbol: str
+    direction: Direction
+    action: str  # OPEN, CLOSE, CANCEL
+    volume: float
+    price: Optional[float] = None
+    signal_type: str = "TRADE"  # TRADE, RISK, INFO
+    confidence: float = 1.0
+    timestamp: datetime = None
+    metadata: Dict[str, Any] = None
+
+    def __post_init__(self):
+        if self.timestamp is None:
+            self.timestamp = datetime.now()
+        if self.metadata is None:
+            self.metadata = {}
 
 logger = get_logger(__name__)
 

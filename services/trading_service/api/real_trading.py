@@ -9,7 +9,6 @@ from datetime import datetime
 import uuid
 
 from services.trading_service.core.ctp_integration import get_ctp_integration
-from shared.database.connection import get_db_manager
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -277,28 +276,6 @@ async def send_real_order(request: Dict[str, Any]):
         if not order_id:
             raise HTTPException(status_code=500, detail="订单发送失败")
         
-        # 记录到数据库
-        try:
-            db_manager = get_db_manager()
-            await db_manager.execute_insert("""
-                INSERT INTO orders 
-                (order_id, account_id, symbol, direction, volume, price, order_type, status, order_time, create_time)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """, (
-                order_id,
-                "CTP_ACCOUNT",  # 实际应该从CTP获取
-                symbol,
-                direction.lower(),
-                volume,
-                price,
-                order_type.lower(),
-                "pending",
-                datetime.now(),
-                datetime.now()
-            ))
-        except Exception as db_e:
-            logger.warning(f"订单数据库记录失败: {db_e}")
-        
         logger.info(f"✅ 真实订单发送成功: {symbol} {direction} {volume}@{price}")
         
         return {
@@ -332,17 +309,6 @@ async def cancel_real_order(order_id: str):
         if not success:
             raise HTTPException(status_code=500, detail="订单撤销失败")
         
-        # 更新数据库状态
-        try:
-            db_manager = get_db_manager()
-            await db_manager.execute_update("""
-                UPDATE orders 
-                SET status = 'cancelled', update_time = %s
-                WHERE order_id = %s
-            """, (datetime.now(), order_id))
-        except Exception as db_e:
-            logger.warning(f"订单状态更新失败: {db_e}")
-        
         logger.info(f"✅ 订单撤销成功: {order_id}")
         
         return {
@@ -359,12 +325,6 @@ async def cancel_real_order(order_id: str):
         raise HTTPException(status_code=500, detail=f"撤销真实订单失败: {str(e)}")
 
 
-# 平仓辅助函数已删除，现在前端控制平仓逻辑，后端只提供simple_close接口
-
-
-# close_position接口已删除，现在使用simple_close接口
-
-# close_position接口已删除，现在使用simple_close接口
 
 
 @router.post("/simple_close")
@@ -535,36 +495,6 @@ async def handle_strategy_signal(request: Dict[str, Any]):
     except Exception as e:
         logger.error(f"处理策略信号失败: {e}")
         raise HTTPException(status_code=500, detail=f"处理策略信号失败: {str(e)}")
-
-@router.get("/status")
-async def get_trading_status():
-    """获取交易服务状态"""
-    try:
-        ctp = get_ctp_integration()
-
-        # 检查CTP连接状态
-        ctp_status = "connected" if ctp and hasattr(ctp, 'is_connected') and ctp.is_connected() else "disconnected"
-
-        return {
-            "success": True,
-            "message": "交易服务运行正常",
-            "data": {
-                "service": "交易服务",
-                "status": "running",
-                "ctp_status": ctp_status,
-                "timestamp": datetime.now().isoformat()
-            },
-            "timestamp": datetime.now().isoformat()
-        }
-
-    except Exception as e:
-        logger.error(f"获取交易状态失败: {e}")
-        return {
-            "success": False,
-            "message": f"获取交易状态失败: {str(e)}",
-            "timestamp": datetime.now().isoformat()
-        }
-
 
 @router.post("/test_connection")
 async def test_ctp_connection():

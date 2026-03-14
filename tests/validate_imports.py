@@ -83,8 +83,8 @@ class ImportValidator:
         
         # 项目内部模块
         project_modules = [
-            'core', 'utils', 'shared', 'services',
-            'core.types', 'utils.logger', 'shared.database'
+            'utils', 'shared', 'services',
+            'utils.logger', 'utils.service_client', 'utils.trading_logger'
         ]
         
         validation_results = {}

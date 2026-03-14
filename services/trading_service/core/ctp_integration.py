@@ -18,8 +18,7 @@ from vnpy.trader.constant import Exchange, Direction, OrderType, Offset
 from vnpy.trader.event import EVENT_CONTRACT, EVENT_TICK, EVENT_ORDER, EVENT_TRADE, EVENT_ACCOUNT, EVENT_POSITION
 
 from utils.logger import get_logger
-from config.config import get_main_contract_symbol, get_auto_subscribe_contracts
-from shared.utils.trading_logger import get_trading_logger
+from config.config import get_main_contract_symbol
 
 logger = get_logger(__name__)
 
@@ -57,10 +56,7 @@ class CtpIntegration:
         
         # 运行状态
         self.running = False
-
-        # 交易日志管理器
-        self.trading_logger = get_trading_logger()
-        self.current_strategy = None  # 当前运行的策略名称
+        self.current_strategy = None
         
     async def initialize(self) -> bool:
         """初始化CTP连接"""
@@ -447,12 +443,21 @@ class CtpIntegration:
         contract = event.data
         self.contracts[contract.symbol] = contract
 
+    @staticmethod
+    def _normalize_direction(direction_value: str) -> str:
+        """统一持仓方向标识为 Long/Short，兼容 vnpy 的中英文枚举值"""
+        v = str(direction_value).upper()
+        if v in ("LONG", "多", "NET"):
+            return "Long"
+        return "Short"
+
     def _on_position(self, event):
         """处理持仓更新 - 仅缓存CTP原始持仓数据，均价计算由策略服务处理"""
         position = event.data
-        position_key = f"{position.symbol}_{position.direction.value}"
+        direction_str = self._normalize_direction(position.direction.value)
+        position_key = f"{position.symbol}_{direction_str}"
         self.positions[position_key] = position
-        logger.debug(f"📍 [持仓缓存] {position.symbol} {position.direction.value}: {position.volume}手(昨{position.yd_volume})")
+        logger.debug(f"📍 [持仓缓存] {position.symbol} {direction_str}: {position.volume}手(昨{position.yd_volume})")
 
     def refresh_positions(self):
         """主动刷新持仓数据 - 从CTP网关重新查询
@@ -622,64 +627,13 @@ class CtpIntegration:
 
             if order_id:
                 logger.info(f"✅ 订单发送成功: {symbol} {direction} {volume}@{order_price} ({offset}) [订单ID: {order_id}]")
-
-                # 记录订单日志
-                self.trading_logger.log_order(
-                    strategy_name=self.current_strategy or "MANUAL",
-                    symbol=symbol,
-                    direction=direction,
-                    offset=offset,
-                    volume=volume,
-                    price=order_price,
-                    order_id=order_id,
-                    message=f"订单发送成功: {direction} {volume}手@{order_price}",
-                    details={
-                        'order_type': order_type,
-                        'original_price': price,
-                        'final_price': order_price
-                    },
-                    is_success=True
-                )
-
                 return order_id
             else:
                 logger.error(f"❌ 订单发送失败: {symbol} {direction} {volume}@{order_price} ({offset})")
-
-                # 记录失败日志
-                self.trading_logger.log_order(
-                    strategy_name=self.current_strategy or "MANUAL",
-                    symbol=symbol,
-                    direction=direction,
-                    offset=offset,
-                    volume=volume,
-                    price=order_price,
-                    order_id="",
-                    message=f"订单发送失败: {direction} {volume}手@{order_price}",
-                    is_success=False,
-                    error_code="ORDER_SEND_FAILED",
-                    error_message="CTP网关返回空订单ID"
-                )
-
                 return None
 
         except Exception as e:
             logger.error(f"发送订单异常: {e}")
-
-            # 记录异常日志
-            self.trading_logger.log_error(
-                strategy_name=self.current_strategy or "MANUAL",
-                error_type="ORDER_EXCEPTION",
-                error_message=str(e),
-                details={
-                    'symbol': symbol,
-                    'direction': direction,
-                    'volume': volume,
-                    'price': price,
-                    'offset': offset
-                },
-                symbol=symbol
-            )
-
             return None
 
     def set_current_strategy(self, strategy_name: str):

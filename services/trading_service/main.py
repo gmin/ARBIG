@@ -7,7 +7,6 @@ ARBIG核心交易服务
 """
 
 import sys
-import os
 import argparse
 import uvicorn
 from pathlib import Path
@@ -16,7 +15,7 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime
 import uuid
@@ -112,22 +111,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 导入并注册交易操作API路由
-try:
-    from api.trading_operations import router as trading_operations_router
-    app.include_router(trading_operations_router)
-    logger.info("✅ 交易操作API路由注册成功")
-except ImportError as e:
-    logger.warning(f"⚠️ 交易操作API路由导入失败: {e}")
-
-# 导入并注册行情数据API路由
-try:
-    from services.trading_service.api.market_data import router as market_data_router
-    app.include_router(market_data_router)
-    logger.info("✅ 行情数据API路由注册成功")
-except ImportError as e:
-    logger.warning(f"⚠️ 行情数据API路由导入失败: {e}")
-
 # 导入并注册真实交易API路由
 try:
     from services.trading_service.api.real_trading import router as real_trading_router
@@ -157,44 +140,6 @@ async def startup_event():
     """服务启动事件"""
     logger.info("🚀 启动核心交易服务...")
 
-    # 初始化MySQL数据库连接（Redis已完全移除）
-    try:
-        from shared.database.connection import db_manager
-        import json
-
-        # 加载数据库配置
-        config_file = project_root / "config" / "database.json"
-        if config_file.exists():
-            with open(config_file, 'r', encoding='utf-8') as f:
-                db_config = json.load(f)
-
-            mysql_config = db_config['mysql']
-            # Redis已完全移除，不再需要
-
-            # 只初始化MySQL
-            success = await db_manager.init_mysql(mysql_config)
-            if success:
-                logger.info("✅ MySQL数据库连接初始化成功（Redis已移除）")
-            else:
-                logger.error("❌ MySQL数据库连接初始化失败")
-        else:
-            logger.warning("⚠️ 数据库配置文件不存在，跳过数据库初始化")
-
-    except Exception as e:
-        logger.error(f"❌ 数据库初始化异常: {e}")
-
-    # 初始化行情数据管理器（轻量级API转换层）
-    try:
-        from services.trading_service.core.market_data_manager import get_market_data_manager
-        from services.trading_service.core.ctp_integration import get_ctp_integration
-
-        market_manager = get_market_data_manager()
-        ctp_integration = get_ctp_integration()
-        market_manager.set_ctp_integration(ctp_integration)
-        logger.info("✅ 行情数据管理器初始化成功（轻量级API转换层）")
-    except Exception as e:
-        logger.error(f"❌ 行情数据管理器初始化失败: {e}")
-
     # 启动CTP集成
     try:
         from services.trading_service.core.ctp_integration import get_ctp_integration
@@ -214,30 +159,12 @@ async def startup_event():
     except Exception as e:
         logger.error(f"❌ CTP集成启动失败: {e}")
 
-    # 启动统一策略管理器
-    try:
-        from services.trading_service.core.unified_strategy_manager import get_unified_strategy_manager
-        strategy_manager = get_unified_strategy_manager()
-        await strategy_manager.initialize()
-        logger.info("✅ 统一策略管理器启动成功")
-    except Exception as e:
-        logger.error(f"❌ 统一策略管理器启动失败: {e}")
-
     trading_service.start()
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """服务关闭事件"""
     logger.info("⏹️ 关闭核心交易服务...")
-
-    # 停止统一策略管理器
-    try:
-        from services.trading_service.core.unified_strategy_manager import get_unified_strategy_manager
-        strategy_manager = get_unified_strategy_manager()
-        await strategy_manager.shutdown()
-        logger.info("✅ 统一策略管理器已停止")
-    except Exception as e:
-        logger.error(f"❌ 停止统一策略管理器失败: {e}")
 
     # 停止CTP集成
     try:

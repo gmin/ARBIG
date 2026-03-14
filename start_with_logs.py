@@ -113,7 +113,7 @@ def main():
         ("核心交易服务", "conda run -n vnpy python services/trading_service/main.py --port 8001", 8001),
         ("策略管理服务", "conda run -n vnpy python services/strategy_service/main.py --port 8002", 8002),
         ("专业回测服务", "conda run -n vnpy python services/strategy_service/backtesting/professional_backtest_server.py", 8003),
-        ("Web管理服务", "conda run -n vnpy python services/web_admin_service/main.py --port 80", 80),
+        ("Web管理服务", "conda run -n vnpy python services/web_admin_service/main.py --port 8000", 8000),
     ]
 
     # 保存服务信息用于健康检查
@@ -131,13 +131,12 @@ def main():
             return
     
     print("\n✅ ARBIG系统启动成功！")
-    print("🎛️  Web管理界面: http://localhost")
-    print("📊 交易页面: http://localhost/trading")
-    print("🎯 策略管理: http://localhost/strategy")
-    print("📖 交易API文档: http://localhost:8001/docs")
-    print("🔧 策略API文档: http://localhost:8002/docs")
+    print("🎛️  总控台: http://localhost")
+    print("🎯 策略中心: http://localhost/strategy")
+    print("📝 交易日志: http://localhost/trading_logs")
+    print("📖 交易服务API文档: http://localhost:8001/docs")
+    print("🔧 策略服务API文档: http://localhost:8002/docs")
     print("📈 专业回测API: http://localhost:8003/docs")
-    print("⚡ 策略快速测试: http://localhost:8002/strategies/{id}/quick_test")
     print("\n" + "=" * 80)
     print("📊 实时日志输出 (按Ctrl+C停止系统):")
     print("=" * 80)

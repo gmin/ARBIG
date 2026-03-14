@@ -18,7 +18,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '../..'))
 class StrategyManagementTester:
     def __init__(self):
         self.strategy_service_url = "http://localhost:8002"
-        self.web_admin_url = "http://localhost:80"
+        self.web_admin_url = "http://localhost:8000"
         self.test_strategy_name = "test_performance_001"
         
     def test_service_connectivity(self):
@@ -339,7 +339,9 @@ def main():
     
     # 保存测试结果
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    results_file = f"/root/ARBIG/logs/strategy_management_test_{timestamp}.json"
+    log_dir = os.path.join(os.path.dirname(__file__), '..', '..', 'logs')
+    os.makedirs(log_dir, exist_ok=True)
+    results_file = os.path.join(log_dir, f"strategy_management_test_{timestamp}.json")
     
     try:
         results = {
@@ -348,7 +350,6 @@ def main():
             "test_details": "详细结果请查看控制台输出"
         }
         
-        os.makedirs("/root/ARBIG/logs", exist_ok=True)
         with open(results_file, 'w', encoding='utf-8') as f:
             json.dump(results, f, ensure_ascii=False, indent=2)
         print(f"\n💾 测试结果已保存到: {results_file}")

@@ -1,263 +1,251 @@
-# ARBIG策略代码规范
+# ARBIG 策略代码规范
 
-## 📋 **代码结构规范**
+## 目的
 
-### **文件组织**
-```
+这份文档只描述当前 `strategy_service` 下真实生效的策略开发约定。  
+第一原则只有一条：**策略代码要优先服从当前框架，再谈风格统一。**
+
+也就是说：
+
+- 如果框架已经在父类中统一处理了生命周期、持仓更新、成交回调，就不要在子类里重复实现
+- 如果某个文档模板和实际基类不一致，以源码为准，而不是以旧文档为准
+
+## 目录与命名
+
+当前策略代码目录：
+
+```text
 services/strategy_service/strategies/
-├── StrategyName.py          # 策略实现文件
-├── __init__.py             # 策略导入配置
-└── docs/                   # 策略文档（可选）
+├── StrategyName.py
+└── __init__.py
 ```
 
-### **类命名规范**
-- ✅ **文件名与类名一致**：`MaRsiComboStrategy.py` → `class MaRsiComboStrategy`
-- ✅ **使用PascalCase**：`SystemIntegrationTestStrategy`
-- ✅ **以Strategy结尾**：明确标识策略类
+命名要求：
 
----
+- 文件名与策略类名保持一致，例如 `MaRsiComboStrategy.py`
+- 类名使用 PascalCase
+- 策略类统一以 `Strategy` 结尾
+- 新增策略后，更新 `services/strategy_service/strategies/__init__.py`
 
-## 🏗️ **策略类结构**
+## 基类约定
 
-### **标准模板**
+所有运行中的策略都应继承：
+
+- `services/strategy_service/core/cta_template.py` 中的 `ARBIGCtaTemplate`
+
+需要特别注意：
+
+- 父类已经统一封装 `on_tick()`、`on_bar()`、`on_trade()`、`on_order()`
+- 子类的主要职责是实现 `on_tick_impl()`、`on_bar_impl()`
+- `on_trade_impl()`、`on_order_impl()` 是可选扩展点
+- 除非有非常充分的理由，不要直接重写 `on_tick()`、`on_bar()`、`on_trade()`
+
+原因很简单：
+
+- 父类里已经处理了 `active` 状态判断
+- 父类里已经维护了 `tick`、`bar`、`bars`
+- 父类里已经统一更新 `pos`、`long_pos`、`short_pos`、均价和成交统计
+
+如果子类再直接改这些基础回调，最容易引入重复记账、状态不一致、调试困难这三类问题。
+
+## 推荐结构
+
+标准策略建议包含以下部分：
+
 ```python
-"""
-策略名称 - 策略简短描述
-
-## 策略概述
-详细的策略说明...
-
-## 主要特点
-- 特点1
-- 特点2
-
-## 技术指标
-- 指标说明
-
-## 适用场景  
-- 场景说明
-"""
-
 class StrategyName(ARBIGCtaTemplate):
-    """
-    策略类文档字符串
-    
-    ## 策略逻辑
-    详细的策略逻辑说明
-    
-    ## 参数说明
-    参数的详细说明
-    """
-    
-    # ==================== 策略参数配置 ====================
-    
-    # 参数分组注释
-    param1 = value1    # 参数说明：详细的参数用途和建议值
-    param2 = value2    # 参数说明：详细的参数用途和建议值
-    
-    def __init__(self, strategy_name: str, symbol: str, setting: dict, signal_sender=None, **kwargs):
-        """策略初始化"""
-        
-    def on_init(self):
-        """策略初始化回调"""
-        
-    def on_start(self):
-        """策略启动回调"""
-        
-    def on_stop(self):
-        """策略停止回调"""
-        
-    def on_tick(self, tick: TickData):
-        """Tick数据处理"""
-        
-    def on_bar(self, bar: BarData):
-        """Bar数据处理 - 主要信号生成入口"""
-        
-    def on_tick_impl(self, tick: TickData) -> None:
-        """Tick数据处理实现（抽象方法）"""
-        
-    def on_bar_impl(self, bar: BarData) -> None:
-        """Bar数据处理实现（抽象方法）"""
+    """一句话说明策略用途。"""
+
+    # 可配置参数名列表
+    parameters = [
+        "trade_volume",
+        "max_position",
+    ]
+
+    # 需要暴露给外部观察的变量名列表
+    variables = [
+        "pos",
+        "long_pos",
+        "short_pos",
+    ]
+
+    # 默认参数
+    trade_volume = 1
+    max_position = 3
+
+    def on_init(self) -> None:
+        """初始化内部状态与指标容器。"""
+
+    def on_start(self) -> None:
+        """启动时执行一次的准备逻辑。"""
+
+    def on_stop(self) -> None:
+        """停止时释放状态或输出摘要。"""
+
+    def on_tick_impl(self, tick) -> None:
+        """Tick 级别逻辑。"""
+
+    def on_bar_impl(self, bar) -> None:
+        """Bar 级别逻辑，通常是主要信号入口。"""
+
+    def on_trade_impl(self, trade) -> None:
+        """可选：成交后的附加处理。"""
 ```
 
----
+## `STRATEGY_TEMPLATE` 约定
 
-## 📝 **注释规范**
+当前策略引擎会在加载模块时尝试读取模块级别的 `STRATEGY_TEMPLATE`。  
+它不是 Python 继承层面的硬约束，但对于策略展示、参数描述和外部使用非常重要，新增策略时应提供。
 
-### **方法注释**
+建议至少包含：
+
 ```python
-def method_name(self, param: Type) -> ReturnType:
-    """
-    方法简短描述 - 功能概述
-    
-    ## 功能说明
-    详细的功能说明...
-    
-    ## 处理流程
-    1. 步骤1
-    2. 步骤2
-    3. 步骤3
-    
-    Args:
-        param: 参数说明
-        
-    Returns:
-        返回值说明
-        
-    Raises:
-        Exception: 异常情况说明
-    """
+STRATEGY_TEMPLATE = {
+    "class_name": "StrategyName",
+    "file_name": "StrategyName.py",
+    "description": "策略说明",
+    "parameters": {
+        "trade_volume": {
+            "type": "int",
+            "default": 1,
+            "description": "每次交易手数"
+        }
+    }
+}
 ```
 
-### **参数注释**
+要求：
+
+- `class_name` 与真实类名一致
+- `file_name` 与真实文件名一致
+- `parameters` 中的默认值应与类中的默认参数一致
+- 文案描述要简洁，不要写市场承诺式表述
+
+## 参数规范
+
+参数设计遵循“少而清晰”的原则。
+
+推荐做法：
+
+- 使用 `snake_case`
+- 名称表达业务含义，不要过度缩写
+- 带单位的参数显式带后缀，如 `_pct`、`_period`、`_interval`
+- 默认值要保守，优先服务测试和联调
+
+常见参数示例：
+
+- 趋势类：`ma_short`、`ma_long`
+- 震荡类：`rsi_period`、`rsi_overbought`、`rsi_oversold`
+- 风控类：`stop_loss_pct`、`take_profit_pct`
+- 仓位类：`trade_volume`、`max_position`
+- 节流类：`signal_interval`、`min_signal_interval`
+
+不推荐：
+
+- 参数名只有作者自己看得懂
+- 同一含义在不同策略里使用不同命名
+- 默认值过激进，导致一上来就高频触发
+
+## 注释与可读性
+
+注释要解释“为什么”，不要机械解释“代码正在做什么”。
+
+推荐：
+
+- 在复杂信号判断前写 1 到 2 行注释，说明设计意图
+- 在风控分支前说明这条规则防的是什么风险
+- 在兼容性处理处说明背景，例如父类已更新持仓，这里不要重复改
+
+不推荐：
+
+- 每行代码都加注释
+- 用表情符号堆砌日志和注释
+- 文档字符串写得很长，但和真实实现不一致
+
+## 生命周期与状态管理
+
+子类应遵守以下边界：
+
+- `on_init()`：初始化指标、缓存、内部状态
+- `on_start()`：启动后的准备动作
+- `on_stop()`：清理状态、输出摘要、停止内部计时器
+- `on_tick_impl()`：处理 Tick 级别的实时风控或细粒度逻辑
+- `on_bar_impl()`：处理 Bar 级别的主信号逻辑
+- `on_trade_impl()`：只处理成交后的附加行为，不重复更新基础持仓变量
+
+特别注意：
+
+- `pos`、`long_pos`、`short_pos`、`long_price`、`short_price` 优先交给父类维护
+- 子类如果手动改这些变量，必须非常谨慎，并写明原因
+
+## 日志规范
+
+日志的目标是帮助定位问题，而不是制造噪音。
+
+建议：
+
+- 重要状态变化才记录日志，例如信号出现、风控触发、成交后状态变化
+- 日志内容先写结论，再写关键数字
+- 统一使用 `self.write_log(...)`
+
+示例：
+
 ```python
-# ==================== 参数分组标题 ====================
-
-# 参数子分组
-param_name = default_value    # 参数说明：用途、建议值、注意事项
+self.write_log(
+    f"产生开多信号: price={bar.close_price}, rsi={self.rsi_value}, pos={self.pos}"
+)
 ```
 
-### **代码块注释**
-```python
-# 🎯 功能标识：核心逻辑说明
-if condition:
-    # 详细的逻辑说明
-    pass
+不建议：
 
-# 🔧 优化标识：性能优化说明  
-optimized_code()
+- 高频路径下无条件打印大量日志
+- 同一事件在多个层级重复打印
+- 依赖“花哨前缀”来表达语义，而不是依赖清晰文本
 
-# 🛡️ 风控标识：风险控制说明
-risk_control()
+## 风控要求
 
-# 📊 监控标识：数据记录说明
-logging_code()
-```
+每个策略至少要考虑以下问题：
 
----
+- 是否有限制最大持仓
+- 是否限制单次交易手数
+- 是否控制信号频率，避免过度交易
+- 是否区分测试参数和生产参数
 
-## 🎯 **策略参数规范**
+推荐补充：
 
-### **参数分类**
-1. **技术指标参数**
-   - 均线周期：`ma_short`, `ma_long`
-   - 振荡指标：`rsi_period`, `rsi_overbought`, `rsi_oversold`
-   - 通道指标：`bollinger_period`, `bollinger_std`
+- 止损与止盈
+- 交易时段过滤
+- 异常行情下的保护逻辑
 
-2. **风控参数**
-   - 止损止盈：`stop_loss_pct`, `take_profit_pct`
-   - 持仓限制：`max_position`, `trade_volume`
+## 测试要求
 
-3. **时间控制参数**
-   - 信号间隔：`signal_interval`, `min_signal_interval`
-   - 交易时间：`start_time`, `end_time`
+新增或修改策略后，至少检查：
 
-### **参数命名规范**
-- ✅ 使用snake_case：`ma_short`, `rsi_period`
-- ✅ 语义明确：`stop_loss_pct` 而不是 `sl`
-- ✅ 单位明确：`_pct`(百分比), `_interval`(间隔), `_period`(周期)
+1. 类是否能被策略引擎加载
+2. `STRATEGY_TEMPLATE` 是否和类定义一致
+3. 参数更新后是否真正生效
+4. `on_tick_impl()` / `on_bar_impl()` 是否不会抛出明显异常
+5. 成交回调后持仓状态是否合理
 
----
+如果策略逻辑较复杂，还应补充：
 
-## 🔧 **代码质量要求**
+- 不同行情场景下的信号验证
+- 风控分支验证
+- 启停过程验证
 
-### **必需方法**
-- ✅ `on_init()` - 策略初始化
-- ✅ `on_start()` - 策略启动  
-- ✅ `on_stop()` - 策略停止
-- ✅ `on_tick()` - Tick数据处理
-- ✅ `on_bar()` - Bar数据处理（主要信号生成）
-- ✅ `on_tick_impl()` - 抽象方法实现
-- ✅ `on_bar_impl()` - 抽象方法实现
+## 评审清单
 
-### **推荐方法**
-- 🔧 `_generate_signal()` - 信号生成逻辑
-- 🛡️ `_check_risk()` - 风控检查
-- 📊 `_calculate_indicators()` - 技术指标计算
-- 💾 `get_strategy_status()` - 策略状态查询
+提交前至少自查以下问题：
 
-### **日志规范**
-```python
-# 使用统一的日志格式
-self.write_log(f"🎯 [策略名称] 信号类型: 详细信息")
-self.write_log(f"🔧 [策略名称] 优化信息: 详细说明")
-self.write_log(f"🛡️ [策略名称] 风控信息: 详细说明")
-self.write_log(f"📊 [策略名称] 监控信息: 详细数据")
-```
+- 是否继承了 `ARBIGCtaTemplate`
+- 是否实现了必要的 `*_impl` 方法
+- 是否错误重写了父类统一回调
+- 是否保持命名、参数、模板一致
+- 是否足够易读
+- 是否在关键决策点加了必要注释
 
 ---
 
-## 📊 **性能要求**
-
-### **响应时间**
-- Tick处理：< 1ms
-- Bar处理：< 10ms
-- 信号生成：< 50ms
-
-### **内存使用**
-- ArrayManager大小：建议100-200
-- 历史数据缓存：控制在合理范围
-- 避免内存泄漏
-
-### **API调用**
-- 持仓查询：合理使用缓存，避免频繁调用
-- 信号发送：异步处理，不阻塞主流程
-
----
-
-## 🛡️ **风控要求**
-
-### **必需风控**
-- ✅ **持仓限制**：`max_position` 参数
-- ✅ **交易量控制**：`trade_volume` 参数
-- ✅ **时间间隔控制**：避免过度交易
-
-### **推荐风控**
-- 🔧 **止损止盈**：`stop_loss_pct`, `take_profit_pct`
-- 📊 **实时持仓查询**：与交易服务同步
-- 💾 **持仓缓存机制**：减少服务压力
-
----
-
-## 🧪 **测试要求**
-
-### **基础测试**
-- ✅ 策略类结构检查
-- ✅ 参数配置验证
-- ✅ 方法调用测试
-
-### **功能测试**
-- 🔧 数据处理能力测试
-- 📊 信号生成逻辑测试
-- 🛡️ 风控机制验证
-
-### **集成测试**
-- 🚀 与交易服务集成测试
-- 📈 实盘环境验证
-- 💰 资金安全验证
-
----
-
-## 📚 **开发流程**
-
-### **策略开发步骤**
-1. **需求分析**：明确策略目标和适用场景
-2. **技术设计**：选择合适的技术指标和逻辑
-3. **代码实现**：按照规范实现策略类
-4. **离线测试**：使用测试框架验证基础功能
-5. **模拟测试**：在模拟环境测试策略表现
-6. **实盘测试**：小仓位实盘验证
-7. **生产部署**：正式投入使用
-
-### **代码审查要点**
-- 📋 代码结构是否符合规范
-- 🔧 注释是否清晰详细
-- 🛡️ 风控机制是否完善
-- 📊 日志记录是否充分
-- 🚀 性能是否满足要求
-
----
-
-**文档版本**：v1.1
-**最后更新**：2025-12-05
-**维护者**：ARBIG开发团队
+文档版本：v2.0  
+最后更新：2026-03-13  
+维护者：ARBIG 开发团队

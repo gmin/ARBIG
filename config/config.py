@@ -76,20 +76,6 @@ CONFIG = {
     'trading_hours': {
         'start': '09:00:00',
         'end': '15:30:00'
-    },
-    
-    # 数据存储配置
-    'storage': {
-        'mongodb': {
-            'host': 'localhost',
-            'port': 27017,
-            'database': 'gold_arbitrage',
-            'collections': {
-                'tick_data': 'ticks',
-                'trade_data': 'trades',
-                'position_data': 'positions'
-            }
-        }
     }
 }
 

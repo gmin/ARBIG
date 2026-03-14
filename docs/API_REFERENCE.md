@@ -1,252 +1,223 @@
 # ARBIG API 接口参考
 
-## 📋 文档信息
+## 文档信息
 
-- **文档版本**: v3.1
-- **更新日期**: 2025-08-15
-- **API版本**: v1
-- **Web管理服务**: `http://localhost`
-- **核心交易服务**: `http://localhost:8001`
-- **策略管理服务**: `http://localhost:8002`
+- 文档版本: `v4.0`
+- 更新日期: `2026-03-13`
+- API版本: `v1`
+- Web 管理服务: `http://localhost`
+- Trading Service: `http://localhost:8001`
+- Strategy Service: `http://localhost:8002`
 
-## 🔧 通用规范
+## 当前服务边界
 
-### 请求格式
-- **Content-Type**: `application/json`
-- **字符编码**: `UTF-8`
-- **时间格式**: `YYYY-MM-DD HH:mm:ss`
+ARBIG 当前采用三层边界：
 
-### 响应格式
+1. `Trading Service`
+   - 负责 CTP 连接、行情、账户、持仓、订单执行
+2. `Strategy Service`
+   - 负责策略注册、启动停止、策略状态、触发记录、紧急停止
+3. `Web Admin`
+   - 负责页面展示与聚合代理，不再提供手动下单和平仓 UI
+
+## 通用约定
+
+- 请求体默认使用 `application/json`
+- 时间字段以服务端实际返回为准，当前多数接口使用 `ISO 8601`
+- 大多数业务接口返回 `success`、`data`、`message`、`timestamp`
+
+示例响应：
+
 ```json
 {
   "success": true,
   "data": {},
   "message": "操作成功",
-  "timestamp": "2025-08-15 15:30:25"
+  "timestamp": "2026-03-13T18:30:25"
 }
 ```
 
-### 错误响应
-```json
-{
-  "success": false,
-  "data": null,
-  "message": "错误描述",
-  "timestamp": "2025-08-15 15:30:25"
-}
-```
+## Trading Service API (8001)
 
-## 📊 核心交易API (端口8001)
+### 行情与连接
 
-### 1. 持仓管理
-
-#### 获取持仓信息
 ```http
+GET /real_trading/status
+GET /real_trading/tick/{symbol}
+POST /real_trading/subscribe/{symbol}
+POST /real_trading/test_connection
+```
+
+用途：
+
+- 查询 CTP 连接状态
+- 获取指定合约最新 Tick
+- 手动订阅合约行情
+- 触发一次连接测试
+
+### 账户与持仓
+
+```http
+GET /real_trading/account
 GET /real_trading/positions
+GET /real_trading/orders
+GET /real_trading/trades/{strategy_name}
 ```
 
-**响应**:
+用途：
+
+- 获取账户资金
+- 获取实时持仓
+- 获取当前订单列表
+- 查询某个策略相关成交
+
+### 订单执行
+
+```http
+POST /real_trading/order
+DELETE /real_trading/order/{order_id}
+POST /real_trading/strategy_signal
+```
+
+说明：
+
+- `POST /real_trading/order` 是当前通用下单接口
+- `POST /real_trading/strategy_signal` 用于 Strategy Service 向 Trading Service 发送策略信号
+- 旧的 `manual_trade` 不再作为当前文档推荐接口
+- `simple_close` 仍存在于代码中，但不再作为 Web 端公开工作流的一部分
+
+下单请求示例：
+
 ```json
 {
-  "success": true,
-  "data": {
-    "au2510": {
-      "symbol": "au2510",
-      "long_position": 3,
-      "short_position": 0,
-      "long_today": 2,
-      "long_yesterday": 1,
-      "long_price": 520.50,
-      "current_price": 521.20,
-      "long_pnl": 210.0,
-      "position_detail": {
-        "long": {
-          "total": 3,
-          "today": 2,
-          "yesterday": 1
-        }
-      }
-    }
-  }
-}
-```
-
-### 2. 交易操作
-
-#### 手动交易
-```http
-POST /real_trading/manual_trade
-Content-Type: application/json
-
-{
-  "symbol": "au2510",
+  "symbol": "au2604",
   "direction": "BUY",
   "volume": 1,
-  "price": 520.50,
-  "order_type": "LIMIT",
+  "price": 0,
+  "order_type": "MARKET",
   "offset": "OPEN"
 }
 ```
 
-#### 智能平仓
+## Strategy Service API (8002)
+
+### 服务状态
+
 ```http
-POST /real_trading/simple_close
-Content-Type: application/json
-
-{
-  "symbol": "au2510",
-  "direction": "long",
-  "volume": 2,
-  "offset_type": "TODAY",
-  "order_type": "MARKET"
-}
-```
-
-### 3. 系统状态
-
-#### 获取CTP状态
-```http
-GET /real_trading/status
-```
-
-**响应**:
-```json
-{
-  "success": true,
-  "data": {
-    "ctp_status": {
-      "trading_connected": true,
-      "market_data_connected": true,
-      "trading_server": "182.254.243.31:30001",
-      "market_server": "182.254.243.31:30011"
-    }
-  }
-}
-```
-
-## 🎛️ Web管理API (端口80)
-
-### 1. 持仓查询
-
-#### 获取持仓
-```http
-GET /api/v1/trading/positions
-```
-
-### 2. 交易操作
-
-#### 手动交易
-```http
-POST /api/v1/trading/manual_trade
-Content-Type: application/json
-
-{
-  "symbol": "au2510",
-  "direction": "BUY",
-  "volume": 1,
-  "order_type": "MARKET"
-}
-```
-
-#### 平仓操作
-```http
-POST /api/v1/trading/simple_close
-Content-Type: application/json
-
-{
-  "symbol": "au2510",
-  "direction": "long",
-  "volume": 1,
-  "offset_type": "TODAY"
-}
-```
-
-### 3. 系统监控
-
-#### 获取系统状态
-```http
-GET /api/v1/system/status
-```
-
-## 🎯 策略管理API (端口8002)
-
-### 1. 策略状态
-
-#### 获取策略列表
-```http
+GET /
+GET /status
+GET /engine/status
 GET /strategies
+GET /strategies/{strategy_name}
+GET /strategies/types
+GET /strategies/triggers
 ```
 
-#### 获取策略状态
+说明：
+
+- `GET /strategies` 返回当前策略列表与状态
+- `GET /strategies/{strategy_name}` 返回单个策略状态
+- `GET /strategies/triggers` 返回策略触发/交易记录摘要
+
+### 策略控制
+
 ```http
-GET /strategies/{strategy_id}/status
+POST /strategies/register
+POST /strategies/{strategy_name}/start
+POST /strategies/{strategy_name}/stop
+POST /strategies/{strategy_name}/params
+DELETE /strategies/{strategy_name}
+POST /emergency_stop
 ```
 
-### 2. 策略控制
+说明：
 
-#### 启动策略
+- `POST /emergency_stop` 当前会停止所有策略
+- 紧急停止当前不负责统一撤销所有挂单，撤单仍应通过 Trading Service 处理
+
+### 与交易服务协同
+
 ```http
-POST /strategies/{strategy_id}/start
+GET /trading/status
+GET /trading/positions
+POST /strategies/{strategy_name}/trade
+POST /strategies/{strategy_name}/position
 ```
 
-#### 停止策略
+用途：
+
+- 查询 Trading Service 状态
+- 查询 Trading Service 持仓
+- 更新策略交易统计与持仓统计
+
+## Web Admin 聚合 API (80)
+
+Web 端通过 `services/web_admin_service/api/trading.py` 聚合两类后端服务。
+
+### 配置与基础信息
+
 ```http
-POST /strategies/{strategy_id}/stop
+GET /api/v1/trading/config/main_contract
+POST /api/v1/trading/config/main_contract
+GET /api/v1/trading/contracts/config
+GET /api/v1/trading/market/current
 ```
 
-## 🔍 API使用示例
+### 交易监控
 
-### 完整的平仓流程
-```javascript
-// 1. 获取持仓信息
-const positions = await fetch('/api/v1/trading/positions');
-
-// 2. 智能平仓（前端控制）
-const closeResult = await fetch('/api/v1/trading/simple_close', {
-  method: 'POST',
-  headers: {'Content-Type': 'application/json'},
-  body: JSON.stringify({
-    symbol: 'au2510',
-    direction: 'long',
-    volume: 2,
-    offset_type: 'TODAY'
-  })
-});
+```http
+GET /api/v1/trading/ctp_status
+GET /api/v1/trading/account
+GET /api/v1/trading/positions
+GET /api/v1/trading/tick/{symbol}
 ```
 
-### 手动交易流程
-```javascript
-// 开仓
-const openResult = await fetch('/api/v1/trading/manual_trade', {
-  method: 'POST',
-  headers: {'Content-Type': 'application/json'},
-  body: JSON.stringify({
-    symbol: 'au2510',
-    direction: 'BUY',
-    volume: 1,
-    order_type: 'MARKET'
-  })
-});
+说明：
+
+- 这些接口主要代理到 Trading Service
+- Web 总控台当前以监控为主，不再提供手动下单和平仓页面操作
+
+### 策略管理
+
+```http
+GET /api/v1/trading/strategy/status
+GET /api/v1/trading/strategy/triggers
+POST /api/v1/trading/emergency_stop
+GET /api/v1/trading/strategies
+GET /api/v1/trading/strategies/types
+POST /api/v1/trading/strategies/{strategy_name}/start
+POST /api/v1/trading/strategies/{strategy_name}/stop
+POST /api/v1/trading/strategies/{strategy_name}/params
+POST /api/v1/trading/strategies/register
 ```
 
-## 📝 注意事项
+说明：
 
-### 1. 今昨仓处理
-- 系统自动识别今昨仓
-- 前端控制平仓逻辑
-- 优先平今仓（手续费更低）
+- 这些接口当前统一代理到 Strategy Service
+- Web 层保留策略管理与紧急停止，不再承担交易执行职责
 
-### 2. 错误处理
-- 所有API都返回统一的错误格式
-- 检查`success`字段判断操作是否成功
-- `message`字段包含详细错误信息
+## 推荐调用路径
 
-### 3. 交易时间
-- CTP连接在非交易时间可能失败
-- 建议在交易时间内进行测试
+### 页面监控类调用
+
+- Web 页面调用 `Web Admin` 聚合接口
+- Web Admin 再分发到 Trading Service 或 Strategy Service
+
+### 策略执行类调用
+
+- 策略引擎直接调用 Strategy Service
+- Strategy Service 再通过 `strategy_signal` 调用 Trading Service
+
+## 注意事项
+
+1. 非交易时间 CTP 连接、行情、账户返回异常是正常现象
+2. Web 端已裁剪为监控与策略管理界面，不应再依赖手动交易和平仓接口
+3. 若文档与代码不一致，应优先以以下文件中的实际路由为准：
+   - `services/trading_service/api/real_trading.py`
+   - `services/strategy_service/main.py`
+   - `services/web_admin_service/api/trading.py`
 
 ---
 
-**API文档版本**: v3.1  
-**最后更新**: 2025-08-15  
-**基于**: 当前微服务架构
+文档版本: `v4.0`  
+最后更新: `2026-03-13`

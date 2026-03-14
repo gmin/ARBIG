@@ -13,7 +13,8 @@ import os
 # 添加项目根目录到路径
 sys.path.append(os.path.join(os.path.dirname(__file__), '../../..'))
 
-from core.types import TickData, BarData, Direction
+from vnpy.trader.object import TickData, BarData
+from vnpy.trader.constant import Direction
 from utils.logger import get_logger
 import logging
 
@@ -592,74 +593,5 @@ class ArrayManager:
         cci = (tp[-1] - ma) / (0.015 * mad)
         return cci
 
-class TechnicalIndicators:
-    """
-    技术指标计算工具类
-    提供常用技术指标的静态计算方法
-    """
-    
 
-    
-    @staticmethod
-    def ema(data: List[float], period: int) -> float:
-        """指数移动平均"""
-        if len(data) < period:
-            return 0
-        
-        alpha = 2 / (period + 1)
-        ema = data[0]
-        
-        for price in data[1:]:
-            ema = alpha * price + (1 - alpha) * ema
-        
-        return ema
-    
-    @staticmethod
-    def rsi(data: List[float], period: int = 14) -> float:
-        """RSI指标"""
-        if len(data) < period + 1:
-            return 50
-        
-        gains = []
-        losses = []
-        
-        for i in range(1, len(data)):
-            change = data[i] - data[i-1]
-            if change > 0:
-                gains.append(change)
-                losses.append(0)
-            else:
-                gains.append(0)
-                losses.append(-change)
-        
-        if len(gains) < period:
-            return 50
-        
-        avg_gain = sum(gains[-period:]) / period
-        avg_loss = sum(losses[-period:]) / period
-        
-        if avg_loss == 0:
-            return 100
-        
-        rs = avg_gain / avg_loss
-        rsi = 100 - (100 / (1 + rs))
-        
-        return rsi
-    
-    @staticmethod
-    def bollinger_bands(data: List[float], period: int = 20, std_dev: float = 2) -> tuple:
-        """布林带"""
-        if len(data) < period:
-            return 0, 0, 0
-        
-        # 使用EMA作为中轨（统一使用EMA）
-        ema = TechnicalIndicators.ema(data, period)
-
-        # 计算标准差
-        variance = sum([(x - ema) ** 2 for x in data[-period:]]) / period
-        std = variance ** 0.5
-
-        upper = ema + (std_dev * std)
-        lower = ema - (std_dev * std)
-
-        return upper, ema, lower
+# TechnicalIndicators 已移除（与 ArrayManager 的指标方法重复）

@@ -107,15 +107,3 @@ async def get_websocket_status():
     except Exception as e:
         logger.error(f"获取WebSocket状态失败: {e}")
         return {"error": str(e)}
-
-# 用于测试的行情数据广播函数（已禁用）
-async def broadcast_test_market_data():
-    """广播测试行情数据（已禁用，使用真实CTP数据）"""
-    logger.info("测试行情数据广播已禁用，请使用真实CTP数据")
-    return
-
-# 后台任务：定期广播测试数据（已禁用）
-async def start_market_data_simulation():
-    """启动行情数据模拟（已禁用）"""
-    logger.info("行情数据模拟已禁用，请使用真实CTP数据")
-    return

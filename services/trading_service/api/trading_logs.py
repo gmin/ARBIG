@@ -1,14 +1,13 @@
 """
 交易日志API接口
-提供交易日志查询和统计功能
+基于文件日志提供交易日志查询和统计功能
 """
 
 from fastapi import APIRouter, HTTPException, Query
-from typing import Dict, Any, Optional, List
+from typing import Optional
 from datetime import datetime, timedelta
-import json
 
-from shared.utils.trading_logger import get_trading_logger
+from utils.trading_logger import get_trading_logger
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -27,24 +26,22 @@ async def get_trading_logs(
     """获取交易日志"""
     try:
         trading_logger = get_trading_logger()
-        
-        # 解析时间参数
+
         start_time = None
         end_time = None
-        
+
         if start_date:
             try:
                 start_time = datetime.strptime(start_date, "%Y-%m-%d")
             except ValueError:
                 raise HTTPException(status_code=400, detail="开始日期格式错误，应为 YYYY-MM-DD")
-        
+
         if end_date:
             try:
                 end_time = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)
             except ValueError:
                 raise HTTPException(status_code=400, detail="结束日期格式错误，应为 YYYY-MM-DD")
-        
-        # 获取日志
+
         logs = trading_logger.get_logs(
             strategy_name=strategy_name,
             log_type=log_type,
@@ -53,7 +50,7 @@ async def get_trading_logs(
             limit=limit,
             offset=offset
         )
-        
+
         return {
             "success": True,
             "data": {
@@ -68,7 +65,7 @@ async def get_trading_logs(
             },
             "timestamp": datetime.now().isoformat()
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -84,36 +81,33 @@ async def get_logs_summary(
     """获取交易日志统计摘要"""
     try:
         trading_logger = get_trading_logger()
-        
-        # 计算时间范围
+
         end_time = datetime.now()
         start_time = end_time - timedelta(days=days)
-        
-        # 获取各类型日志数量
-        log_types = ['ORDER', 'TRADE', 'SIGNAL', 'ERROR', 'INFO']
+
+        log_types = ["ORDER", "TRADE", "SIGNAL", "ERROR", "INFO"]
         summary = {}
-        
-        for log_type in log_types:
+
+        for lt in log_types:
             logs = trading_logger.get_logs(
                 strategy_name=strategy_name,
-                log_type=log_type,
+                log_type=lt,
                 start_time=start_time,
                 end_time=end_time,
                 limit=10000
             )
-            summary[log_type.lower()] = len(logs)
-        
-        # 获取成功/失败统计
+            summary[lt.lower()] = len(logs)
+
         all_logs = trading_logger.get_logs(
             strategy_name=strategy_name,
             start_time=start_time,
             end_time=end_time,
             limit=10000
         )
-        
-        success_count = len([log for log in all_logs if log.get('is_success', True)])
+
+        success_count = len([log for log in all_logs if log.get("is_success", True)])
         failed_count = len(all_logs) - success_count
-        
+
         return {
             "success": True,
             "data": {
@@ -129,7 +123,7 @@ async def get_logs_summary(
             },
             "timestamp": datetime.now().isoformat()
         }
-        
+
     except Exception as e:
         logger.error(f"获取日志统计失败: {e}")
         raise HTTPException(status_code=500, detail=f"获取日志统计失败: {str(e)}")
@@ -143,13 +137,13 @@ async def get_strategy_performance(
     """获取策略性能统计"""
     try:
         trading_logger = get_trading_logger()
-        
+
         performance = trading_logger.get_strategy_performance(
             strategy_name=strategy_name,
             days=days
         )
-        
-        if not performance:
+
+        if not performance or performance.get("total_orders", 0) == 0:
             return {
                 "success": True,
                 "data": {
@@ -159,7 +153,7 @@ async def get_strategy_performance(
                 },
                 "timestamp": datetime.now().isoformat()
             }
-        
+
         return {
             "success": True,
             "data": {
@@ -168,7 +162,7 @@ async def get_strategy_performance(
             },
             "timestamp": datetime.now().isoformat()
         }
-        
+
     except Exception as e:
         logger.error(f"获取策略性能统计失败: {e}")
         raise HTTPException(status_code=500, detail=f"获取策略性能统计失败: {str(e)}")
@@ -181,13 +175,9 @@ async def get_recent_logs(
     """获取最近的交易日志"""
     try:
         trading_logger = get_trading_logger()
-        
-        # 获取最近的日志
-        logs = trading_logger.get_logs(
-            limit=limit,
-            offset=0
-        )
-        
+
+        logs = trading_logger.get_logs(limit=limit, offset=0)
+
         return {
             "success": True,
             "data": {
@@ -196,60 +186,7 @@ async def get_recent_logs(
             },
             "timestamp": datetime.now().isoformat()
         }
-        
+
     except Exception as e:
         logger.error(f"获取最近日志失败: {e}")
         raise HTTPException(status_code=500, detail=f"获取最近日志失败: {str(e)}")
-
-
-@router.delete("/logs")
-async def clear_old_logs(
-    days: int = Query(30, description="保留天数", ge=1, le=365),
-    strategy_name: Optional[str] = Query(None, description="策略名称，不指定则清理所有策略")
-):
-    """清理旧的交易日志"""
-    try:
-        # 这里可以实现清理逻辑
-        # 为了安全，暂时只返回提示信息
-        return {
-            "success": True,
-            "data": {
-                "message": f"日志清理功能暂未实现，计划清理{days}天前的日志",
-                "strategy_name": strategy_name,
-                "days": days
-            },
-            "timestamp": datetime.now().isoformat()
-        }
-        
-    except Exception as e:
-        logger.error(f"清理日志失败: {e}")
-        raise HTTPException(status_code=500, detail=f"清理日志失败: {str(e)}")
-
-
-@router.get("/export")
-async def export_logs(
-    strategy_name: Optional[str] = Query(None, description="策略名称"),
-    start_date: Optional[str] = Query(None, description="开始日期 YYYY-MM-DD"),
-    end_date: Optional[str] = Query(None, description="结束日期 YYYY-MM-DD"),
-    format: str = Query("json", description="导出格式: json, csv")
-):
-    """导出交易日志"""
-    try:
-        # 这里可以实现导出逻辑
-        return {
-            "success": True,
-            "data": {
-                "message": "日志导出功能暂未实现",
-                "parameters": {
-                    "strategy_name": strategy_name,
-                    "start_date": start_date,
-                    "end_date": end_date,
-                    "format": format
-                }
-            },
-            "timestamp": datetime.now().isoformat()
-        }
-        
-    except Exception as e:
-        logger.error(f"导出日志失败: {e}")
-        raise HTTPException(status_code=500, detail=f"导出日志失败: {str(e)}")

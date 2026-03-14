@@ -34,7 +34,7 @@ import os
 # 添加项目根目录到路径
 sys.path.append(os.path.join(os.path.dirname(__file__), '../../..'))
 
-from core.types import TickData, BarData
+from vnpy.trader.object import TickData, BarData
 from services.strategy_service.core.cta_template import ARBIGCtaTemplate
 from services.strategy_service.core.data_tools import ArrayManager
 from utils.logger import get_logger
@@ -208,42 +208,20 @@ class SystemIntegrationTestStrategy(ARBIGCtaTemplate):
                     self.signal_lock = False
 
     def _query_real_position(self) -> Optional[int]:
-        """实时查询真实持仓"""
-        self.write_log(f"🔧 DEBUG: _query_real_position 方法开始执行")
+        """通过 signal_sender 查询真实净持仓"""
         try:
-            import requests
-
-            # 查询交易服务的持仓API
-            url = f"http://localhost:8001/real_trading/positions?symbol={self.symbol}"
-            self.write_log(f"🔧 DEBUG: 准备请求URL: {url}")
-
-            response = requests.get(url, timeout=2.0)
-            self.write_log(f"🔧 DEBUG: HTTP请求完成，状态码: {response.status_code}")
-
-            if response.status_code == 200:
-                position_data = response.json()
-                self.write_log(f"🔧 DEBUG: 返回数据: {position_data}")
-
-                if position_data.get("success") and position_data.get("data"):
-                    position_info = position_data["data"]  # 直接就是持仓信息，不是字典
-                    self.write_log(f"🔧 DEBUG: 持仓数据: {position_info}")
-
-                    # 🔧 修复：直接从持仓信息中获取数据
-                    long_position = position_info.get("long_position", 0)
-                    short_position = position_info.get("short_position", 0)
-                    net_position = position_info.get("net_position", 0)
-
-                    self.write_log(f"🔍 查询到真实持仓: 多单={long_position}, 空单={short_position}, 净持仓={net_position}")
-
-                    # 返回净持仓
-                    return net_position
-                else:
-                    self.write_log(f"⚠️ 持仓查询返回空数据")
-                    return None
+            position_data = self.signal_sender.get_positions()
+            if position_data.get("success") and position_data.get("data"):
+                info = position_data["data"]
+                net_position = info.get("net_position", 0)
+                self.write_log(
+                    f"🔍 查询到真实持仓: 多单={info.get('long_position', 0)}, "
+                    f"空单={info.get('short_position', 0)}, 净持仓={net_position}"
+                )
+                return net_position
             else:
-                self.write_log(f"⚠️ 持仓查询失败: HTTP {response.status_code}")
+                self.write_log("⚠️ 持仓查询返回空数据")
                 return None
-
         except Exception as e:
             self.write_log(f"⚠️ 持仓查询异常: {e}")
             return None
